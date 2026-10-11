@@ -1,3 +1,4 @@
+import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/domain/collection-rls-repair';
 import type { AIEnrichment, Bookmark, LocalPendingBookmark } from '@/domain/types';
 import type { BookmarkRepository, TagData } from '@/storage/types';
 
@@ -110,6 +111,14 @@ export function createFakeRepositoryModule(): FakeRepositoryModule {
     },
     deleteBookmark: async (id) => {
       bookmarks = bookmarks.filter((b) => b.id !== id);
+    },
+    repairStalledCollectionRlsEntries: async () => {
+      const { repairedEntries, repairedBookmarks } = planCollectionRlsRepair(bookmarks, queue);
+      const bookmarkUpdates = new Map(repairedBookmarks.map((row) => [row.id, row]));
+      const queueUpdates = new Map(repairedEntries.map((row) => [row.local_id, row]));
+      bookmarks = bookmarks.map((row) => bookmarkUpdates.get(row.id) ?? row);
+      queue = queue.map((row) => queueUpdates.get(row.local_id) ?? row);
+      return repairedEntries.length;
     },
     listQueue: async () => [...queue],
     enqueue: async (entry) => {

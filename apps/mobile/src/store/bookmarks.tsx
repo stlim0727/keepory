@@ -1839,7 +1839,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     async (currentUser: {
       id: string;
       isAnonymous: boolean;
-    }): Promise<boolean> => {
+    }): Promise<boolean> => serializeTagWork(async () => {
       try {
         const previousOwner = await readCacheOwner(repository);
         if (authRef.current.userId !== currentUser.id) return false;
@@ -1848,7 +1848,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
         const transferCount = !currentUser.isAnonymous && (previousOwner?.isAnonymous || !previousOwner)
           ? localRows.filter((row) => !isBookmarkSyncedOnce(row) || (previousOwner?.isAnonymous && hasRemoteIdentity(row.id))).length
           : 0;
-        await serializeTagWork(() => applyAccountTransition(
+        await applyAccountTransition(
           plan,
           repository,
           setBookmarks,
@@ -1905,7 +1905,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
               aiDispatchEpoch.current += 1;
             },
           },
-        ));
+        );
         // Publish the reconciled snapshot before allowing account-owned rows
         // through the UI. A failed or stale reconciliation never reveals them.
         const reconciledRows = await repository.listBookmarks();
@@ -1966,7 +1966,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
         }
         return false;
       }
-    },
+    }),
     [
       applyPendingImportCollections,
       applyPendingEnrichmentRestores,
@@ -2630,11 +2630,16 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     // to fire (there's a real gap here: no session at all until the lazy
     // mint below completes).
     setAiServerQueueSnapshot(null);
-    void (async () => {
+    // Snapshot the departing account now: captures added while serialized
+    // work is waiting belong to the next session and must never enter this plan.
+    const plan = planLogoutCacheClear(bookmarksRef.current ?? []);
+    // Keep the cache drop and its metadata reset in the same serialized work
+    // as account reconciliation. A lazily minted guest must claim ownership
+    // only after logout finishes, never before a late logout reset.
+    void serializeTagWork(async () => {
       try {
         await ensureRepositoryReady();
-        const plan = planLogoutCacheClear(bookmarksRef.current ?? []);
-        await serializeTagWork(() => applyAccountTransition(
+        await applyAccountTransition(
           plan,
           repository,
           setBookmarks,
@@ -2691,7 +2696,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
               aiDispatchEpoch.current += 1;
             },
           },
-        ));
+        );
         // Reset the synced-user meta + watermark so the next session does a full
         // refresh (planAccountTransition + pullRemoteChanges read these). Empty
         // strings read back as falsy/null in both call sites.
@@ -2703,7 +2708,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         logStorageError("logout cache clear", error);
       }
-    })();
+    });
   }, [
     auth.status,
     bookmarks,
@@ -2711,6 +2716,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     applyPendingEnrichmentRestores,
     applyTagOps,
     applyTagData,
+    serializeTagWork,
   ]);
 
   // Everything the Settings screen shows about background work — the

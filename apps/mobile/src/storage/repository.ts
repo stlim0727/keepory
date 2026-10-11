@@ -1,3 +1,4 @@
+import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/domain/collection-rls-repair';
 import type { AIEnrichment, Bookmark, LocalPendingBookmark, SyncChange } from '@/domain/types';
 import type {
   BookmarkRepository,
@@ -20,6 +21,7 @@ const META_KEY = 'stash.meta';
 const ENRICHMENTS_KEY = 'stash.enrichments';
 const TAG_DATA_KEY = 'stash.tagData';
 const IDENTITY_REKEY_COMMIT_KEY = 'stash.identityRekeyCommit';
+const COLLECTION_REPAIR_KEY = 'stash.collectionRepairPending';
 
 const EMPTY_TAG_DATA: TagData = { tags: [], bookmarkTags: [], collections: [] };
 
@@ -90,6 +92,10 @@ class WebBookmarkRepository implements BookmarkRepository {
       this.write(META_KEY, this.meta);
       this.write(TAG_DATA_KEY, this.tagData);
       localStorage.removeItem(IDENTITY_REKEY_COMMIT_KEY);
+    }
+    if (this.read<boolean>(COLLECTION_REPAIR_KEY, false)) {
+      // Replay against freshly loaded rows, never snapshots of unrelated state.
+      await this.repairStalledCollectionRlsEntries();
     }
     if (!seeded) {
       this.bookmarks = [...seed];
@@ -278,6 +284,31 @@ class WebBookmarkRepository implements BookmarkRepository {
     const idSet = new Set(ids);
     this.bookmarks = this.bookmarks.filter((existing) => !idSet.has(existing.id));
     this.write(BOOKMARKS_KEY, this.bookmarks);
+  }
+
+  async repairStalledCollectionRlsEntries(): Promise<number> {
+    // No await between reading the current rows and committing their repair:
+    // concurrent edits and deletions cannot be overwritten by stale snapshots.
+    const { repairedEntries, repairedBookmarks } = planCollectionRlsRepair(this.bookmarks, this.queue);
+    if (repairedEntries.length === 0) {
+      if (storageAvailable()) localStorage.removeItem(COLLECTION_REPAIR_KEY);
+      return 0;
+    }
+    const bookmarkUpdates = new Map(repairedBookmarks.map((row) => [row.id, row]));
+    const queueUpdates = new Map(repairedEntries.map((row) => [row.local_id, row]));
+    // Replay against current rows rather than snapshots of later edits or
+    // unrelated metadata and organization state after interrupted persistence.
+    this.write(COLLECTION_REPAIR_KEY, true);
+    const nextBookmarks = this.bookmarks.map((row) => bookmarkUpdates.get(row.id) ?? row);
+    const nextQueue = this.queue.map((row) => queueUpdates.get(row.local_id) ?? row);
+    this.write(BOOKMARKS_KEY, nextBookmarks);
+    this.write(QUEUE_KEY, nextQueue);
+    // Publish only after both writes succeed, so immediate retries still see
+    // the failed repair and cannot drop its marker before fixing the queue.
+    this.bookmarks = nextBookmarks;
+    this.queue = nextQueue;
+    if (storageAvailable()) localStorage.removeItem(COLLECTION_REPAIR_KEY);
+    return repairedEntries.length;
   }
 
   async listQueue(): Promise<LocalPendingBookmark[]> {

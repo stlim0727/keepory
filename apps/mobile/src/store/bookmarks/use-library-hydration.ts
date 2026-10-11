@@ -27,7 +27,6 @@ import type {
   SyncChangeSource
 } from "@/domain/types";
 import { recordLog } from "@/observability/log-buffer";
-import { repairStalledCollectionRlsEntries } from "@/sync/account-transition";
 import { armHydrationWatchdog } from "@/observability/hydration-watchdog";
 import { repository } from "@/storage/repository";
 import type {
@@ -125,6 +124,11 @@ export function useLibraryHydration({
         try {
           phase = `attempt ${attempt}: opening`;
           await ensureRepositoryReady();
+          // Complete atomic recovery before taking the hydration snapshot.
+          // Even a no-op repair can wait behind a capture/edit/deletion.
+          phase = `attempt ${attempt}: repairing`;
+          const repairedCount = await repository.repairStalledCollectionRlsEntries();
+          if (cancelled) return;
           phase = `attempt ${attempt}: reading`;
           const readAllMeta = async (): Promise<Record<string, string | null>> => {
             if (typeof repository.getAllMeta === "function") {
@@ -364,26 +368,10 @@ export function useLibraryHydration({
             // STASH-7M: Self-heal queue entries and bookmarks stalled on PostgreSQL
             // RLS errors (HTTP 403 / permission) due to unowned collection IDs from
             // an account transition.
-            let initialBookmarks = sanitizedBookmarks;
-            let initialQueue = storedQueue;
-            const { repairedEntries, repairedBookmarks } = repairStalledCollectionRlsEntries(
-              initialBookmarks,
-              initialQueue,
-            );
-            if (repairedEntries.length > 0 || repairedBookmarks.length > 0) {
-              const repairedEntryMap = new Map(repairedEntries.map((e) => [e.local_id, e]));
-              const repairedBookmarkMap = new Map(repairedBookmarks.map((b) => [b.id, b]));
-              initialQueue = initialQueue.map((e) => repairedEntryMap.get(e.local_id) ?? e);
-              initialBookmarks = initialBookmarks.map((b) => repairedBookmarkMap.get(b.id) ?? b);
-              recordLog('warn', `sync: self-healed ${repairedEntries.length} stalled collection RLS queue entries`);
-              (async () => {
-                for (const b of repairedBookmarks) {
-                  await repository.updateBookmark(b);
-                }
-                for (const e of repairedEntries) {
-                  await repository.updateQueueEntry(e);
-                }
-              })().catch((error) => logStorageError("stalled collection RLS repair", error));
+            const initialBookmarks = sanitizedBookmarks;
+            const initialQueue = storedQueue;
+            if (repairedCount > 0) {
+              recordLog('warn', `sync: self-healed ${repairedCount} stalled collection RLS queue entries`);
             }
 
             // Merge instead of replace: saves made while loading must survive.

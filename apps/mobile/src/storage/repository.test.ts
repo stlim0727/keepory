@@ -341,3 +341,84 @@ test('getAllMeta returns all stored key/value pairs in a single batch read', asy
   assert.equal(all['batch_key_1'], 'val_1');
   assert.equal(all['batch_key_2'], 'val_2');
 });
+
+function rehomeFailure(id: string) {
+  return {
+    local_id: id, remote_id: null, operation: 'create' as const,
+    payload: { title: 'latest title', collection_id: 'guest-collection' },
+    sync_status: 'failed' as const, retry_count: 7,
+    last_error: 'new row violates row-level security policy', last_error_kind: 'permission' as const,
+    created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:01:00Z',
+    changes: [{ source: 'account_rehome' as const, fields: ['user_id'], at: '2026-10-01T10:00:00Z' }],
+  };
+}
+
+test('collection repair preserves current edits, unrelated permissions, and removed rows', async () => {
+  await repository.init([]);
+  const target = { ...makeBookmark('rehome'), collection_id: 'guest-collection', sync_status: 'failed' as const };
+  await repository.insertBookmark(target);
+  await repository.enqueue(rehomeFailure(target.id));
+  await repository.updateBookmark({ ...target, title: 'latest local edit', notes: 'keep this' });
+  const ordinary = { ...makeBookmark('ordinary'), collection_id: 'owned-collection' };
+  await repository.insertBookmark(ordinary);
+  const ordinaryQueue = { ...rehomeFailure(ordinary.id), changes: [], payload: { collection_id: ordinary.collection_id } };
+  await repository.enqueue(ordinaryQueue);
+  await repository.insertBookmark(makeBookmark('removed'));
+  await repository.enqueue(rehomeFailure('removed'));
+  await repository.deleteBookmark('removed');
+  await repository.removeQueueEntry('removed');
+  assert.equal(await repository.repairStalledCollectionRlsEntries(), 1);
+  await repository.init([]);
+  const stored = await repository.getBookmark(target.id);
+  assert.equal(stored?.title, 'latest local edit');
+  assert.equal(stored?.notes, 'keep this');
+  assert.equal(stored?.collection_id, null);
+  assert.equal(stored?.sync_status, 'pending');
+  assert.deepEqual(await repository.getBookmark(ordinary.id), ordinary);
+  assert.equal(await repository.getBookmark('removed'), null);
+  const queue = await repository.listQueue();
+  assert.deepEqual(queue.find((entry) => entry.local_id === ordinary.id), ordinaryQueue);
+  assert.equal(queue.find((entry) => entry.local_id === target.id)?.payload.title, 'latest title');
+  assert.equal(queue.find((entry) => entry.local_id === target.id)?.last_error, null);
+  assert.equal(await repository.repairStalledCollectionRlsEntries(), 0);
+});
+
+test('interrupted web collection repair replays current rows without overwriting later state', async () => {
+  await repository.init([]);
+  const target = { ...makeBookmark('rehome'), collection_id: 'guest-collection', sync_status: 'failed' as const };
+  await repository.insertBookmark(target);
+  await repository.enqueue(rehomeFailure(target.id));
+  memoryStorage.failNextWriteTo = 'stash.queue';
+  await assert.rejects(repository.repairStalledCollectionRlsEntries(), /injected write failure/);
+  assert.notEqual(memoryStorage.getItem('stash.collectionRepairPending'), null);
+  await repository.setMeta('latest-key', 'latest-value');
+  const latestTags = { tags: [], bookmarkTags: [], collections: [] };
+  await repository.replaceTagData(latestTags);
+  await repository.updateBookmark({ ...target, title: 'edited after interruption', collection_id: null });
+  await repository.init([]);
+  assert.equal(await repository.getMeta('latest-key'), 'latest-value');
+  assert.deepEqual(await repository.listTagData(), latestTags);
+  assert.equal((await repository.getBookmark(target.id))?.title, 'edited after interruption');
+  assert.equal((await repository.getBookmark(target.id))?.collection_id, null);
+  const [entry] = await repository.listQueue();
+  assert.equal(entry.sync_status, 'pending');
+  assert.equal(entry.payload.collection_id, undefined);
+  assert.equal(memoryStorage.getItem('stash.collectionRepairPending'), null);
+});
+
+
+test('immediate retry after an interrupted collection repair commits the durable queue before clearing its marker', async () => {
+  await repository.init([]);
+  const target = { ...makeBookmark('retry-rehome'), collection_id: 'guest-collection', sync_status: 'failed' as const };
+  await repository.insertBookmark(target);
+  await repository.enqueue(rehomeFailure(target.id));
+  memoryStorage.failNextWriteTo = 'stash.queue';
+  await assert.rejects(repository.repairStalledCollectionRlsEntries(), /injected write failure/);
+  assert.notEqual(memoryStorage.getItem('stash.collectionRepairPending'), null);
+  assert.equal((JSON.parse(memoryStorage.getItem('stash.queue')!) as Array<{ sync_status: string }>)[0].sync_status, 'failed');
+  assert.equal(await repository.repairStalledCollectionRlsEntries(), 1);
+  const [durableEntry] = JSON.parse(memoryStorage.getItem('stash.queue')!);
+  assert.equal(durableEntry.sync_status, 'pending');
+  assert.equal(durableEntry.payload.collection_id, undefined);
+  assert.equal(memoryStorage.getItem('stash.collectionRepairPending'), null);
+});

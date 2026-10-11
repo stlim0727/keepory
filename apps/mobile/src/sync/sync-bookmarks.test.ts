@@ -87,6 +87,7 @@ function fakeRepository(storedQueue: LocalPendingBookmark[] = []) {
     deleteBookmark: async (id) => {
       calls.push(`deleteBookmark:${id}`);
     },
+    repairStalledCollectionRlsEntries: async () => 0,
     listQueue: async () => storedQueue,
     enqueue: async (entry) => {
       calls.push(`enqueue:${entry.local_id}`);
@@ -612,6 +613,7 @@ test('create: an image upload persists the FRESHEST row, not a stale pre-upload 
     },
     replaceBookmark: async () => {},
     deleteBookmark: async () => {},
+    repairStalledCollectionRlsEntries: async () => 0,
     listQueue: async () => [],
     enqueue: async () => {},
     updateQueueEntry: async () => {},

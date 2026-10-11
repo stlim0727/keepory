@@ -210,6 +210,110 @@ test('a save after logout lazily mints an anonymous session via the sync path', 
   await waitFor(() => expect(authMock.__ensureCalls()).toBeGreaterThan(callsBeforeSave));
 });
 
+test('a delayed logout completes before lazy guest ownership and preserves its capture at the next login', async () => {
+  const { result, rerender } = await renderHook(() => useBookmarks(), { wrapper });
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await waitFor(() => expect(result.current.isSyncing).toBe(false));
+
+  let releaseDelete!: () => void;
+  const deleteGate = new Promise<void>((resolve) => { releaseDelete = resolve; });
+  const deleteBookmark = fakeRepo.repository.deleteBookmark;
+  const delayedDelete = jest.spyOn(fakeRepo.repository, 'deleteBookmark').mockImplementation(async (id) => {
+    await deleteGate;
+    return deleteBookmark(id);
+  });
+  authMock.__setAuth({ status: 'signed_out', session: null, userId: null });
+  await act(async () => { rerender(undefined); });
+  await waitFor(() => expect(delayedDelete).toHaveBeenCalledWith(REMOTE_ID));
+
+  const guestUrl = 'https://example.com/during-logout';
+  const callsBeforeSave = authMock.__ensureCalls();
+  authMock.__onEnsure(() => {
+    authMock.__setAuth({ status: 'anonymous', session: lazyAnonSession, userId: 'lazy-anon-user' });
+  });
+  try {
+    await act(async () => { result.current.addBookmark({ url: guestUrl }); });
+    await waitFor(() => expect(authMock.__ensureCalls()).toBeGreaterThan(callsBeforeSave));
+    await act(async () => { rerender(undefined); });
+    expect(fakeRepo.__bookmarks().some((row) => row.url === guestUrl)).toBe(true);
+    // The new session cannot publish ownership or upload ahead of logout's
+    // delayed transition and metadata reset.
+    expect(fakeRepo.__meta(CACHE_OWNER_KEY)).toBe(JSON.stringify({ id: 'real-user', isAnonymous: false }));
+    await act(async () => { releaseDelete(); });
+    await waitFor(() => expect(fakeRepo.__meta(CACHE_OWNER_KEY)).toBe(JSON.stringify({ id: 'lazy-anon-user', isAnonymous: true })));
+    await waitFor(() => expect(fakeRepo.__bookmarks().some((row) => row.url === guestUrl && row.sync_status === 'synced')).toBe(true));
+    await waitFor(() => expect(result.current.isSyncing).toBe(false));
+
+    authMock.__onEnsure(() => {});
+    apiMock.__setCreateBookmarkHangs(true);
+    apiMock.__setRemote([]);
+    const nextSession = { ...realSession, user: { ...realSession.user, id: 'different-real-user' } };
+    authMock.__setAuth({ status: 'authenticated', session: nextSession, userId: nextSession.user.id });
+    await act(async () => { rerender(undefined); });
+    await waitFor(() => expect(result.current.accountTransferCount).toBe(1));
+    expect(fakeRepo.__bookmarks().some((row) => row.url === guestUrl)).toBe(true);
+    expect(fakeRepo.__queue().some((entry) => entry.operation === 'create' && entry.payload.url === guestUrl)).toBe(true);
+  } finally {
+    releaseDelete();
+    delayedDelete.mockRestore();
+  }
+});
+
+test('logout queued behind reconciliation does not clear the next guest capture', async () => {
+  const { result, rerender } = await renderHook(() => useBookmarks(), { wrapper });
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await waitFor(() => expect(result.current.isSyncing).toBe(false));
+
+  let releaseDelete!: () => void;
+  const deleteGate = new Promise<void>((resolve) => { releaseDelete = resolve; });
+  const getMeta = fakeRepo.repository.getMeta;
+  let readStarted = false;
+  const delayedDelete = jest.spyOn(fakeRepo.repository, 'getMeta').mockImplementation(async (key) => {
+    if (key === CACHE_OWNER_KEY && !readStarted) {
+      readStarted = true;
+      await deleteGate;
+    }
+    return getMeta(key);
+  });
+  let syncPass!: Promise<boolean>;
+  await act(async () => { syncPass = result.current.syncNow(); });
+  await waitFor(() => expect(readStarted).toBe(true));
+  authMock.__setAuth({ status: 'signed_out', session: null, userId: null });
+  await act(async () => { rerender(undefined); });
+
+  const guestUrl = 'https://example.com/during-logout';
+  const callsBeforeSave = authMock.__ensureCalls();
+  authMock.__onEnsure(() => {
+    authMock.__setAuth({ status: 'anonymous', session: lazyAnonSession, userId: 'lazy-anon-user' });
+  });
+  try {
+    await act(async () => { result.current.addBookmark({ url: guestUrl }); });
+    await waitFor(() => expect(authMock.__ensureCalls()).toBeGreaterThan(callsBeforeSave));
+    await act(async () => { rerender(undefined); });
+    expect(fakeRepo.__bookmarks().some((row) => row.url === guestUrl)).toBe(true);
+    // The new session cannot publish ownership or upload ahead of logout's
+    // delayed transition and metadata reset.
+    expect(fakeRepo.__meta(CACHE_OWNER_KEY)).toBe(JSON.stringify({ id: 'real-user', isAnonymous: false }));
+    await act(async () => { releaseDelete(); await syncPass; });
+    await waitFor(() => expect(fakeRepo.__meta(CACHE_OWNER_KEY)).toBe(JSON.stringify({ id: 'lazy-anon-user', isAnonymous: true })));
+    await waitFor(() => expect(fakeRepo.__bookmarks().some((row) => row.url === guestUrl && row.sync_status === 'synced')).toBe(true));
+    await waitFor(() => expect(result.current.isSyncing).toBe(false));
+
+    authMock.__onEnsure(() => {});
+    apiMock.__setCreateBookmarkHangs(true);
+    apiMock.__setRemote([]);
+    const nextSession = { ...realSession, user: { ...realSession.user, id: 'different-real-user' } };
+    authMock.__setAuth({ status: 'authenticated', session: nextSession, userId: nextSession.user.id });
+    await act(async () => { rerender(undefined); });
+    await waitFor(() => expect(result.current.accountTransferCount).toBe(1));
+    expect(fakeRepo.__bookmarks().some((row) => row.url === guestUrl)).toBe(true);
+    expect(fakeRepo.__queue().some((entry) => entry.operation === 'create' && entry.payload.url === guestUrl)).toBe(true);
+  } finally {
+    releaseDelete();
+    delayedDelete.mockRestore();
+  }
+});
+
 test('a cloud-confirmed guest capture after logout transfers to a different real account', async () => {
   const { result, rerender } = await renderHook(() => useBookmarks(), { wrapper });
   await waitFor(() => expect(result.current.isLoading).toBe(false));

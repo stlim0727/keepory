@@ -78,6 +78,7 @@ function fakeRepository(meta: Record<string, string> = {}, options: { batched?: 
     deleteBookmark: async (id) => {
       calls.push(`deleteBookmark:${id}`);
     },
+    repairStalledCollectionRlsEntries: async () => 0,
     listQueue: async () => [],
     enqueue: async () => {},
     updateQueueEntry: async () => {},

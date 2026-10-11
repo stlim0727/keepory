@@ -542,6 +542,7 @@ function fakeRepository(): BookmarkRepository {
     updateBookmark: async () => {},
     replaceBookmark: async () => {},
     deleteBookmark: async () => {},
+    repairStalledCollectionRlsEntries: async () => 0,
     listQueue: async () => [],
     enqueue: async () => {},
     updateQueueEntry: async () => {},
@@ -814,7 +815,6 @@ test('applyAccountTransition does not exclude a non-image single-row rehome outs
   assert.equal(getSyncStatusDiagnostics()!.syncedWithoutFailure, 1);
 });
 
-
 test('anonymous rows with pending or failed edits and deletes are carried over with latest content', () => {
   for (const sync_status of ['pending', 'failed'] as const) {
     const edited = bookmark({ sync_status, ever_synced: true, notes: 'Latest local note' });
@@ -824,7 +824,6 @@ test('anonymous rows with pending or failed edits and deletes are carried over w
     assert.deepEqual(plan.drop, []);
   }
 });
-
 
 test('cleared cache owner overrides stale legacy ownership after interrupted logout', async () => {
   const metadata = new Map([
@@ -938,4 +937,89 @@ test('repairStalledCollectionRlsEntries repairs queue entries and local bookmark
   assert.equal(repairedBookmarks[0].id, 'b-stuck');
   assert.equal(repairedBookmarks[0].collection_id, null);
   assert.equal(repairedBookmarks[0].sync_status, 'pending');
+});
+
+test('collection repair preserves ordinary permission failures and valid collection assignments', () => {
+  for (const operation of ['create', 'update'] as const) {
+    for (const last_error of [
+      'Forbidden: HTTP 403',
+      'new row violates row-level security policy for table "bookmarks"',
+    ]) {
+      for (const includePayloadCollection of [true, false]) {
+        const row = bookmark({
+          id: 'ordinary-bookmark',
+          collection_id: 'valid-owned-collection',
+          sync_status: 'failed',
+        });
+        const entry: LocalPendingBookmark = {
+          local_id: row.id,
+          remote_id: operation === 'update' ? row.id : null,
+          operation,
+          changes: [{ source: 'capture', fields: [], at: row.updated_at }],
+          payload: {
+            title: 'User edit',
+            ...(includePayloadCollection ? { collection_id: row.collection_id } : {}),
+          },
+          sync_status: 'failed',
+          retry_count: 3,
+          last_error,
+          last_error_kind: 'permission',
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+        const originalRow = structuredClone(row);
+        const originalEntry = structuredClone(entry);
+
+        assert.deepEqual(repairStalledCollectionRlsEntries([row], [entry]), {
+          repairedEntries: [],
+          repairedBookmarks: [],
+        });
+        assert.deepEqual(row, originalRow);
+        assert.deepEqual(entry, originalEntry);
+      }
+    }
+  }
+});
+
+test('collection repair preserves rehome recovery when only the local row retains the collection', () => {
+  const row = bookmark({
+    id: 'rehomed-bookmark',
+    collection_id: 'previous-account-collection',
+    sync_status: 'failed',
+  });
+  const entry: LocalPendingBookmark = {
+    local_id: row.id,
+    remote_id: null,
+    operation: 'create',
+    changes: [{ source: 'account_rehome', fields: [], at: row.updated_at }],
+    payload: { url: row.url ?? undefined },
+    sync_status: 'failed',
+    retry_count: 3,
+    last_error: 'new row violates row-level security policy for table "bookmarks"',
+    last_error_kind: 'permission',
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+
+  const repaired = repairStalledCollectionRlsEntries([row], [entry]);
+  assert.equal(repaired.repairedEntries.length, 1);
+  assert.equal(repaired.repairedEntries[0].sync_status, 'pending');
+  assert.equal(repaired.repairedEntries[0].last_error_kind, null);
+  assert.equal(repaired.repairedEntries[0].retry_count, 0);
+  assert.equal(repaired.repairedBookmarks.length, 1);
+  assert.equal(repaired.repairedBookmarks[0].collection_id, null);
+  assert.equal(repaired.repairedBookmarks[0].sync_status, 'pending');
+});
+
+test('an already repaired rehome cannot reset a later unrelated permission failure', () => {
+  const row = bookmark({ collection_id: null, sync_status: 'failed' });
+  const entry: LocalPendingBookmark = {
+    local_id: row.id, remote_id: null, operation: 'create', payload: {},
+    changes: [{ source: 'account_rehome', fields: [], at: row.updated_at }],
+    sync_status: 'failed', retry_count: 5, last_error: 'row-level security policy denied insert',
+    last_error_kind: 'permission', created_at: row.created_at, updated_at: row.updated_at,
+  };
+  assert.deepEqual(repairStalledCollectionRlsEntries([row], [entry]), {
+    repairedEntries: [], repairedBookmarks: [],
+  });
 });

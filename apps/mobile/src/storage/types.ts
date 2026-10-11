@@ -108,6 +108,12 @@ export interface BookmarkRepository {
   upsertBookmarks?(bookmarks: Bookmark[]): Promise<void>;
   /** Same batching rationale as {@link upsertBookmarks}, for deletions. */
   deleteBookmarks?(ids: string[]): Promise<void>;
+  /**
+   * Repair eligible account-rehomed collection failures against current durable
+   * rows atomically. Never accepts a caller snapshot or recreates removed rows.
+   * Returns the number of repaired queue entries; rejects if persistence fails.
+   */
+  repairStalledCollectionRlsEntries(): Promise<number>;
   listQueue(): Promise<LocalPendingBookmark[]>;
   enqueue(entry: LocalPendingBookmark): Promise<void>;
   updateQueueEntry(entry: LocalPendingBookmark): Promise<void>;
