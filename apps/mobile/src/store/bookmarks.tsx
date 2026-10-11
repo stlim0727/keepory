@@ -2632,13 +2632,22 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     setAiServerQueueSnapshot(null);
     // Snapshot the departing account now: captures added while serialized
     // work is waiting belong to the next session and must never enter this plan.
-    const plan = planLogoutCacheClear(bookmarksRef.current ?? []);
+    const departingPlan = planLogoutCacheClear(bookmarksRef.current ?? []);
+    const rehomeIds = new Set(departingPlan.rehome.map((row) => row.id));
+    departingPlan.rehome = [];
     // Keep the cache drop and its metadata reset in the same serialized work
     // as account reconciliation. A lazily minted guest must claim ownership
     // only after logout finishes, never before a late logout reset.
     void serializeTagWork(async () => {
       try {
         await ensureRepositoryReady();
+        // Keep only the departing identities, but refresh surviving rows after
+        // the wait so edits are retained and deleted captures stay deleted.
+        const currentRows = await repository.listBookmarks();
+        const plan = {
+          ...departingPlan,
+          rehome: currentRows.filter((row) => rehomeIds.has(row.id)),
+        };
         await applyAccountTransition(
           plan,
           repository,

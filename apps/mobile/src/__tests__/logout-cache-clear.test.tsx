@@ -428,6 +428,60 @@ test('logout drops a pending EDIT to a synced row AND its update queue entry, pr
 
 const STALE_IMAGE_ID = 'stale-image-not-yet-confirmed';
 
+test('queued logout rehomes the latest image title and notes instead of its departing snapshot', async () => {
+  fakeRepo.__reset([makeStoredBookmark({
+    id: STALE_IMAGE_ID,
+    url: null,
+    url_hash: null,
+    content_type: 'image',
+    title: 'Original image title',
+    notes: 'Original image notes',
+    preview_image_url: 'https://storage.example.com/bookmark-images/real-user/' + STALE_IMAGE_ID,
+    local_image_uri: 'file:///stash-images/shared.jpg',
+    sync_status: 'failed',
+    ever_synced: undefined,
+  })]);
+  fakeRepo.__setMeta(CACHE_OWNER_KEY, JSON.stringify({ id: 'real-user', isAnonymous: false }));
+  fakeRepo.__setMeta(SYNCED_USER_ID_KEY, 'real-user');
+  apiMock.__setRemote([]);
+  apiMock.__setCreateBookmarkHangs(true);
+
+  let releaseRead!: () => void;
+  const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+  const getMeta = fakeRepo.repository.getMeta;
+  let readStarted = false;
+  const delayedRead = jest.spyOn(fakeRepo.repository, 'getMeta').mockImplementation(async (key) => {
+    if (key === CACHE_OWNER_KEY && !readStarted) {
+      readStarted = true;
+      await readGate;
+    }
+    return getMeta(key);
+  });
+  try {
+    const { result, rerender } = await renderHook(() => useBookmarks(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => expect(readStarted).toBe(true));
+    authMock.__setAuth({ status: 'signed_out', session: null, userId: null });
+    await act(async () => { rerender(undefined); });
+    await act(async () => {
+      result.current.updateBookmarkFields(STALE_IMAGE_ID, { title: 'Edited while waiting', notes: 'Keep these new notes' });
+    });
+    await waitFor(() => expect(fakeRepo.__bookmarks()[0]?.title).toBe('Edited while waiting'));
+    await act(async () => { releaseRead(); });
+    await waitFor(() => expect(fakeRepo.__bookmarks()[0]?.id).not.toBe(STALE_IMAGE_ID));
+    const rehomed = fakeRepo.__bookmarks()[0]!;
+    expect(rehomed.title).toBe('Edited while waiting');
+    expect(rehomed.notes).toBe('Keep these new notes');
+    expect(result.current.inbox[0]?.title).toBe('Edited while waiting');
+    const create = fakeRepo.__queue().find((entry) => entry.local_id === rehomed.id && entry.operation === 'create');
+    expect(create?.payload.title).toBe('Edited while waiting');
+    expect(create?.payload.notes).toBe('Keep these new notes');
+  } finally {
+    releaseRead();
+    delayedRead.mockRestore();
+  }
+});
+
 test('logout rehomes an unconfirmed-but-uploaded image row AND re-keys its pending tag op onto the new id (P1, round 8)', async () => {
   // A local-only image row (its upload landed but createBookmark never
   // confirmed — content_type: image, preview_image_url set, ever_synced

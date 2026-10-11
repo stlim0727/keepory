@@ -78,7 +78,8 @@ fallback and still controls remote pull progress; it is not the upload ownership
 checkpoint. Logout clears both forms; a library reset clears repository metadata.
 An ownership write failure stops upload and leaves local captures intact.
 
-Logout snapshots the departing rows before waiting for storage, and serializes
+Logout snapshots the departing IDs before waiting for storage, refreshes any
+surviving rehome rows afterward to retain edits, and serializes
 its cache clear and metadata reset with the next account's ownership
 reconciliation. A guest session created by an immediate capture must claim its
 owner marker after logout completes, so a late reset cannot erase that marker.
