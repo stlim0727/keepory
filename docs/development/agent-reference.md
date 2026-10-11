@@ -67,9 +67,10 @@ do. This file, `CLAUDE.md`, `docs/`, `.claude/skills` mirrored as
 
 ## Project Snapshot
 
-Stash is an Expo SDK 56 bookmark app in `apps/mobile`, using TypeScript,
+Stash is an Expo bookmark app in `apps/mobile`, using TypeScript,
 expo-router, local-first storage, Supabase sync, and Cloudflare Workers static
-web hosting.
+web hosting. Current Expo and React Native versions are pinned in the
+[mobile package manifest](../../apps/mobile/package.json).
 
 All milestones M0-M10 in `docs/development/milestones.md` are implemented, and
 the repo has substantial post-MVP work beyond that list. Treat milestone merge
