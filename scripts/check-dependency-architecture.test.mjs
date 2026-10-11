@@ -176,3 +176,34 @@ test('uses project aliases, preferring specific mappings over the general alias'
     assert.ok(dep.resolved.endsWith('/storage/types.ts'));
   });
 });
+
+test('domain boundary allowlist rejects support layers but permits explicit contracts', async () => {
+  await fixture({
+    'domain/analytics.ts': "import '@/analytics/tracker';",
+    'domain/analytics-full.ts': "import '@/analytics-full/tracker';",
+    'domain/hooks.ts': "import '@/hooks/use-network';",
+    'domain/notifications.ts': "import '@/notifications/push';",
+    'domain/observability-bad.ts': "import '@/observability/sentry';",
+    'domain/observability-good.ts': "import { recordLog } from '@/observability/log-buffer';",
+    'domain/i18n-good.ts': "import type { MessageKey } from '@/i18n/messages';",
+    'analytics/tracker.ts': 'export const track = () => {};',
+    'analytics-full/tracker.ts': 'export const trackFull = () => {};',
+    'hooks/use-network.ts': 'export const useNetwork = () => {};',
+    'notifications/push.ts': 'export const push = () => {};',
+    'observability/sentry.ts': 'export const sentry = () => {};',
+    'observability/log-buffer.ts': 'export const recordLog = () => {};',
+    'i18n/messages.ts': 'export type MessageKey = string;',
+  }, async (scan) => {
+    const result = await scan();
+    const domainViolations = result.summary.violations.filter((v) => v.rule.name === 'domain-is-independent');
+    assert.equal(domainViolations.length, 5);
+    const violatingFiles = domainViolations.map((v) => v.from).sort();
+    assert.ok(violatingFiles.some((f) => f.endsWith('analytics.ts')));
+    assert.ok(violatingFiles.some((f) => f.endsWith('analytics-full.ts')));
+    assert.ok(violatingFiles.some((f) => f.endsWith('hooks.ts')));
+    assert.ok(violatingFiles.some((f) => f.endsWith('notifications.ts')));
+    assert.ok(violatingFiles.some((f) => f.endsWith('observability-bad.ts')));
+    assert.ok(!violatingFiles.some((f) => f.endsWith('observability-good.ts')));
+    assert.ok(!violatingFiles.some((f) => f.endsWith('i18n-good.ts')));
+  });
+});

@@ -16,7 +16,14 @@ export function architectureConfig(platform, { sourceRoot = 'apps/mobile/src', r
   const forbidden = runtimeOnly ? [{
     name: 'no-runtime-cycles', severity: 'error', from: { path: `^${escapedRoot}/` }, to: { circular: true },
   }] : [
-    boundary('domain-is-independent', 'domain', '(store|features|app|sync|api|ui|supabase|share)'),
+    {
+      name: 'domain-is-independent', severity: 'error',
+      from: { path: layer('domain') },
+      to: {
+        path: `^${escapedRoot}/`,
+        pathNot: `^${escapedRoot}/(domain/|storage/|i18n/messages\\.ts$|observability/log-buffer\\.ts$)`,
+      },
+    },
     boundary('domain-storage-contract-only', 'domain', 'storage', { pathNot: `^${escapedRoot}/storage/types\\.ts$` }),
     {
       name: 'features-do-not-import-routes', severity: 'error',

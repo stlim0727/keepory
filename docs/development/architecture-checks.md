@@ -7,8 +7,10 @@ platform selection, reporting, and the existing-violation baseline.
 
 ## What blocks CI
 
-- Domain imports of routes, UI, features, store, sync, API, Supabase, or share.
-  Storage dependencies are restricted to `storage/types.ts`.
+- Domain imports of non-domain modules, including routes, UI, features, store,
+  sync, API, Supabase, share, analytics, hooks, notifications, or general observability.
+  Allowed internal contracts are restricted to `storage/types.ts` (storage types),
+  `i18n/messages.ts` (message keys), and `observability/log-buffer.ts` (diagnostic log buffer).
 - Feature imports of routes, except the exact existing desktop inline detail
   edge from `InboxItemRenderer.tsx` to `app/bookmark/[id].tsx`.
 - Storage imports of store, features, routes, sync, or share.
@@ -36,20 +38,14 @@ Runtime graphs strip type imports before cycle detection: a cycle between type
 contracts alone is not a runtime initialization cycle. Generic files are also
 scanned as entry points, even when a platform variant shadows them.
 
-## Existing violation and PR 926
+## Existing violations and baseline
 
-This PR works independently of #926. Main currently has one runtime cycle on
-both native platforms: `storage/sqlite-directory-expo.ts` imports the basename
-`storage/sqlite-directory`, which resolves to `sqlite-directory.native.ts`,
-which imports `sqlite-directory-expo.ts` again. #926 already renames the native
-wrapper to fix this; this PR does not duplicate that application change.
-
-`scripts/dependency-architecture-baseline.json` records that exact cycle using
-dependency-cruiser's baseline format, including its rule, edge, and cycle path.
-Known violations remain visible with `ignore` severity and a count in the CI
-summary; new violations fail. Do not regenerate the baseline to make CI green.
-After #926 merges, remove this entry once all three platform checks pass without
-it. Fixture tests verify that a baseline cannot hide a different cycle.
+With #926 merged into main, the native sqlite-directory cycle is resolved and
+`scripts/dependency-architecture-baseline.json` is empty (`[]`). The baseline
+mechanism remains in place: any entry in the baseline is tracked with `ignore`
+severity and recorded in the CI summary, while any new violations fail. Do not
+add entries to the baseline to make CI green. Fixture tests verify that a
+baseline cannot hide a different cycle.
 
 The checks from #926 can coexist under their separate command names. After both
 PRs merge, migrate any remaining desired architecture policies explicitly before
