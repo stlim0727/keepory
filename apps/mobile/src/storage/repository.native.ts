@@ -1,5 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
+import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/domain/collection-rls-repair';
+
 import type { AIEnrichment, Bookmark, LocalPendingBookmark, SyncChange } from '@/domain/types';
 import { parseSyncChanges } from '@/domain/sync-changes';
 import { noteSqliteOpenFailure } from '@/storage/diagnostics';
@@ -36,6 +38,32 @@ interface QueueRow {
   created_at: string;
   updated_at: string;
   last_attempt_at: string | null;
+}
+
+function decodeQueueRows(rows: QueueRow[]): LocalPendingBookmark[] {
+  return rows.map((row) => ({
+    ...(parseSyncChanges(row.changes) ? { changes: parseSyncChanges(row.changes) } : {}),
+    local_id: row.local_id,
+    remote_id: row.remote_id,
+    operation: (row.operation ?? 'create') as LocalPendingBookmark['operation'],
+    payload: JSON.parse(row.payload),
+    sync_status: row.sync_status as LocalPendingBookmark['sync_status'],
+    retry_count: row.retry_count,
+    last_error: row.last_error,
+    last_error_kind:
+      row.last_error_kind === 'transient_dns' ||
+      row.last_error_kind === 'transient_network' ||
+      row.last_error_kind === 'auth' ||
+      row.last_error_kind === 'permission' ||
+      row.last_error_kind === 'retryable_http' ||
+      row.last_error_kind === 'other'
+        ? row.last_error_kind
+        : null,
+    health_escalated_at: row.health_escalated_at ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    last_attempt_at: row.last_attempt_at ?? null,
+  }));
 }
 
 // Large JSON restores and account identity rekeys intentionally keep their
@@ -463,34 +491,39 @@ class SqliteBookmarkRepository implements BookmarkRepository {
     }
   }
 
+  async repairStalledCollectionRlsEntries(): Promise<number> {
+    return this.connection.run(async (db) => {
+      let repairedCount = 0;
+      await db.withTransactionAsync(async () => {
+        const bookmarks = await db.getAllAsync<BookmarkRow>('SELECT * FROM bookmarks');
+        const queue = await db.getAllAsync<QueueRow>('SELECT * FROM local_pending_bookmarks');
+        const { repairedEntries, repairedBookmarks } = planCollectionRlsRepair(
+          bookmarks.map((row) => JSON.parse(row.data) as Bookmark),
+          decodeQueueRows(queue),
+        );
+        for (const bookmark of repairedBookmarks) await writeBookmark(db, bookmark);
+        for (const entry of repairedEntries) {
+          // Only repair fields; preserve diagnostics, timestamps, and identity.
+          await db.runAsync(
+            `UPDATE local_pending_bookmarks
+             SET payload = ?, sync_status = ?, retry_count = ?, last_error = ?, last_error_kind = ?
+             WHERE local_id = ?`,
+            [JSON.stringify(entry.payload), entry.sync_status, entry.retry_count,
+              entry.last_error, entry.last_error_kind ?? null, entry.local_id],
+          );
+        }
+        repairedCount = repairedEntries.length;
+      });
+      return repairedCount;
+    }, 'repairStalledCollectionRlsEntries', { workTimeoutMs: BULK_TRANSACTION_WORK_TIMEOUT_MS });
+  }
+
   async listQueue(): Promise<LocalPendingBookmark[]> {
     return this.connection.run(async (db) => {
       const rows = await db.getAllAsync<QueueRow>(
         'SELECT * FROM local_pending_bookmarks ORDER BY created_at ASC',
       );
-      return rows.map((row) => ({
-        ...(parseSyncChanges(row.changes) ? { changes: parseSyncChanges(row.changes) } : {}),
-        local_id: row.local_id,
-        remote_id: row.remote_id,
-        operation: (row.operation ?? 'create') as LocalPendingBookmark['operation'],
-        payload: JSON.parse(row.payload),
-        sync_status: row.sync_status as LocalPendingBookmark['sync_status'],
-        retry_count: row.retry_count,
-        last_error: row.last_error,
-        last_error_kind:
-          row.last_error_kind === 'transient_dns' ||
-          row.last_error_kind === 'transient_network' ||
-          row.last_error_kind === 'auth' ||
-          row.last_error_kind === 'permission' ||
-          row.last_error_kind === 'retryable_http' ||
-          row.last_error_kind === 'other'
-            ? row.last_error_kind
-            : null,
-        health_escalated_at: row.health_escalated_at ?? null,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        last_attempt_at: row.last_attempt_at ?? null,
-      }));
+      return decodeQueueRows(rows);
     }, 'listQueue');
   }
 

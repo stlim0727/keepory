@@ -309,6 +309,9 @@ export function useSyncCoordinator({
         const priorCredentials = syncCredentialsRef.current;
         const recoverAuth = !!restoredSession && (recoveryRequested ||
           (!!priorCredentials && (priorCredentials.userId !== session.user.id || priorCredentials.accessToken !== session.access_token)));
+        // Read and repair within the storage actor so local edits and retry
+        // completions cannot be overwritten by an earlier snapshot.
+        await repository.repairStalledCollectionRlsEntries();
         const durableBookmarks = await repository.listBookmarks();
         const durableQueue = await repository.listQueue();
         if (restoredSession) {

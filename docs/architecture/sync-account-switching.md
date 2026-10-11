@@ -78,6 +78,19 @@ fallback and still controls remote pull progress; it is not the upload ownership
 checkpoint. Logout clears both forms; a library reset clears repository metadata.
 An ownership write failure stops upload and leaves local captures intact.
 
+Logout snapshots the departing IDs before waiting for storage, refreshes any
+surviving rehome rows afterward to retain edits, and serializes
+its cache clear and metadata reset with the next account's ownership
+reconciliation. A guest session created by an immediate capture must claim its
+owner marker after logout completes, so a late reset cannot erase that marker.
+
+Collection-permission recovery requires `account_rehome` queue provenance.
+Generic 403 or RLS errors on ordinary work never justify removing a user's
+collection. Hydration finishes these repairs before reading and exposing the
+library. Both hydration and sync repair current durable rows atomically inside
+the storage operation, then read their snapshots, so edits and captures made
+while storage was waiting survive.
+
 Anonymous carry-over includes confirmed rows with pending or failed edits and
 queued deletions. Their latest content and trash state become fresh creates;
 old queue entries are removed with identity replacement. Never-synced captures

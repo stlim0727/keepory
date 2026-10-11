@@ -26,6 +26,7 @@ import type {
   Bookmark, LocalPendingBookmark,
   SyncChangeSource
 } from "@/domain/types";
+import { recordLog } from "@/observability/log-buffer";
 import { armHydrationWatchdog } from "@/observability/hydration-watchdog";
 import { repository } from "@/storage/repository";
 import type {
@@ -123,6 +124,11 @@ export function useLibraryHydration({
         try {
           phase = `attempt ${attempt}: opening`;
           await ensureRepositoryReady();
+          // Complete atomic recovery before taking the hydration snapshot.
+          // Even a no-op repair can wait behind a capture/edit/deletion.
+          phase = `attempt ${attempt}: repairing`;
+          const repairedCount = await repository.repairStalledCollectionRlsEntries();
+          if (cancelled) return;
           phase = `attempt ${attempt}: reading`;
           const readAllMeta = async (): Promise<Record<string, string | null>> => {
             if (typeof repository.getAllMeta === "function") {
@@ -359,18 +365,27 @@ export function useLibraryHydration({
                 );
             }
 
+            // STASH-7M: Self-heal queue entries and bookmarks stalled on PostgreSQL
+            // RLS errors (HTTP 403 / permission) due to unowned collection IDs from
+            // an account transition.
+            const initialBookmarks = sanitizedBookmarks;
+            const initialQueue = storedQueue;
+            if (repairedCount > 0) {
+              recordLog('warn', `sync: self-healed ${repairedCount} stalled collection RLS queue entries`);
+            }
+
             // Merge instead of replace: saves made while loading must survive.
             setBookmarks((current) =>
               current === null
-                ? sanitizedBookmarks
+                ? initialBookmarks
                 : mergeById(
-                  current,
-                  sanitizedBookmarks,
-                  (bookmark) => bookmark.id,
-                ),
+                    current,
+                    initialBookmarks,
+                    (bookmark) => bookmark.id,
+                  ),
             );
             setQueue((current) =>
-              mergeById(current, storedQueue, (entry) => entry.local_id),
+              mergeById(current, initialQueue, (entry) => entry.local_id),
             );
             // Self-heal stranded bookmarks: a non-synced row whose queue entry
             // never persisted (storage hiccup, or the app killed between the two
@@ -378,8 +393,8 @@ export function useLibraryHydration({
             // pending" forever. Re-enqueue an upload so the background loop
             // finishes it. Idempotent on the server, so it's safe to repeat.
             const orphanEntries = reconcileOrphanedQueueEntries(
-              sanitizedBookmarks,
-              storedQueue,
+              initialBookmarks,
+              initialQueue,
             );
             if (orphanEntries.length > 0) {
               const orphanIds = new Set(

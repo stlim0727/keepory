@@ -1,3 +1,4 @@
+import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/domain/collection-rls-repair';
 import type {
   AIEnrichment,
   Bookmark,
@@ -141,6 +142,15 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
   async deleteBookmark(id: string): Promise<void> {
     this.state.bookmarks = this.state.bookmarks.filter((bookmark) => bookmark.id !== id);
+  }
+
+  async repairStalledCollectionRlsEntries(): Promise<number> {
+    const { repairedEntries, repairedBookmarks } = planCollectionRlsRepair(this.state.bookmarks, this.state.queue);
+    const bookmarkUpdates = new Map(repairedBookmarks.map((row) => [row.id, row]));
+    const queueUpdates = new Map(repairedEntries.map((row) => [row.local_id, row]));
+    this.state.bookmarks = this.state.bookmarks.map((row) => clone(bookmarkUpdates.get(row.id) ?? row));
+    this.state.queue = this.state.queue.map((row) => clone(queueUpdates.get(row.local_id) ?? row));
+    return repairedEntries.length;
   }
 
   async listQueue(): Promise<LocalPendingBookmark[]> {
