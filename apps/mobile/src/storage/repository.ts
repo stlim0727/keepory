@@ -1,4 +1,5 @@
 import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/domain/collection-rls-repair';
+import { invalidateInboxStartupPreview } from '@/storage/inbox-startup-preview';
 import type { AIEnrichment, Bookmark, LocalPendingBookmark, SyncChange } from '@/domain/types';
 import type {
   BookmarkRepository,
@@ -52,6 +53,7 @@ class WebBookmarkRepository implements BookmarkRepository {
   }
 
   private write(key: string, value: unknown): void {
+    if (key === BOOKMARKS_KEY) invalidateInboxStartupPreview();
     if (storageAvailable()) {
       localStorage.setItem(key, JSON.stringify(value));
     }

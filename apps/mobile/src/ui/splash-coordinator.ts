@@ -17,7 +17,8 @@
  *    immediately so the user sees the visible error recovery state.
  * 5. Layout continuity: on cold start into Inbox, holds splash until view
  *    preferences (viewMode/sort) are restored so the list does not jump between
- *    layouts on frame 1.
+ *    layouts on frame 1. A validated same-account preview can supply that
+ *    initial layout before storage settles; it never marks the store ready.
  * 6. Deep links: non-inbox destinations dismiss as soon as store settles without
  *    waiting for Inbox preferences.
  */
@@ -49,6 +50,7 @@ export class SplashCoordinator {
   private hasDismissed = false;
   private isStoreReady = false;
   private isInboxReady = false;
+  private isInboxPreviewReady = false;
   private currentRoute = '/';
   private dismissReason: SplashDismissReason | null = null;
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -125,6 +127,13 @@ export class SplashCoordinator {
     this.evaluateReadiness();
   }
 
+  /** A same-account display snapshot can release Inbox without marking storage ready. */
+  public signalInboxPreviewReady(): void {
+    if (this.hasDismissed) return;
+    this.isInboxPreviewReady = true;
+    this.evaluateReadiness();
+  }
+
   public signalUpdateRequired(): void {
     if (this.hasDismissed) {
       return;
@@ -137,10 +146,6 @@ export class SplashCoordinator {
       return;
     }
 
-    if (!this.isStoreReady) {
-      return;
-    }
-
     const isInboxRoute =
       this.currentRoute === '/' ||
       this.currentRoute === '/index' ||
@@ -148,11 +153,13 @@ export class SplashCoordinator {
       this.currentRoute === '';
 
     if (isInboxRoute) {
-      if (this.isInboxReady) {
+      if (this.isInboxPreviewReady || (this.isStoreReady && this.isInboxReady)) {
         void this.hideSplash('inbox_ready');
       }
       return;
     }
+
+    if (!this.isStoreReady) return;
 
     // Destination is non-inbox route (e.g. /add, /bookmark/[id], /settings, /auth/callback)
     void this.hideSplash('route_ready');
@@ -187,6 +194,7 @@ export class SplashCoordinator {
     this.hasDismissed = false;
     this.isStoreReady = false;
     this.isInboxReady = false;
+    this.isInboxPreviewReady = false;
     this.currentRoute = '/';
     this.dismissReason = null;
   }

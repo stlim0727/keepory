@@ -5,6 +5,7 @@ import { AnimatedFlatList, CONTENT_MAX_WIDTH, FOLDER_SORT_ICON, FOLDER_SORT_LABE
 import { InboxRootSurface, WebCrispAnimatedSurface, queryTerms } from '@/features/inbox/presentation';
 import { type GridPlaceholder, type InboxListItem } from '@/features/inbox/types';
 import { useInboxResults } from '@/features/inbox/use-inbox-results';
+import { useInboxStartupPreview } from '@/features/inbox/use-inbox-startup-preview';
 import { useInboxSearch } from '@/features/inbox/use-inbox-search';
 import { useInboxSelection } from '@/features/inbox/use-inbox-selection';
 import { Ionicons } from '@expo/vector-icons';
@@ -141,6 +142,7 @@ export default function InboxScreen() {
     syncPaused,
     librarySyncFlow,
     accountLibraryState = 'ready',
+    accountCacheReady = accountLibraryState === 'ready',
     accountTransferCount = 0,
     dismissAccountTransfer,
     loadError,
@@ -752,7 +754,7 @@ export default function InboxScreen() {
     facetFiltered,
     clearFacetParams,
     filtered,
-    visible,
+    visible: loadedVisible,
     folderCollectionCounts,
     folderUncollectedCount,
     folderTiles,
@@ -771,6 +773,30 @@ export default function InboxScreen() {
     collections,
     folderSort,
   });
+  const startupPreview = useInboxStartupPreview({
+    userId: auth.userId,
+    authStatus: auth.status,
+    isLoading,
+    loadError,
+    accountLibraryState,
+    viewOptionsReady,
+    accountCacheReady,
+    eligible: filter.kind === 'all' && !searching && !paramTag && !paramCollection,
+    bookmarks: loadedVisible,
+    totalCount: inbox.length,
+    sort,
+    viewMode,
+    setSort,
+    setViewMode,
+    getTagsForBookmark,
+    getCollection,
+  });
+  const visible = startupPreview?.bookmarks ?? loadedVisible;
+  // Cached rows are presentation only. Commands keep using the fully hydrated
+  // store, and the list becomes interactive when that store is ready.
+  useEffect(() => {
+    if (startupPreview) splashCoordinator.signalInboxPreviewReady();
+  }, [startupPreview]);
   useEffect(() => {
     if (!inlineDetailId) {
       return;
@@ -1087,7 +1113,7 @@ export default function InboxScreen() {
   // tells the user that and offers a one-tap way back out. Precedence peels the
   // most-recently-added layer first: a live search clears before the underlying
   // facet.
-  const showControls = inbox.length > 0 || searching || viewMode === 'folder';
+  const showControls = inbox.length > 0 || !!startupPreview || searching || viewMode === 'folder';
   const narrowed = filter.kind !== 'all' || searching;
   // The pinned active-filter bar shows under the same gates as before — only its
   // position changed (its own layer, no longer inside the collapsing header).
@@ -1609,7 +1635,7 @@ export default function InboxScreen() {
               </Pressable>
             </View>
           ) : (
-            <LibraryHeader count={accountLibraryState !== 'ready' && inbox.length === 0 ? null : inbox.length} unread={newSuggestionsCount}
+            <LibraryHeader count={startupPreview?.totalCount ?? (accountLibraryState !== 'ready' && inbox.length === 0 ? null : inbox.length)} unread={newSuggestionsCount}
               menuOpen={homeMenuOpen} disabled={capturing} onTop={scrollToTop}
               onMenu={() => setHomeMenuOpen(true)}
               status={<LibraryStatus inline bookmarks={inbox} queue={queue} authStatus={auth.status}
@@ -1890,6 +1916,8 @@ export default function InboxScreen() {
         ref={listRef}
         testID="inbox-list"
         data={viewMode === 'folder' ? folderGridData : gridData}
+        pointerEvents={startupPreview ? 'none' : 'auto'}
+        accessibilityState={{ busy: isLoading }}
         keyExtractor={(item) => item.id}
         // Remount when the column count changes: FlatList forbids mutating
         // numColumns on an existing instance.
@@ -1966,7 +1994,7 @@ export default function InboxScreen() {
             />
             <AnonymousNudgeBanner
               isAnonymous={auth.status === 'anonymous'}
-              bookmarkCount={inbox.length}
+              bookmarkCount={startupPreview?.totalCount ?? inbox.length}
             />
             {/* The section label only earns its vertical space while searching,
                 where the match COUNT is real information. In the default/faceted
@@ -2137,6 +2165,7 @@ export default function InboxScreen() {
         }
         extraData={`${viewMode}|${searching}|${debouncedQuery}`}
         renderItem={createInboxItemRenderer({
+          readOnly: !!startupPreview,
           setInlineDetailId,
           viewMode,
           contentMaxWidth,
@@ -2151,8 +2180,12 @@ export default function InboxScreen() {
           toggleFolderSelect,
           enterFolderSelectionMode,
           setFolderMenuItem,
-          getCollection,
-          getTagsForBookmark,
+          getCollection: startupPreview
+            ? (id) => startupPreview.collections.find((row) => row.id === id)
+            : getCollection,
+          getTagsForBookmark: startupPreview
+            ? (id) => startupPreview.tags[id] ?? []
+            : getTagsForBookmark,
           getEnrichment,
           getReviewedSuggestions,
           getDismissedFolderSuggestions,
