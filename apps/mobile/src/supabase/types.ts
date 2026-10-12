@@ -28,6 +28,8 @@ export interface SupabaseAuthUser {
     locale?: string | null;
     /** User's preferred language setting ('system', 'en', 'ko') stamped from preferences. */
     preference?: string | null;
+    /** Account AI preference, restored on login. */
+    ai_suggestions_mode?: string | null;
   };
   created_at?: string;
 }

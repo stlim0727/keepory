@@ -469,3 +469,25 @@ for (const trigger of ['timeout', 'caller'] as const) {
     }
   });
 }
+
+
+test('getUser reads fresh account settings with the signed-in token', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify({
+      id: 'user-1', user_metadata: { ai_suggestions_mode: 'off' },
+    }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const client = new StashSupabaseClient({ url: 'https://proj.supabase.co', anonKey: 'anon-key' });
+    const user = await client.getUser('account-token');
+    assert.equal(user.user_metadata?.ai_suggestions_mode, 'off');
+    assert.equal(calls[0].url, 'https://proj.supabase.co/auth/v1/user');
+    assert.equal(calls[0].init.method, 'GET');
+    assert.equal((calls[0].init.headers as Record<string, string>).Authorization, 'Bearer account-token');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

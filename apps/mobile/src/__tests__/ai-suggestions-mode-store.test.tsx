@@ -1,170 +1,12 @@
-import { act, render, waitFor } from '@testing-library/react-native';
+import './helpers/ai-suggestions-mode-harness';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
-
-// Mirrors ai-enrichment-store.test.tsx's mocking harness — kept self-contained
-// in this file since jest module factories can't be shared across test files.
-jest.mock('@/storage/repository', () =>
-  require('./helpers/fake-repository').createFakeRepositoryModule(),
-);
-
-const mockSession = {
-  access_token: 'token',
-  refresh_token: 'refresh',
-  token_type: 'bearer',
-  expires_at: Math.floor(Date.now() / 1000) + 3600,
-  user: { id: 'user-test' },
-};
-
-jest.mock('@/supabase/auth-provider', () => ({
-  useSupabaseAuth: () => ({
-    status: 'anonymous',
-    session: mockSession,
-    userId: mockSession.user.id,
-    message: null,
-    ensureAnonymousSession: async () => mockSession,
-  }),
-  SupabaseAuthProvider: ({ children }: { children: ReactNode }) => children,
-}));
-
-jest.mock('@/storage/sqlite-app-lifecycle', () => ({
-  registerForForegroundState: () => () => {},
-  registerForBackgroundClose: () => {},
-}));
-
-jest.mock('@/api/bookmarks', () => {
-  const empty = async () => [];
-  const requestEnrichment = jest.fn(async (bookmarkId: string) => ({
-    id: `enrichment-${bookmarkId}`,
-    bookmark_id: bookmarkId,
-    user_id: 'user-test',
-    summary: null,
-    topics: [],
-    suggested_tags: [],
-    suggested_collection_id: null,
-    suggested_collection_name: null,
-    model: 'dummy-v0',
-    status: 'complete',
-    confidence: null,
-    degraded: false,
-    degraded_reason: null,
-    created_at: '2026-06-13T00:00:00.000Z',
-    updated_at: '2026-06-13T00:00:00.000Z',
-  }));
-  const addTags = jest.fn(async ({ tags, source }: { tags: string[]; source: string }) =>
-    tags.map((name) => ({
-      id: `tag-${name}`,
-      user_id: 'user-test',
-      name,
-      slug: name,
-      source,
-      created_at: '2026-06-13T00:00:00.000Z',
-    })),
-  );
-  const createCollection = jest.fn(async (name: string) => ({
-    id: `coll-${name.toLowerCase()}`,
-    user_id: 'user-test',
-    name,
-    description: null,
-    created_at: '2026-06-13T00:00:00.000Z',
-    updated_at: '2026-06-13T00:00:00.000Z',
-  }));
-  const bulkAttachTagsAndCollections = jest.fn(
-    async (
-      items: Array<{ bookmark_id: string; tags: Array<{ name: string; source: string }> }>,
-    ) =>
-      items.map((item) => ({
-        bookmark_id: item.bookmark_id,
-        tags: item.tags.map((tag) => ({
-          id: `tag-${tag.name}`,
-          user_id: 'user-test',
-          name: tag.name,
-          slug: tag.name,
-          source: tag.source,
-          created_at: '2026-06-13T00:00:00.000Z',
-        })),
-        collection: null,
-        collection_attached: false,
-        bookmark_updated_at: null,
-      })),
-  );
-  const listBookmarkIds = jest.fn(async () => [] as string[]);
-  const createBookmark = jest.fn(async () => ({
-    bookmark_id: '7e64cf1e-0000-4000-8000-0000000000aa',
-  }));
-  const listEnrichmentsUpdatedSince = jest.fn(async () => [] as unknown[]);
-  return {
-    __spies: {
-      requestEnrichment,
-      addTags,
-      createCollection,
-      bulkAttachTagsAndCollections,
-      listBookmarkIds,
-      createBookmark,
-      listEnrichmentsUpdatedSince,
-    },
-    createBookmarkApi: () => ({
-      requestEnrichment,
-      addTags,
-      createCollection,
-      bulkAttachTagsAndCollections,
-      createBookmark,
-      listBookmarksUpdatedSince: empty,
-      listBookmarkIds,
-      listEnrichmentsUpdatedSince,
-      listTags: empty,
-      listBookmarkTags: empty,
-      listCollections: empty,
-    }),
-  };
-});
-
 import { AI_SUGGESTIONS_MODE_PREF_KEY } from '@/domain/ai-suggestions-pref';
 import { BookmarksProvider, useBookmarks } from '@/store/bookmarks';
-import type { FakeRepositoryModule } from './helpers/fake-repository';
 import { makeEnrichment, makeStoredBookmark } from './helpers/fake-repository';
+import { apiMock, fakeRepo, ID_A, ID_B, ID_C, mockEnvironment, mockEnsureSession, mockReadUser, mockWriteUser, renderStore, resetAiSuggestionsHarness } from './helpers/ai-suggestions-mode-harness';
 
-const fakeRepo = jest.requireMock('@/storage/repository') as FakeRepositoryModule;
-const apiMock = jest.requireMock('@/api/bookmarks') as {
-  __spies: {
-    requestEnrichment: jest.Mock;
-    addTags: jest.Mock;
-    createCollection: jest.Mock;
-    listBookmarkIds: jest.Mock;
-    createBookmark: jest.Mock;
-    listEnrichmentsUpdatedSince: jest.Mock;
-  };
-};
-
-const ID_A = '7e64cf1e-0000-4000-8000-000000000001';
-const ID_B = '7e64cf1e-0000-4000-8000-000000000002';
-const ID_C = '7e64cf1e-0000-4000-8000-000000000003';
-
-type Store = ReturnType<typeof useBookmarks>;
-
-function renderStore() {
-  const ref: { current: Store | null } = { current: null };
-  function Probe() {
-    ref.current = useBookmarks();
-    return null;
-  }
-  render(
-    <BookmarksProvider>
-      <Probe />
-    </BookmarksProvider>,
-  );
-  return ref;
-}
-
-beforeEach(() => {
-  apiMock.__spies.requestEnrichment.mockClear();
-  apiMock.__spies.addTags.mockClear();
-  apiMock.__spies.createCollection.mockClear();
-  apiMock.__spies.listBookmarkIds.mockReset();
-  apiMock.__spies.listBookmarkIds.mockResolvedValue([]);
-  apiMock.__spies.createBookmark.mockClear();
-  apiMock.__spies.listEnrichmentsUpdatedSince.mockReset();
-  apiMock.__spies.listEnrichmentsUpdatedSince.mockResolvedValue([]);
-});
+beforeEach(resetAiSuggestionsHarness);
 
 // --- #573: the 3-tier mode itself ---
 
@@ -503,3 +345,303 @@ test('a single, routine auto-trigger completion does not raise the burst toast',
   await waitFor(() => expect(store.current!.getEnrichment(ID_A)).toBeDefined(), { timeout: 2000 });
   expect(store.current!.aiEnrichmentBurstToast).toBeNull();
 }, 10000);
+
+
+test('first-login preference hydration precedes the pull so its delivered AI tags auto-apply', async () => {
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  let resolveUser!: (user: unknown) => void;
+  mockReadUser.mockImplementationOnce(() => new Promise((resolve) => { resolveUser = resolve; }));
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  apiMock.__spies.listBookmarkIds.mockResolvedValue([ID_A]);
+  apiMock.__spies.listEnrichmentsUpdatedSince.mockResolvedValueOnce([
+    makeEnrichment({
+      id: 'first-login-worker', bookmark_id: ID_A,
+      suggested_tags: [{ name: 'design', confidence: 0.9 }],
+    }),
+  ]);
+  const store = renderStore();
+  await waitFor(() => expect(resolveUser).toBeDefined());
+  await waitFor(() => expect(store.current?.isLoading).toBe(false));
+  expect(apiMock.__spies.listEnrichmentsUpdatedSince).not.toHaveBeenCalled();
+  await act(async () => { resolveUser({ id: 'user-test', user_metadata: {} }); });
+  await waitFor(() => expect(store.current?.aiSuggestionsMode).toBe('auto_accept'));
+  await waitFor(() => expect(store.current!.getTagsForBookmark(ID_A).map((tag) => tag.name)).toContain('design'));
+  expect(apiMock.__spies.listEnrichmentsUpdatedSince).toHaveBeenCalled();
+});
+
+
+test('paused cold launch reveals the owned local library before a stalled preference read finishes', async () => {
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  let finish!: (user: unknown) => void;
+  mockReadUser.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  await fakeRepo.repository.setMeta('pref.sync.paused', 'true');
+  await fakeRepo.repository.setMeta('bookmark_cache_owner', JSON.stringify({ id: 'user-test', isAnonymous: false }));
+  const store = renderStore();
+  await waitFor(() => expect(finish).toBeDefined());
+  await waitFor(() => expect(store.current?.inbox.map((row) => row.id)).toContain(ID_A));
+  expect(apiMock.__spies.listEnrichmentsUpdatedSince).not.toHaveBeenCalled();
+  await act(async () => { finish({ id: 'user-test', user_metadata: { ai_suggestions_mode: 'off' } }); });
+});
+
+test('offline cold launch restores the local library without asking for a remote preference', async () => {
+  mockEnvironment.offline = true;
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  await fakeRepo.repository.setMeta('bookmark_cache_owner', JSON.stringify({ id: 'user-test', isAnonymous: false }));
+  await fakeRepo.repository.setMeta(`${AI_SUGGESTIONS_MODE_PREF_KEY}.account.user-test`, 'off');
+  const store = renderStore();
+  await waitFor(() => expect(store.current?.inbox.map((row) => row.id)).toContain(ID_A));
+  expect(mockReadUser).not.toHaveBeenCalled();
+  expect(apiMock.__spies.listEnrichmentsUpdatedSince).not.toHaveBeenCalled();
+});
+
+test.each([null, 'off'])('linking the same guest ID retains staged work across mode loading and %s', async (remoteMode) => {
+  jest.useFakeTimers();
+  let finish!: (user: unknown) => void;
+  try {
+    fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+    apiMock.__spies.listBookmarkIds.mockResolvedValue([ID_A]);
+    await fakeRepo.repository.setMeta('pending_ai_trigger', JSON.stringify([ID_A]));
+    const wrapper = ({ children }: { children: ReactNode }) => <BookmarksProvider>{children}</BookmarksProvider>;
+    const { result, rerender } = await renderHook(() => useBookmarks(), { wrapper });
+    await waitFor(() => expect(result.current.lastPulledAt).not.toBeNull());
+    expect(apiMock.__spies.requestEnrichment).not.toHaveBeenCalled();
+    mockReadUser.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    mockEnvironment.status = 'authenticated';
+    mockEnvironment.session.user.is_anonymous = false;
+    await rerender(undefined);
+    await waitFor(() => expect(finish).toBeDefined());
+    await act(async () => { jest.advanceTimersByTime(1200); });
+    expect(apiMock.__spies.requestEnrichment).not.toHaveBeenCalled();
+    expect(fakeRepo.__meta('pending_ai_trigger')).toBe(JSON.stringify([ID_A]));
+    await act(async () => { finish({ id: 'user-test', user_metadata: remoteMode ? { ai_suggestions_mode: remoteMode } : {} }); });
+    await waitFor(() => expect(result.current.aiSuggestionsMode).toBe(remoteMode || 'auto_accept'));
+    if (remoteMode === 'off') {
+      await act(async () => { jest.advanceTimersByTime(400); });
+      expect(apiMock.__spies.requestEnrichment).not.toHaveBeenCalled();
+      await act(() => result.current.setAiSuggestionsMode('auto_accept'));
+    }
+    await act(async () => { jest.advanceTimersByTime(400); });
+    await waitFor(() => expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(ID_A, expect.anything(), 'en'));
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+
+test.each(['auto_accept', 'off'])('an in-flight guest result waits for the linked account %s decision', async (mode) => {
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  apiMock.__spies.listBookmarkIds.mockResolvedValue([ID_A]);
+  await fakeRepo.repository.setMeta(AI_SUGGESTIONS_MODE_PREF_KEY, 'auto_accept');
+  await fakeRepo.repository.setMeta('pending_ai_trigger', JSON.stringify([ID_A]));
+  let finishAi!: () => void;
+  const aiGate = new Promise<void>((resolve) => { finishAi = resolve; });
+  apiMock.__spies.requestEnrichment.mockImplementationOnce(async (id: string) => {
+    await aiGate;
+    return makeEnrichment({ bookmark_id: id, suggested_tags: [{ name: 'design', confidence: 0.9 }] });
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => <BookmarksProvider>{children}</BookmarksProvider>;
+  const { result, rerender } = await renderHook(() => useBookmarks(), { wrapper });
+  await waitFor(() => expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledTimes(1));
+  let finishMode!: (user: unknown) => void;
+  mockReadUser.mockImplementationOnce(() => new Promise((resolve) => { finishMode = resolve; }));
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  await rerender(undefined);
+  await waitFor(() => expect(finishMode).toBeDefined());
+  await act(async () => { finishAi(); });
+  await waitFor(() => expect(result.current.getEnrichment(ID_A)).toBeDefined());
+  expect(result.current.getTagsForBookmark(ID_A).map((tag) => tag.name)).not.toContain('design');
+  await act(async () => { finishMode({ id: 'user-test', user_metadata: { ai_suggestions_mode: mode } }); });
+  await waitFor(() => expect(result.current.aiSuggestionsMode).toBe(mode));
+  if (mode === 'auto_accept') {
+    await waitFor(() => expect(result.current.getTagsForBookmark(ID_A).map((tag) => tag.name)).toContain('design'));
+  } else {
+    expect(result.current.getTagsForBookmark(ID_A).map((tag) => tag.name)).not.toContain('design');
+  }
+  expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledTimes(1);
+});
+
+test('sync uses the refreshed bearer policy before a same-account React session commit', async () => {
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  apiMock.__spies.listBookmarkIds.mockResolvedValue([ID_A]);
+  mockReadUser.mockImplementation(async (token: string) => ({
+    id: 'user-test', user_metadata: { ai_suggestions_mode: token === 'fresh-sync' ? 'off' : 'auto_accept' },
+  }));
+  const store = renderStore();
+  await waitFor(() => expect(store.current?.lastPulledAt).not.toBeNull());
+  await waitFor(() => expect(store.current?.isSyncing).toBe(false));
+  expect(store.current!.aiSuggestionsMode).toBe('auto_accept');
+  mockEnsureSession.mockResolvedValueOnce({ ...mockEnvironment.session, access_token: 'fresh-sync' });
+  apiMock.__spies.listEnrichmentsUpdatedSince.mockResolvedValueOnce([
+    makeEnrichment({ bookmark_id: ID_A, suggested_tags: [{ name: 'design', confidence: 0.9 }] }),
+  ]);
+  await act(async () => { await store.current!.syncNow(); });
+  expect(mockReadUser).toHaveBeenCalledWith('fresh-sync');
+  expect(store.current!.aiSuggestionsMode).toBe('off');
+  expect(store.current!.getEnrichment(ID_A)).toBeDefined();
+  expect(store.current!.getTagsForBookmark(ID_A).map((tag) => tag.name)).not.toContain('design');
+});
+
+test('a worker result pulled after an unknown mode read auto-applies once the safe retry resolves', async () => {
+  jest.useFakeTimers();
+  try {
+    mockEnvironment.status = 'authenticated';
+    mockEnvironment.session.user.is_anonymous = false;
+    mockReadUser.mockRejectedValueOnce(new Error('transient auth service error'));
+    fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+    apiMock.__spies.listBookmarkIds.mockResolvedValue([ID_A]);
+    apiMock.__spies.listEnrichmentsUpdatedSince.mockResolvedValueOnce([
+      makeEnrichment({ bookmark_id: ID_A, suggested_tags: [{ name: 'design', confidence: 0.9 }] }),
+    ]);
+    const wrapper = ({ children }: { children: ReactNode }) => <BookmarksProvider>{children}</BookmarksProvider>;
+    const { result } = await renderHook(() => useBookmarks(), { wrapper });
+    await waitFor(() => expect(result.current.getEnrichment(ID_A)).toBeDefined());
+    expect(result.current.aiSuggestionsMode).toBe('off');
+    expect(result.current.getTagsForBookmark(ID_A).map((tag) => tag.name)).not.toContain('design');
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    await waitFor(() => expect(result.current.aiSuggestionsMode).toBe('auto_accept'));
+    await waitFor(() => expect(result.current.getTagsForBookmark(ID_A).map((tag) => tag.name)).toContain('design'));
+  } finally { jest.useRealTimers(); }
+});
+
+test('a deferred completion after provider unmount cannot repopulate the next cache notification flags', async () => {
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  apiMock.__spies.listBookmarkIds.mockResolvedValue([ID_A]);
+  await fakeRepo.repository.setMeta(AI_SUGGESTIONS_MODE_PREF_KEY, 'auto_accept');
+  await fakeRepo.repository.setMeta('pending_ai_trigger', JSON.stringify([ID_A]));
+  let finishAi!: () => void;
+  const aiGate = new Promise<void>((resolve) => { finishAi = resolve; });
+  apiMock.__spies.requestEnrichment.mockImplementationOnce(async () => {
+    await aiGate;
+    return makeEnrichment({ bookmark_id: ID_A, suggested_tags: [{ name: 'design', confidence: 0.9 }] });
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => <BookmarksProvider>{children}</BookmarksProvider>;
+  const { result, rerender, unmount } = await renderHook(() => useBookmarks(), { wrapper });
+  await waitFor(() => expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledTimes(1));
+  let finishMode!: (user: unknown) => void;
+  mockReadUser.mockImplementationOnce(() => new Promise((resolve) => { finishMode = resolve; }));
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  await rerender(undefined);
+  await waitFor(() => expect(finishMode).toBeDefined());
+  await act(async () => { finishAi(); });
+  await waitFor(() => expect(result.current.getEnrichment(ID_A)).toBeDefined());
+  await unmount();
+  await fakeRepo.repository.setMeta('unseen_ai_suggestions', '[]');
+  await act(async () => { finishMode({ id: 'user-test', user_metadata: { ai_suggestions_mode: 'auto_accept' } }); });
+  expect(fakeRepo.__meta('unseen_ai_suggestions')).toBe('[]');
+});
+
+
+test('an automatic request awaiting account A policy cancels after switching to B', async () => {
+  const source = 'auto';
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  await fakeRepo.repository.setMeta('pref.sync.paused', 'true');
+  await fakeRepo.repository.setMeta('bookmark_cache_owner', JSON.stringify({ id: 'user-test', isAnonymous: false }));
+  let finishA!: (user: unknown) => void;
+  mockReadUser.mockImplementationOnce(() => new Promise((resolve) => { finishA = resolve; }));
+  const wrapper = ({ children }: { children: ReactNode }) => <BookmarksProvider>{children}</BookmarksProvider>;
+  const { result, rerender, unmount } = await renderHook(() => useBookmarks(), { wrapper });
+  await waitFor(() => expect(result.current.inbox.map((row) => row.id)).toContain(ID_A));
+  let request!: Promise<string | null>;
+  await act(async () => { request = result.current.requestAiEnrichment(ID_A, source); });
+  await waitFor(() => expect(result.current.isEnriching(ID_A)).toBe(true));
+  mockEnvironment.session = { ...mockEnvironment.session, access_token: 'token-B', user: { id: 'B', is_anonymous: false } };
+  mockReadUser.mockResolvedValue({ id: 'B', user_metadata: { ai_suggestions_mode: 'auto_accept' } });
+  await rerender(undefined);
+  await waitFor(() => expect(result.current.aiSuggestionsMode).toBe('auto_accept'));
+  await act(async () => { finishA({ id: 'user-test', user_metadata: { ai_suggestions_mode: 'auto_accept' } }); await request; });
+  expect(apiMock.__spies.requestEnrichment).not.toHaveBeenCalled();
+  expect(result.current.getEnrichment(ID_A)).toBeUndefined();
+  expect((await fakeRepo.repository.listEnrichments()).some((row) => row.bookmark_id === ID_A)).toBe(false);
+  await unmount();
+});
+
+test('when an initial cache-owner read transiently fails, ownership reconciliation and sync resume on recovery', async () => {
+  jest.useFakeTimers();
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  await fakeRepo.repository.setMeta('pref.sync.paused', 'true');
+  await fakeRepo.repository.setMeta('bookmark_cache_owner', JSON.stringify({ id: 'user-test', isAnonymous: false }));
+  mockReadUser.mockResolvedValue({ id: 'user-test', user_metadata: { ai_suggestions_mode: 'auto_accept' } });
+  const getMeta = jest.spyOn(fakeRepo.repository, 'getMeta');
+  try {
+    getMeta.mockImplementation(async (key: string) => {
+      if (key === 'bookmark_cache_owner') {
+        getMeta.mockRestore();
+        throw new Error('temporary disk read failure');
+      }
+      return fakeRepo.__meta(key);
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => <BookmarksProvider>{children}</BookmarksProvider>;
+    const { result, unmount } = await renderHook(() => useBookmarks(), { wrapper });
+    await act(async () => { jest.advanceTimersByTime(30_000); });
+    await waitFor(() => expect(result.current.inbox.map((row) => row.id)).toContain(ID_A));
+    expect(result.current.aiSuggestionsMode).toBe('auto_accept');
+    await unmount();
+  } finally {
+    getMeta.mockRestore();
+    jest.useRealTimers();
+  }
+});
+
+
+test.each(['off', 'auto_accept'])('manual AI completes during account loading and defers application until %s resolves', async (mode) => {
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  await fakeRepo.repository.setMeta('pref.sync.paused', 'true');
+  await fakeRepo.repository.setMeta('bookmark_cache_owner', JSON.stringify({ id: 'user-test', isAnonymous: false }));
+  let finish!: (user: unknown) => void;
+  mockReadUser.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  apiMock.__spies.requestEnrichment.mockResolvedValueOnce(makeEnrichment({ bookmark_id: ID_A, suggested_tags: [{ name: 'design', confidence: 0.9 }] }));
+  const wrapper = ({ children }: { children: ReactNode }) => <BookmarksProvider>{children}</BookmarksProvider>;
+  const { result } = await renderHook(() => useBookmarks(), { wrapper });
+  await waitFor(() => expect(result.current.inbox.map((row) => row.id)).toContain(ID_A));
+  await act(async () => { expect(await result.current.requestAiEnrichment(ID_A)).toBeNull(); });
+  expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledTimes(1);
+  expect(result.current.getEnrichment(ID_A)).toBeDefined();
+  expect(result.current.getTagsForBookmark(ID_A).map((tag) => tag.name)).not.toContain('design');
+  await act(async () => { finish({ id: 'user-test', user_metadata: { ai_suggestions_mode: mode } }); });
+  await waitFor(() => expect(result.current.aiSuggestionsMode).toBe(mode));
+  if (mode === 'auto_accept') await waitFor(() => expect(result.current.getTagsForBookmark(ID_A).map((tag) => tag.name)).toContain('design'));
+  else expect(result.current.getTagsForBookmark(ID_A).map((tag) => tag.name)).not.toContain('design');
+});
+
+test('a manual result arriving after account departure is not inserted into the new cache', async () => {
+  mockEnvironment.status = 'authenticated';
+  mockEnvironment.session.user.is_anonymous = false;
+  fakeRepo.__reset([makeStoredBookmark({ id: ID_A, metadata_status: 'complete' })]);
+  await fakeRepo.repository.setMeta('pref.sync.paused', 'true');
+  await fakeRepo.repository.setMeta('bookmark_cache_owner', JSON.stringify({ id: 'user-test', isAnonymous: false }));
+  let finishPolicy!: (user: unknown) => void;
+  mockReadUser.mockImplementationOnce(() => new Promise((resolve) => { finishPolicy = resolve; }));
+  let finishAi!: () => void;
+  apiMock.__spies.requestEnrichment.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => { finishAi = resolve; });
+    return makeEnrichment({ bookmark_id: ID_A });
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => <BookmarksProvider>{children}</BookmarksProvider>;
+  const { result, rerender } = await renderHook(() => useBookmarks(), { wrapper });
+  await waitFor(() => expect(result.current.inbox.map((row) => row.id)).toContain(ID_A));
+  let request!: Promise<string | null>;
+  await act(async () => { request = result.current.requestAiEnrichment(ID_A); });
+  await waitFor(() => expect(finishAi).toBeDefined());
+  mockEnvironment.session = { ...mockEnvironment.session, access_token: 'token-B', user: { id: 'B', is_anonymous: false } };
+  mockReadUser.mockResolvedValue({ id: 'B', user_metadata: { ai_suggestions_mode: 'auto_accept' } });
+  await rerender(undefined);
+  await waitFor(() => expect(result.current.aiSuggestionsMode).toBe('auto_accept'));
+  await act(async () => { finishAi(); await request; finishPolicy({ id: 'user-test', user_metadata: {} }); });
+  expect(result.current.getEnrichment(ID_A)).toBeUndefined();
+  expect((await fakeRepo.repository.listEnrichments()).some((row) => row.bookmark_id === ID_A)).toBe(false);
+});

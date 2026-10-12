@@ -1,8 +1,3 @@
-import {
-  AI_SUGGESTIONS_MODE_PREF_KEY,
-  parseAiSuggestionsMode,
-  type AiSuggestionsMode
-} from "@/domain/ai-suggestions-pref";
 import { mockUserId } from "@/domain/mock-data";
 import { isYoutubeAvailabilityCandidate } from "@/domain/page-metadata";
 import {
@@ -48,8 +43,6 @@ import {
 } from "react";
 
 interface Dependencies {
-  aiSuggestionsModeRef: RefObject<AiSuggestionsMode>;
-  setAiSuggestionsModeState: Dispatch<SetStateAction<AiSuggestionsMode>>;
   syncPausedRef: RefObject<boolean>;
   setSyncPausedState: Dispatch<SetStateAction<boolean>>;
   pendingAiTrigger: RefObject<Set<string>>;
@@ -77,8 +70,6 @@ interface Dependencies {
 }
 
 export function useLibraryHydration({
-  aiSuggestionsModeRef,
-  setAiSuggestionsModeState,
   syncPausedRef,
   setSyncPausedState,
   pendingAiTrigger,
@@ -147,7 +138,6 @@ export function useLibraryHydration({
               storedUnseenRaw,
               storedDismissedFoldersRaw,
               storedReviewedSummariesRaw,
-              storedAiSuggestionsModeRaw,
               storedSyncPausedRaw,
             ] = await Promise.all([
               repository.getMeta(LAST_PULLED_AT_KEY),
@@ -162,7 +152,6 @@ export function useLibraryHydration({
               repository.getMeta(UNSEEN_SUGGESTIONS_KEY),
               repository.getMeta(DISMISSED_FOLDERS_KEY),
               repository.getMeta(REVIEWED_SUMMARIES_KEY),
-              repository.getMeta(AI_SUGGESTIONS_MODE_PREF_KEY),
               repository.getMeta(SYNC_PAUSED_KEY),
             ]);
             return {
@@ -178,7 +167,6 @@ export function useLibraryHydration({
               [UNSEEN_SUGGESTIONS_KEY]: storedUnseenRaw,
               [DISMISSED_FOLDERS_KEY]: storedDismissedFoldersRaw,
               [REVIEWED_SUMMARIES_KEY]: storedReviewedSummariesRaw,
-              [AI_SUGGESTIONS_MODE_PREF_KEY]: storedAiSuggestionsModeRaw,
               [SYNC_PAUSED_KEY]: storedSyncPausedRaw,
             };
           };
@@ -209,17 +197,8 @@ export function useLibraryHydration({
           const storedUnseenRaw = metaMap[UNSEEN_SUGGESTIONS_KEY] ?? null;
           const storedDismissedFoldersRaw = metaMap[DISMISSED_FOLDERS_KEY] ?? null;
           const storedReviewedSummariesRaw = metaMap[REVIEWED_SUMMARIES_KEY] ?? null;
-          const storedAiSuggestionsModeRaw = metaMap[AI_SUGGESTIONS_MODE_PREF_KEY] ?? null;
           const storedSyncPausedRaw = metaMap[SYNC_PAUSED_KEY] ?? null;
           if (!cancelled) {
-            // Re-hydrate the AI-suggestions mode so the auto-trigger gate and
-            // auto_accept behavior are correct from the very first render, not
-            // just after the user revisits Settings.
-            const storedAiSuggestionsMode = parseAiSuggestionsMode(
-              storedAiSuggestionsModeRaw,
-            );
-            aiSuggestionsModeRef.current = storedAiSuggestionsMode;
-            setAiSuggestionsModeState(storedAiSuggestionsMode);
             // Re-hydrate the sync-paused pref so a review left mid-way (app
             // closed before turning it back off) doesn't silently resume
             // uploading on the next launch.

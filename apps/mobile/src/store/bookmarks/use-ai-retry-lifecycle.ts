@@ -39,6 +39,10 @@ import {
 interface Dependencies {
   auth: ReturnType<typeof useSupabaseAuth>;
   aiSuggestionsModeRef: RefObject<AiSuggestionsMode>;
+  aiSuggestionsReady: boolean;
+  aiSuggestionsReadyRef: RefObject<boolean>;
+  awaitAiSuggestionsPreference: () => Promise<void>;
+  aiTriggerAttempted: RefObject<Set<string>>;
   queueRef: RefObject<LocalPendingBookmark[]>;
   aiRetryState: RefObject<Record<string, AiRetryState>>;
   aiEnriching: RefObject<Set<string>>;
@@ -64,6 +68,10 @@ interface Dependencies {
 export function useAiRetryLifecycle({
   auth,
   aiSuggestionsModeRef,
+  aiSuggestionsReady,
+  aiSuggestionsReadyRef,
+  awaitAiSuggestionsPreference,
+  aiTriggerAttempted,
   queueRef,
   aiRetryState,
   aiEnriching,
@@ -93,7 +101,7 @@ export function useAiRetryLifecycle({
   // reactive mirror) so it always sees the latest bookkeeping. STASH #573:
   // no-ops entirely when the mode is 'off'.
   const checkAiRetries = useCallback(() => {
-    if (!auth.session || aiSuggestionsModeRef.current === "off") {
+    if (!auth.session || !aiSuggestionsReadyRef.current || aiSuggestionsModeRef.current === "off") {
       return;
     }
     if (
@@ -159,9 +167,13 @@ export function useAiRetryLifecycle({
       setAiQuotaExceeded((current) =>
         current && Date.now() >= current.retryAt ? null : current,
       );
+      // Loading an account preference suspends staged work; it is not a
+      // user-selected OFF and must not discard attempted-but-undispatched IDs.
+      if (!aiSuggestionsReadyRef.current) return;
       if (aiSuggestionsModeRef.current === "off") {
         // Mode flipped off mid-burst: drop whatever's left rather than keep
         // firing requests for a feature the user just turned off.
+        for (const id of aiDispatchQueueRef.current.pending) aiTriggerAttempted.current.delete(id);
         aiDispatchQueueRef.current = EMPTY_AI_ENRICHMENT_BURST_QUEUE;
         return;
       }
@@ -243,12 +255,12 @@ export function useAiRetryLifecycle({
   // foreground transition or periodic tick.
   const coldLaunchRetryChecked = useRef(false);
   useEffect(() => {
-    if (bookmarks === null || !auth.session || coldLaunchRetryChecked.current) {
+    if (bookmarks === null || !auth.session || !aiSuggestionsReady || coldLaunchRetryChecked.current) {
       return;
     }
     coldLaunchRetryChecked.current = true;
     checkAiRetries();
-  }, [bookmarks, auth.session, checkAiRetries]);
+  }, [bookmarks, auth.session, checkAiRetries, aiSuggestionsReady]);
 
   // Foreground-transition + periodic retry check: re-run the backoff check
   // whenever the app returns to the foreground, and (while foregrounded) every
@@ -270,7 +282,9 @@ export function useAiRetryLifecycle({
     };
     const unregister = registerForForegroundState({
       onForeground: () => {
-        checkAiRetries();
+        // The policy foreground handler refreshes first; wait for that read
+        // before dispatching under a possibly changed account setting.
+        void awaitAiSuggestionsPreference().then(checkAiRetries);
         startInterval();
       },
       onBackground: stopInterval,
@@ -280,7 +294,7 @@ export function useAiRetryLifecycle({
       unregister();
       stopInterval();
     };
-  }, [checkAiRetries]);
+  }, [checkAiRetries, awaitAiSuggestionsPreference]);
 
   // Reconcile aiServerQueued against the queue's real remote status (Codex
   // review, PR #656). Unlike checkAiRetries, this deliberately does NOT gate

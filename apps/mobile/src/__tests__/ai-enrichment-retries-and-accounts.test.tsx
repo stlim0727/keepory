@@ -520,3 +520,34 @@ test('a pull that brings down an enrichment from another path (server trigger / 
   expect(store.current!.hadPriorEnrichmentAttempt(SYNCED_ID)).toBe(false);
   expect(fakeRepo.__meta('ai_suggestion_retry')).toBe('{}');
 });
+
+
+test('foreground retries await the permanent account policy and respect another device OFF choice', async () => {
+  const realUser = { ...mockSession.user, is_anonymous: false };
+  mockHarness.authSession = { ...mockSession, user: realUser };
+  const now = new Date().toISOString();
+  fakeRepo.__reset([makeStoredBookmark({ id: SYNCED_ID })]);
+  apiMock.__spies.listBookmarkIds.mockResolvedValue([SYNCED_ID]);
+  await fakeRepo.repository.setMeta('ai_suggestion_retry', JSON.stringify({
+    [SYNCED_ID]: { firstAttemptAt: now, lastAttemptAt: now, attemptCount: 1 },
+  }));
+  const clientModule = jest.requireMock('@/supabase/client');
+  const originalClient = clientModule.createSupabaseClient();
+  const getUser = jest.fn(async (): Promise<unknown> => ({ id: mockSession.user.id, user_metadata: { ai_suggestions_mode: 'confirm' } }));
+  const clientSpy = jest.spyOn(clientModule, 'createSupabaseClient').mockReturnValue({ ...originalClient, getUser });
+  const store = renderStore();
+  await waitFor(() => expect(store.current?.lastPulledAt).not.toBeNull());
+  await waitFor(() => expect(store.current!.aiSuggestionsMode).toBe('confirm'));
+  let finish!: (user: unknown) => void;
+  getUser.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 3 * 60_000);
+  try {
+    await act(async () => { fireForeground(); });
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(apiMock.__spies.requestEnrichment).not.toHaveBeenCalled();
+    await act(async () => { finish({ id: mockSession.user.id, user_metadata: { ai_suggestions_mode: 'off' } }); });
+    await waitFor(() => expect(store.current!.aiSuggestionsMode).toBe('off'));
+    expect(apiMock.__spies.requestEnrichment).not.toHaveBeenCalled();
+    expect(store.current!.isAiSuggestionPostponed(SYNCED_ID)).toBe(true);
+  } finally { clientSpy.mockRestore(); clock.mockRestore(); }
+});

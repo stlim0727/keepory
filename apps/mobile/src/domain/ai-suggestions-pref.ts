@@ -1,5 +1,5 @@
 /**
- * The user's global AI-suggestions mode (STASH #573): how much the app is
+ * The user's account AI-suggestions mode (STASH #573): how much the app is
  * allowed to do on its own with AI tag/folder suggestions.
  *
  *  - `off` — never auto-trigger AI enrichment for a bookmark. A manual
@@ -7,9 +7,10 @@
  *    gates the automatic background trigger.
  *  - `confirm` — today's existing behavior: auto-trigger runs, but
  *    suggestions sit in the review badge/card for the user to accept or
- *    dismiss. The default.
+ *    dismiss. The guest/legacy default.
  *  - `auto_accept` — auto-trigger runs AND high-confidence suggestions are
- *    applied automatically (see `domain/ai-suggestions.ts`'s
+ *    applied automatically. The first-login account default (see
+ *    `domain/ai-suggestions.ts`'s
  *    `SUGGESTION_MIN_CONFIDENCE`), with no review step.
  *
  * Follows the same shape as `domain/view-mode.ts`: a type union, a default, a
@@ -20,11 +21,11 @@
  */
 export type AiSuggestionsMode = 'off' | 'confirm' | 'auto_accept';
 
-/** "Confirm" (today's existing review-badge behavior) is the default — this
- *  feature must not change behavior for anyone who never opens the setting. */
+/** Guest/legacy parsing fallback. Accounts without a saved mode start with
+ *  auto_accept, selected by useAiSuggestionsPreference at login. */
 export const DEFAULT_AI_SUGGESTIONS_MODE: AiSuggestionsMode = 'confirm';
 
-/** Persistence key for the user's chosen mode (repository meta store). */
+/** Guest/legacy key; signed-in accounts use an `.account.<userId>` suffix. */
 export const AI_SUGGESTIONS_MODE_PREF_KEY = 'pref.ai.suggestions_mode';
 
 /** The modes in the order the settings sheet presents them. */

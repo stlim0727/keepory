@@ -11,6 +11,17 @@ jest.mock('@/storage/repository', () =>
   require('./helpers/fake-repository').createFakeRepositoryModule(),
 );
 
+// A known account setting is available; this suite exercises push permission
+// decisions, while unknown/offline account preference reads have their own suite.
+jest.mock('@/supabase/client', () => ({
+  ...jest.requireActual('@/supabase/client'),
+  createSupabaseClient: () => ({
+    request: async () => [],
+    getUser: async () => ({ id: 'user-1', user_metadata: { ai_suggestions_mode: 'confirm' } }),
+    updateUserMetadata: async () => ({}),
+  }),
+}));
+
 // Mutable auth mock so each test can pick anonymous / authenticated, with or
 // without a session (push registration needs a real access token).
 const mockAuth = {
@@ -145,7 +156,7 @@ test('AI suggestions off: row explains that instead, even when signed in', async
   await fireEvent.press(screen.getByText('Off — never auto-suggest'));
 
   await waitFor(() => expect(screen.getByText('Turn on AI suggestions first')).toBeTruthy());
-  await waitFor(() => expect(fakeRepo.__meta(AI_SUGGESTIONS_MODE_PREF_KEY)).toBe('off'));
+  await waitFor(() => expect(fakeRepo.__meta(`${AI_SUGGESTIONS_MODE_PREF_KEY}.account.${mockAuth.userId}`)).toBe('off'));
 
   await act(async () => {
     fireEvent(screen.getByLabelText('Notify when AI catches up'), 'valueChange', true);
