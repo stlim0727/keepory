@@ -354,6 +354,10 @@ Delete `apps/mobile/dist/` afterwards; it is gitignored.
 - Open PRs as ready for review by default. Use draft only when the user asks or
   the work is knowingly incomplete.
 - **Always rebase feature branches on the latest target branch (`main`) before opening or updating a PR** (`git fetch origin main && git rebase origin/main`). Ensure all local commits apply cleanly over the newest target HEAD prior to pushing or creating the PR.
+- **CI-First Testing Policy for PR Writers & Reviewers:**
+  Automated CI triggers on PR creation and every commit update.
+  - **PR Writers:** Avoid redundant local execution of full test suites (`pnpm test`, `pnpm test:components`). Perform minimum local testing strictly when changes affect paths not in CI (e.g., standalone device smoke, live database migrations) or when the agent is genuinely uncertain about runtime behavior and requires immediate feedback on an unpredictable outcome to proceed (scoped to the isolated test or assertion). Run scoped static checks (`pnpm lint`, `pnpm typecheck`), push early, and let CI execute the suite.
+  - **PR Reviewers:** Never check out branches to run test suites locally during review. Rely on CI check runs (`gh pr checks` / `get_check_runs`) as the single source of truth for test passage, and focus review on code correctness, architectural invariants, and test coverage/assertion quality in the diff.
 - After opening or updating a PR, continuously monitor and actively address:
   - Any review comments or suggestions (including automated reviews from AI agents like Codex, as well as human reviewers): validate feedback first; if actionable, push fixes and post a short reply referencing the fixing commit SHA. If stale, invalid, or a question, reply with an explanation. Once addressed, mark the thread as resolved.
   - Any CI failures or build issues immediately.

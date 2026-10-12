@@ -20,8 +20,11 @@ prose. Load subsystem references only for the behavior you are changing.
 - Preserve local-first capture, durable queue/identity changes, account isolation,
   and user/generated provenance. Read `AGENTS.md` and the subsystem reference
   before modifying storage, sync, auth, or capture.
-- Run root `pnpm lint`, `pnpm typecheck`, `pnpm test`, and
-  `pnpm test:components --runInBand` before publishing code changes. Do not run
+- Rely on automated CI for full test runs; avoid redundant local test execution
+  (`pnpm test`, `pnpm test:components`) covered by CI upon PR creation/update.
+  Perform minimum local testing only if behavior is not covered by CI or when
+  assessing an unpredictable result needed to proceed. Run scoped static checks
+  (`pnpm lint`, `pnpm typecheck`) before publishing code changes. Do not run
   `expo lint` inside the mobile app or introduce its config/lockfile churn.
 - Use the documented trunk/release branch strategy; shipped fixes go to their
   release line and forward to main. An inseparable multi-step feature develops

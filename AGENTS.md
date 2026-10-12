@@ -96,14 +96,14 @@ Keep dependency contracts explicit; do not inject the entire store into a module
 
 ## Commands and checks
 
-Use Node 22 and pnpm 10. Run from the repo root:
+Use Node 22 and pnpm 10. Pre-push static gates from the repo root:
 
 ```sh
 pnpm lint
 pnpm typecheck
-pnpm test
-pnpm test:components --runInBand
 ```
+
+CI automatically executes the full test matrix (`pnpm test` and `pnpm test:components`) on PR creation and updates. Avoid redundant local execution of full test suites; reserve minimum local testing strictly for behaviors not covered by CI or when assessing an unpredictable outcome needed to proceed.
 
 - Install dependencies with `pnpm install --frozen-lockfile` if binaries are absent.
 - Root lint checks whitespace, static env access, overlay elevation,
@@ -129,7 +129,8 @@ pnpm test:components --runInBand
 
 Follow the [reference's PR workflow](docs/development/agent-reference.md#collaboration-and-pr-workflow)
 and `docs/design/sync-change-review.md` for sync-related changes. Use a fresh
-feature branch, rebase before publishing, run all four gates, open a regular PR,
+feature branch, rebase before publishing, run pre-push static gates, open a regular PR,
+rely on CI for full test runs (avoiding redundant local suite runs),
 address reviews/CI/conflicts, and allow the documented bot-review window.
 Do not auto-merge migration/function, auth/sync-deletion, deployment, or release
 workflow changes. Identify manually posted comments with the actual AI agent.

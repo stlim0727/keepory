@@ -77,7 +77,11 @@ Only reached when the work is genuinely not in base. Assess, in order:
   Honor the repo's core principles — *Capture is sacred*, user-authored fields
   never overwritten by generated/AI metadata, owner-scoped RLS, local-first
   optimism (see `CLAUDE.md` / `AGENTS.md`).
-- **Tests**: is the behavior covered? Note missing coverage.
+- **Tests**: is the behavior covered? Note missing coverage. Do not check out
+  the branch to run test suites locally during review — rely on CI check runs
+  (`get_check_runs`) as the single source of truth. Reserve minimum local testing
+  strictly for paths not covered by CI or when assessing an unpredictable outcome
+  needed to resolve an ambiguous diff.
 - **Product/UX judgment calls**: flag decisions a human should sign off on
   rather than rubber-stamping.
 
