@@ -34,9 +34,9 @@ This script will query the GitHub GraphQL API to find:
 3. Validate changes locally:
    * Run `git diff --check` for scoped whitespace checks.
    * Run `corepack pnpm --filter mobile typecheck` for app TypeScript changes.
-   * Run the narrowest relevant test command first, then broaden only when the change warrants it.
+   * Avoid running full test suites locally to prevent redundancy with CI; run minimum targeted testing only if the change affects behavior not covered by CI or when assessing an unpredictable outcome needed to proceed.
    * Use `corepack pnpm lint` only when the branch should absorb whole-repo formatting checks; do not run write-formatters on unrelated files.
-4. Commit the changes and push.
+4. Commit the changes and push to let CI execute the full test suite.
 
 Passing a large suite is evidence for its covered transitions, not proof that every channel agrees. In the reply, identify the regression exercised and relevant validation rather than relying only on the total test count. Follow the repository's CI/review monitoring requirements after pushing.
 
