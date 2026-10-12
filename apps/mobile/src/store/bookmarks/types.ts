@@ -87,6 +87,8 @@ export interface BookmarksContextValue {
   loadError: boolean;
   /** Account library verification is distinct from an empty library. */
   accountLibraryState: "ready" | "checking" | "error";
+  /** Local cache ownership is reconciled; does not wait for a cloud pull. */
+  accountCacheReady: boolean;
   accountTransferCount: number;
   dismissAccountTransfer: () => void;
   /** Active (non-trashed) bookmarks, newest first. */

@@ -30,6 +30,11 @@ jest.mock('@/storage/preferences', () => ({
 }));
 
 let mockStoreOverrides: Record<string, unknown> = {};
+let mockStartupCache: string | null = null;
+jest.mock('@/storage/inbox-startup-preview', () => ({
+  readInboxStartupPreview: async () => mockStartupCache,
+  writeInboxStartupPreview: async () => {},
+}));
 jest.mock('@/store/bookmarks', () => ({
   useBookmarks: () => ({
     inbox: [],
@@ -43,6 +48,8 @@ jest.mock('@/store/bookmarks', () => ({
     getTagsForBookmark: () => [],
     getCollection: () => undefined,
     getEnrichment: () => undefined,
+    getBookmark: () => undefined,
+    getReviewedSummary: () => new Set(),
     getReviewedSuggestions: () => new Set(),
     getDismissedFolderSuggestions: () => new Set(),
     clearUnseenSuggestions: () => {},
@@ -69,6 +76,33 @@ function renderInbox() {
 
 afterEach(() => {
   mockStoreOverrides = {};
+  mockStartupCache = null;
+});
+
+test('shows a cached same-account list before hydration, then replaces it with live rows', async () => {
+  const row = {
+    id: 'cached-item', title: 'Previously saved bookmark', url: 'https://example.com',
+    content_type: 'url', created_at: '2026-10-12', updated_at: '2026-10-12',
+    collection_id: null, is_archived: false, deleted_at: null,
+  };
+  mockStartupCache = JSON.stringify({
+    version: 1, userId: 'user-1', isAnonymous: false, sort: { field: 'date', dir: 'desc' },
+    viewMode: 'list', totalCount: 100, bookmarks: [row], tags: {}, collections: [],
+  });
+  mockStoreOverrides = { isLoading: true, accountLibraryState: 'checking' };
+  const screen = await renderInbox();
+  await waitFor(() => expect(screen.getByText('Previously saved bookmark')).toBeTruthy());
+  expect(screen.getByTestId('inbox-list').props.pointerEvents).toBe('none');
+  expect(screen.queryByTestId('inbox-empty-onboarding')).toBeNull();
+  mockStoreOverrides = {
+    isLoading: false, accountLibraryState: 'ready',
+    inbox: [{ ...row, title: 'Current bookmark title' }],
+  };
+  await screen.rerender(<CaptureToastProvider><InboxScreen /></CaptureToastProvider>);
+  await waitFor(() => expect(screen.getByText('Current bookmark title')).toBeTruthy());
+  expect(screen.queryByText('Previously saved bookmark')).toBeNull();
+  expect(screen.getByTestId('inbox-list').props.pointerEvents).toBe('auto');
+  await screen.unmount();
 });
 
 test('shows a syncing progress state (not the empty onboarding) while the first pull runs', async () => {

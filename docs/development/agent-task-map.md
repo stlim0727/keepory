@@ -17,6 +17,7 @@ screen when changing composition or interactions across several sections.
 | AI retries / account rekeying | `store/bookmarks/use-ai-retry-bookkeeping.ts`, `use-ai-retry-lifecycle.ts` | `ai-enrichment-retries-and-accounts`, `ai-enrichment-server-queue` |
 | Pull-delivered AI completion | `store/bookmarks/use-sync-coordinator.ts` | `ai-enrichment-pull-completion` |
 | Bulk-create reconciliation / durability | `store/bookmarks/use-sync-coordinator.ts`, `sync/sync-bookmarks.ts` | `ai-enrichment-bulk-reconciliation`, `ai-enrichment-bulk-durability` |
+| Startup Inbox preview cache | `features/inbox/use-inbox-startup-preview.ts`, `storage/inbox-startup-preview.ts` | `inbox-startup-preview`; `domain/inbox-startup-preview.test.ts` |
 | Hydration / initial library state | `store/bookmarks/use-library-hydration.ts` | `durable-snapshot`, `splash-readiness`, `logout-cache-clear` |
 | Search open/close or focus | `features/inbox/use-inbox-search.ts` | `inbox-screen`, `inbox-back-handler`, `search-suggestion-shelf` |
 | Search/facet/folder results | `features/inbox/use-inbox-results.ts`, `domain/search.ts` | `inbox-screen`, `inbox-folder-management`; `domain/search.test.ts` |

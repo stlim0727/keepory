@@ -40,6 +40,7 @@ import {
   type NativeSyntheticEvent
 } from 'react-native';
 interface Props {
+  readOnly?: boolean;
   setInlineDetailId: Dispatch<SetStateAction<string | null>>;
   viewMode: ViewMode;
   contentMaxWidth: number;
@@ -78,6 +79,7 @@ interface Props {
 }
 
 export function createInboxItemRenderer({
+  readOnly = false,
   setInlineDetailId,
   viewMode,
   contentMaxWidth,
@@ -150,6 +152,7 @@ export function createInboxItemRenderer({
             testID="folder-tile-new"
             accessibilityRole="button"
             accessibilityLabel={t('inbox.newCollectionA11y')}
+            disabled={readOnly}
             onPress={onNewFolderTilePress}
             style={[styles.folderTile, styles.folderTileNew, { borderColor: palette.border }]}
           >
@@ -166,7 +169,7 @@ export function createInboxItemRenderer({
             testID={`folder-tile-${item.id}`}
             accessibilityRole="button"
             accessibilityLabel={item.label}
-            disabled={folderSelectionMode}
+            disabled={folderSelectionMode || readOnly}
             onPress={() => item.filter && openFolderTile(item.filter)}
             style={[
               styles.folderTile,
@@ -216,6 +219,7 @@ export function createInboxItemRenderer({
           accessibilityRole={folderSelectionMode ? 'checkbox' : 'button'}
           accessibilityState={folderSelectionMode ? { checked: isFolderSelected } : undefined}
           accessibilityLabel={item.label}
+          disabled={readOnly}
           onPress={handleFolderPress}
           onLongPress={handleFolderLongPress}
           style={[
@@ -239,6 +243,7 @@ export function createInboxItemRenderer({
               testID={`folder-more-${item.id}`}
               accessibilityRole="button"
               accessibilityLabel={t('folder.menuTitle')}
+              disabled={readOnly}
               onPress={(e) => {
                 e.stopPropagation?.();
                 if (collectionObj) {
@@ -386,6 +391,7 @@ export function createInboxItemRenderer({
               opacity: pressed ? 0.78 : 1,
             },
           ]}
+          disabled={readOnly}
           onPress={handleItemPress}
           onLongPress={handleItemLongPress}
           accessible={false}
@@ -400,6 +406,7 @@ export function createInboxItemRenderer({
                   ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
                   : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
               }
+              disabled={readOnly}
               onPress={() => toggleSelect(item.id)}
               hitSlop={8}
               style={styles.selectionCheckWrap}
@@ -414,6 +421,7 @@ export function createInboxItemRenderer({
           <Pressable
             accessibilityRole={selectionMode ? 'button' : item.url ? 'link' : 'button'}
             accessibilityLabel={item.url ? t('common.openLink') : (accessibilityTitle(item) ?? t('common.untitled'))}
+            disabled={readOnly}
             onPress={selectionMode ? () => toggleSelect(item.id) : item.url ? openLink : openDetail}
             onLongPress={handleItemLongPress}
             hitSlop={6}
@@ -448,6 +456,7 @@ export function createInboxItemRenderer({
             accessibilityLabel={selectionMode ? (isSelected ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') }) : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })) : (accessibilityTitle(item) ?? t('common.untitled'))}
             accessibilityHint={selectionMode ? undefined : t('inbox.openBookmarkHint')}
             accessibilityState={selectionMode ? { checked: isSelected } : { busy: isOpening }}
+            disabled={readOnly}
             onPress={handleItemPress}
             onLongPress={handleItemLongPress}
           >
@@ -540,6 +549,7 @@ export function createInboxItemRenderer({
               accessibilityLabel={t('inbox.moreActions')}
               hitSlop={8}
               style={styles.moreButton}
+              disabled={readOnly}
               onPress={() => setMenuItem(item)}
             >
               <Ionicons name="ellipsis-horizontal" size={18} color={palette.textSecondary} />
@@ -577,6 +587,7 @@ export function createInboxItemRenderer({
         <Pressable
           // Container for card layout
           accessible={false}
+          disabled={readOnly}
           onPress={selectionMode ? () => toggleSelect(item.id) : undefined}
           onLongPress={handleItemLongPress}
         >
@@ -586,6 +597,7 @@ export function createInboxItemRenderer({
                 testID="inbox-card-preview"
                 accessible={false}
                 tabIndex={-1}
+                disabled={readOnly}
                 onPress={handleItemPress}
                 onLongPress={handleItemLongPress}
                 style={({ pressed }) => [
@@ -619,6 +631,7 @@ export function createInboxItemRenderer({
                       ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
                       : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
                   }
+                  disabled={readOnly}
                   onPress={() => toggleSelect(item.id)}
                   hitSlop={8}
                   style={[
@@ -643,6 +656,7 @@ export function createInboxItemRenderer({
                       : t('common.openLink')
                   }
                   accessibilityState={selectionMode ? { checked: isSelected } : undefined}
+                  disabled={readOnly}
                   onPress={selectionMode ? () => toggleSelect(item.id) : openLink}
                   onLongPress={handleItemLongPress}
                   style={({ pressed }) => [
@@ -669,6 +683,7 @@ export function createInboxItemRenderer({
                 <Pressable
                   accessible={false}
                   tabIndex={-1}
+                  disabled={readOnly}
                   onPress={selectionMode ? () => toggleSelect(item.id) : (item.url ? openLink : openDetail)}
                   onLongPress={handleItemLongPress}
                   hitSlop={6}
@@ -682,6 +697,7 @@ export function createInboxItemRenderer({
                     accessibilityLabel={selectionMode ? (isSelected ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') }) : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })) : (accessibilityTitle(item) ?? t('common.untitled'))}
                     accessibilityHint={selectionMode ? undefined : t('inbox.openBookmarkHint')}
                     accessibilityState={selectionMode ? { checked: isSelected } : { busy: isOpening }}
+                    disabled={readOnly}
                     onPress={handleItemPress}
                     onLongPress={handleItemLongPress}
                   >
@@ -708,6 +724,7 @@ export function createInboxItemRenderer({
                         ? t(isSelected ? 'inbox.deselectItemA11y' : 'inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
                         : t('common.openLink')}
                       accessibilityState={selectionMode ? { checked: isSelected } : undefined}
+                      disabled={readOnly}
                       onPress={selectionMode ? () => toggleSelect(item.id) : openLink}
                       onLongPress={handleItemLongPress}
                       style={{ minHeight: uiMetrics.touchTarget, justifyContent: 'center' }}
@@ -739,6 +756,7 @@ export function createInboxItemRenderer({
                     accessibilityLabel={t('inbox.moreActions')}
                     hitSlop={8}
                     style={[styles.moreButton, styles.cardMoreButton]}
+                    disabled={readOnly}
                     onPress={() => setMenuItem(item)}
                   >
                     <Ionicons name="ellipsis-horizontal" size={18} color={palette.textSecondary} />
@@ -753,6 +771,7 @@ export function createInboxItemRenderer({
                   accessibilityLabel={selectionMode ? (isSelected ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') }) : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })) : (accessibilityTitle(item) ?? t('common.untitled'))}
                   accessibilityHint={selectionMode ? undefined : t('inbox.openBookmarkHint')}
                   accessibilityState={selectionMode ? { checked: isSelected } : { busy: isOpening }}
+                  disabled={readOnly}
                   onPress={handleItemPress}
                   onLongPress={handleItemLongPress}
                 >
@@ -788,6 +807,7 @@ export function createInboxItemRenderer({
                     accessibilityLabel={t('inbox.moreActions')}
                     hitSlop={8}
                     style={[styles.moreButton, styles.cardMoreButton]}
+                    disabled={readOnly}
                     onPress={() => setMenuItem(item)}
                   >
                     <Ionicons name="ellipsis-horizontal" size={18} color={palette.textSecondary} />

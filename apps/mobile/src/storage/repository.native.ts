@@ -5,6 +5,7 @@ import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/
 import type { AIEnrichment, Bookmark, LocalPendingBookmark, SyncChange } from '@/domain/types';
 import { parseSyncChanges } from '@/domain/sync-changes';
 import { noteSqliteOpenFailure } from '@/storage/diagnostics';
+import { invalidateInboxStartupPreview } from '@/storage/inbox-startup-preview';
 import { IMPORT_BATCH_SIZE, runImportBatchTransactions } from '@/storage/import-batch';
 import { ensureNativeSqliteDirectory } from '@/storage/sqlite-directory-native';
 import { registerForBackgroundClose } from '@/storage/sqlite-app-lifecycle';
@@ -125,6 +126,7 @@ const SCHEMA_SQL = `
 // Row writers shared by `init`'s seed path and the public methods, so neither
 // nests a second `connection.run` (which would double-wrap the retry).
 function writeBookmark(db: SQLite.SQLiteDatabase, bookmark: Bookmark): Promise<unknown> {
+  invalidateInboxStartupPreview();
   return db.runAsync(
     'INSERT OR REPLACE INTO bookmarks (id, data, created_at, is_archived, deleted_at) VALUES (?, ?, ?, ?, ?)',
     [
@@ -446,6 +448,7 @@ class SqliteBookmarkRepository implements BookmarkRepository {
   }
 
   async deleteBookmark(id: string): Promise<void> {
+    invalidateInboxStartupPreview();
     await this.connection.run(
       (db) => db.runAsync('DELETE FROM bookmarks WHERE id = ?', [id]),
       'deleteBookmark',
@@ -477,6 +480,7 @@ class SqliteBookmarkRepository implements BookmarkRepository {
   }
 
   async deleteBookmarks(ids: string[]): Promise<void> {
+    invalidateInboxStartupPreview();
     for (let offset = 0; offset < ids.length; offset += IMPORT_BATCH_SIZE) {
       const chunk = ids.slice(offset, offset + IMPORT_BATCH_SIZE);
       await this.connection.run(
@@ -640,6 +644,7 @@ class SqliteBookmarkRepository implements BookmarkRepository {
   }
 
   async clearAllData(): Promise<void> {
+    invalidateInboxStartupPreview();
     await this.connection.run(
       (db) =>
         db.withTransactionAsync(async () => {

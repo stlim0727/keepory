@@ -3,6 +3,7 @@ import { beforeEach, test } from 'node:test';
 
 import type { Bookmark } from '@/domain/types';
 import { repository } from '@/storage/repository';
+import { readInboxStartupPreview, writeInboxStartupPreview } from '@/storage/inbox-startup-preview';
 
 /** Minimal in-memory localStorage shim so the web repository is testable under
  *  the Node runner (which has no DOM). The repository reads the `localStorage`
@@ -74,6 +75,23 @@ test('a saved bookmark survives a reload (re-init does not re-seed over it)', as
   const reloaded = await repository.listBookmarks();
   assert.equal(reloaded.length, 1, 'bookmark should survive the reload');
   assert.equal(reloaded[0].id, 'local-1');
+});
+
+test('bookmark mutations and resets invalidate startup previews, while reads preserve them', async () => {
+  await repository.init([]);
+  const row = makeBookmark('local-1');
+  await repository.insertBookmark(row);
+  await writeInboxStartupPreview('display snapshot');
+  await repository.listBookmarks();
+  assert.equal(await readInboxStartupPreview(), 'display snapshot');
+  await repository.updateBookmark({ ...row, title: 'Edited title' });
+  assert.equal(await readInboxStartupPreview(), null);
+  await writeInboxStartupPreview('display snapshot');
+  await repository.deleteBookmark(row.id);
+  assert.equal(await readInboxStartupPreview(), null);
+  await writeInboxStartupPreview('display snapshot');
+  await repository.clearAllData();
+  assert.equal(await readInboxStartupPreview(), null);
 });
 
 test('clearAllData wipes library data but keeps meta (and never re-seeds)', async () => {

@@ -22,6 +22,25 @@ function makeCoordinator(overrides: Partial<SplashCoordinatorDeps> = {}) {
   };
 }
 
+test('same-account preview releases Inbox while hydration is still pending', () => {
+  const { coordinator, getHiddenCalls } = makeCoordinator();
+  coordinator.updateStoreStatus({ isLoading: true, loadError: false });
+  coordinator.updateRoute('/');
+  coordinator.signalInboxPreviewReady();
+  assert.equal(coordinator.isDismissed(), true);
+  assert.equal(coordinator.getDismissReason(), 'inbox_ready');
+  assert.equal(getHiddenCalls(), 1);
+});
+
+test('Inbox preview does not release a deep link before storage settles', () => {
+  const { coordinator } = makeCoordinator();
+  coordinator.updateRoute('/bookmark/saved-id');
+  coordinator.signalInboxPreviewReady();
+  assert.equal(coordinator.isDismissed(), false);
+  coordinator.updateStoreStatus({ isLoading: false, loadError: false });
+  assert.equal(coordinator.getDismissReason(), 'route_ready');
+});
+
 test('inbox route holds splash until both store and inbox layout are ready', async () => {
   const { coordinator, getHiddenCalls } = makeCoordinator();
   coordinator.updateRoute('/');
