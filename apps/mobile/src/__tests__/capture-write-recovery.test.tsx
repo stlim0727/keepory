@@ -1,0 +1,161 @@
+import { act, renderHook } from '@testing-library/react-native';
+import { useRef, useState } from 'react';
+import type { Bookmark, LocalPendingBookmark, SyncChangeSource } from '@/domain/types';
+import { useAddBookmark } from '@/store/bookmarks/use-add-bookmark';
+import type { AddBookmarkResult } from '@/store/bookmarks/types';
+import { makeStoredBookmark, type FakeRepositoryModule } from './helpers/fake-repository';
+
+jest.mock('@/storage/repository', () => require('./helpers/fake-repository').createFakeRepositoryModule());
+jest.mock('@/storage/image-store', () => ({ copyImageToLibrary: jest.fn(async () => 'file:///durable.png') }));
+const fake = jest.requireMock('@/storage/repository') as FakeRepositoryModule;
+
+async function harness(rows: Bookmark[] = [], owner: string | null = null) {
+  const resetEpoch = { current: 0 };
+  const enqueueMutation = jest.fn<Promise<boolean>, [string, 'update' | 'delete', SyncChangeSource?, string[]?]>(async () => true);
+  let hidden = false;
+  const hook = await renderHook(() => {
+    const [bookmarks, setBookmarks] = useState<Bookmark[] | null>(rows);
+    const [queue, setQueue] = useState<LocalPendingBookmark[]>([]);
+    const bookmarksRef = useRef<Bookmark[] | null>(bookmarks);
+    const queueRef = useRef(queue);
+    bookmarksRef.current = bookmarks;
+    queueRef.current = queue;
+    const capture = useAddBookmark({
+      hideAccountCache: hidden, loadedBookmarks: bookmarks ?? [], setBookmarks, setQueue,
+      bookmarksRef, queueRef, resetEpoch, realOwnerId: owner,
+      localCreateFlushesInFlight: useRef(0), syncPendingRef: useRef(false), syncPendingForceRef: useRef(false),
+      syncNowRef: useRef(null), pendingUserTitleEdits: useRef(new Set<string>()),
+      enrichInBackground: () => {}, markEnrichmentStale: () => {},
+      hasSyncedOnce: (id) => rows.some((row) => row.id === id && row.ever_synced === true),
+      enqueueMutation,
+    });
+    return { ...capture, bookmarks, queue, bookmarksRef, queueRef, setBookmarks, setQueue };
+  });
+  return { ...hook, resetEpoch, enqueueMutation, switchOwner: async (next: string | null) => { owner = next; await hook.rerender({}); }, hide: async () => { hidden = true; await hook.rerender({}); } };
+}
+
+async function capture(h: Awaited<ReturnType<typeof harness>>, input: Parameters<ReturnType<typeof useAddBookmark>['addBookmark']>[0]) {
+  let saved!: AddBookmarkResult;
+  await act(async () => { saved = h.result.current.addBookmark(input); });
+  if (saved.status === 'invalid') throw new Error(saved.error);
+  const acknowledgement = saved.persisted;
+  let persisted!: boolean;
+  await act(async () => { persisted = await acknowledgement; });
+  return { ...saved, persisted };
+}
+
+beforeEach(() => { jest.restoreAllMocks(); jest.spyOn(console, 'warn').mockImplementation(() => {}); fake.__reset([]); });
+
+it('restores a missing optimistic create and queue with the same capture identity after failure', async () => {
+  const insert = jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('disk full'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'capture-a', shared_text: 'Original note' };
+  const first = await capture(h, input);
+  expect(first.persisted).toBe(false);
+  await act(async () => { h.result.current.setBookmarks([]); h.result.current.setQueue([]); });
+  const retry = await capture(h, { ...input, shared_text: 'Edited note' });
+  expect(retry.persisted).toBe(true);
+  expect(retry.bookmark.id).toBe(first.bookmark.id);
+  expect(fake.__bookmarks()).toHaveLength(1);
+  expect(fake.__bookmarks()[0].description).toBe('Edited note');
+  expect(h.result.current.bookmarksRef.current?.[0].id).toBe(first.bookmark.id);
+  expect(h.result.current.queueRef.current[0].local_id).toBe(first.bookmark.id);
+  expect(fake.__queue()[0].payload.shared_text).toBe('Edited note');
+  expect(insert).toHaveBeenCalledTimes(2);
+});
+
+it('retains existing Markdown notes and title provenance when failed replacement is cleared', async () => {
+  const original = makeStoredBookmark({ notes: '**Existing**', notes_format: 'markdown', title: 'User title', title_is_derived: false, ever_synced: true });
+  fake.__reset([original]);
+  jest.spyOn(fake.repository, 'updateBookmark').mockRejectedValueOnce(new Error('disk full'));
+  const h = await harness([original]);
+  const input = { capture_attempt_id: 'duplicate', url: original.url!, notes: 'Failed replacement', title: 'Failed title', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect(h.enqueueMutation).not.toHaveBeenCalled();
+  expect((await capture(h, { ...input, title: '', notes: '', notes_format: 'plain' })).persisted).toBe(true);
+  expect(fake.__bookmarks()[0]).toMatchObject({ notes: '**Existing**', notes_format: 'markdown', title: 'User title', title_is_derived: false });
+});
+
+it('waits for row persistence before queueing and retries failed queue acknowledgement', async () => {
+  const original = makeStoredBookmark({ ever_synced: true });
+  fake.__reset([original]);
+  const events: string[] = [];
+  const update = fake.repository.updateBookmark;
+  jest.spyOn(fake.repository, 'updateBookmark').mockImplementation(async (row) => { events.push('row'); await update(row); });
+  const h = await harness([original]);
+  h.enqueueMutation.mockImplementationOnce(async () => { events.push('queue-failed'); return false; });
+  h.enqueueMutation.mockImplementationOnce(async () => { events.push('queue'); return true; });
+  const input = { capture_attempt_id: 'duplicate', url: original.url!, notes: 'Changed', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect((await capture(h, input)).persisted).toBe(true);
+  expect(events).toEqual(['row', 'queue-failed', 'row', 'queue']);
+  expect(h.enqueueMutation.mock.calls[1][3]).toContain('notes');
+});
+
+it('never resurrects a pre-reset failed capture', async () => {
+  jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('disk full'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'reset-capture', shared_text: 'Note' };
+  const first = await capture(h, input);
+  await act(async () => { h.resetEpoch.current++; h.result.current.setBookmarks([]); h.result.current.setQueue([]); });
+  const next = await capture(h, input);
+  expect(next.bookmark.id).not.toBe(first.bookmark.id);
+});
+
+it.each([[null, 'real-a'], ['real-a', null]] as const)('preserves failed local capture through owner transition %s to %s', async (from, to) => {
+  jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('disk full'));
+  const h = await harness([], from);
+  const input = { capture_attempt_id: 'owner-capture', shared_text: 'Note' };
+  const first = await capture(h, input);
+  await h.switchOwner(to);
+  await act(async () => { h.result.current.setBookmarks([]); h.result.current.setQueue([]); });
+  const retry = await capture(h, input);
+  expect(retry.persisted).toBe(true);
+  expect(retry.bookmark.id).toBe(first.bookmark.id);
+});
+
+it('blocks a failed real-account capture after switching to a different real account', async () => {
+  const insert = jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('disk full'));
+  const h = await harness([], 'real-a');
+  const input = { capture_attempt_id: 'owner-capture', shared_text: 'Private note' };
+  const first = await capture(h, input);
+  await h.switchOwner('real-b');
+  await act(async () => { h.result.current.setBookmarks([]); h.result.current.setQueue([]); });
+  const retry = await capture(h, input);
+  expect(retry.persisted).toBe(false);
+  expect(retry.bookmark.id).toBe(first.bookmark.id);
+  expect(insert).toHaveBeenCalledTimes(1);
+  expect(h.result.current.bookmarks).toEqual([]);
+});
+
+it('blocks a late image write after real-account ownership changes', async () => {
+  const images = jest.requireMock('@/storage/image-store') as { copyImageToLibrary: jest.Mock };
+  let completeCopy!: (uri: string) => void;
+  images.copyImageToLibrary.mockImplementationOnce(() => new Promise<string>((resolve) => { completeCopy = resolve; }));
+  const insert = jest.spyOn(fake.repository, 'insertBookmark');
+  const h = await harness([], 'real-a');
+  let saving!: AddBookmarkResult;
+  await act(async () => { saving = h.result.current.addBookmark({ capture_attempt_id: 'late-image', image: { uri: 'file:///image.png', mimeType: 'image/png', fileName: 'image.png' } }); });
+  await h.switchOwner('real-b');
+  await act(async () => { h.result.current.setBookmarks([]); h.result.current.setQueue([]); });
+  let persisted!: boolean;
+  await act(async () => { completeCopy('file:///durable.png'); if (saving.status !== 'invalid') persisted = await saving.persisted; });
+  expect(persisted).toBe(false);
+  expect(insert).not.toHaveBeenCalled();
+  expect(fake.__queue()).toEqual([]);
+  expect(h.result.current.bookmarks).toEqual([]);
+});
+
+it('does not resurrect discarded account-owned duplicate rows', async () => {
+  const original = makeStoredBookmark({ ever_synced: true });
+  fake.__reset([original]);
+  const update = jest.spyOn(fake.repository, 'updateBookmark').mockRejectedValueOnce(new Error('disk full'));
+  const h = await harness([original], 'real-a');
+  const input = { capture_attempt_id: 'owned-duplicate', url: original.url!, notes: 'Changed', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  await h.hide();
+  await act(async () => { h.result.current.setBookmarks([]); });
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(h.result.current.bookmarks).toEqual([]);
+});

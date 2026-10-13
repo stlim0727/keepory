@@ -615,3 +615,21 @@ describe('capture persistence recovery after editing', () => {
     expect(fakeRepo.__queue().some((entry) => entry.operation === 'update')).toBe(true);
   });
 });
+
+
+test('changing URL after a failed duplicate save never changes the existing bookmark address', async () => {
+  fakeRepo.__reset([makeStoredBookmark({title:'Original saved item',title_is_derived:false})]);
+  const screen = await renderAddScreen();
+  await fireEvent.changeText(screen.getByPlaceholderText('https://'), 'https://example.com/stored');
+  const spy = jest.spyOn(fakeRepo.repository,'updateBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+  try {
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await screen.findByText(en['add.saveFailed'] as string);
+    await fireEvent.changeText(screen.getByPlaceholderText('https://'), 'https://example.com/different');
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(fakeRepo.__bookmarks()).toHaveLength(2);
+    expect(fakeRepo.__bookmarks().find((row) => row.id === '7e64cf1e-0000-4000-8000-000000000001')?.url).toBe('https://example.com/stored');
+    expect(fakeRepo.__bookmarks().some((row) => row.url === 'https://example.com/different')).toBe(true);
+  } finally {spy.mockRestore();}
+});

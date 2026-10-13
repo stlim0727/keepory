@@ -1,8 +1,12 @@
 /** Browser image data can be stored with the existing durable bookmark row. */
 export function imageDataBytes(uri: string): Uint8Array {
-  const match = /^data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/]*={0,2})$/i.exec(uri);
-  if (!match || !match[1] || match[1].length % 4 !== 0) throw new Error('Invalid image data.');
-  const encoded = match[1];
+  const match = /^data:image\/[a-z0-9.+-]+;base64,([\s\S]*)$/i.exec(uri);
+  if (!match || /[^A-Za-z0-9+/= \t\r\n]/.test(match[1])) throw new Error('Invalid image data.');
+  // Android Base64.DEFAULT wraps clipboard image data and adds a trailing newline.
+  const encoded = match[1].replace(/[ \t\r\n]/g, '');
+  if (!encoded || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
+    throw new Error('Invalid image data.');
+  }
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
   // Reject nonzero unused bits rather than silently accepting corrupt data.

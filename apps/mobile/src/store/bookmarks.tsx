@@ -643,11 +643,13 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
         ...queueRef.current.filter((queued) => queued.local_id !== bookmarkId),
         entry,
       ];
-      ensureRepositoryReady()
+      return ensureRepositoryReady()
         .then(() => repository.enqueue(entry))
-        .catch((error) =>
-          logStorageError(`${operation} mutation enqueue`, error),
-        );
+        .then(() => true)
+        .catch((error) => {
+          logStorageError(`${operation} mutation enqueue`, error);
+          return false;
+        });
     },
     [],
   );
@@ -1334,6 +1336,9 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     enrichInBackground,
     hasSyncedOnce,
     bookmarksRef,
+    queueRef,
+    resetEpoch,
+    realOwnerId: auth.session && auth.session.user.is_anonymous !== true ? auth.userId : null,
     pendingUserTitleEdits,
     markEnrichmentStale,
     enqueueMutation,

@@ -35,10 +35,13 @@ it('reads native image bytes without browser base64 globals', async () => {
  Reflect.deleteProperty(globalThis, 'btoa');
  try {
   mockHasImage.mockResolvedValue(true);
-  mockGetImage.mockResolvedValue({data:'data:image/png;base64,AP8MYwE='});
+  const bytes = Uint8Array.from({ length: 128 }, (_, index) => index);
+  const encoded = Buffer.from(bytes).toString('base64');
+  const wrapped = encoded.match(/.{1,76}/g)!.join('\n') + '\n';
+  mockGetImage.mockResolvedValue({data:`data:image/png;base64,${wrapped}`});
   mockWrite.mockResolvedValue(undefined);
   expect(await readSmartClipboard()).toMatchObject({image:{uri:'file:///cache/clipboard.png'}});
-  expect(mockWrite).toHaveBeenCalledWith(Uint8Array.from([0,255,12,99,1]));
+  expect(mockWrite).toHaveBeenCalledWith(bytes);
   mockGetImage.mockResolvedValue({data:'data:image/png;base64,AA=A'});
   await expect(readSmartClipboard()).rejects.toThrow('Invalid image data');
  } finally {
