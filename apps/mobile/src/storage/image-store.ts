@@ -1,30 +1,38 @@
-/**
- * Web stub for the captured-image store. Image sharing is a native-only capture
- * path (the share intent is a no-op on web), so there is no durable file system
- * to copy into — we just return the source URI unchanged. The native
- * counterpart (`image-store.native.ts`) copies the shared file into the app's
- * document directory so the OS can't reclaim it.
+/** Browser images are inline data persisted with the bookmark by the web repository.
+ * This avoids session-scoped object URLs. Storage quota failures remain save failures.
  */
+
+import { imageBlobData, imageDataBytes } from '@/domain/image-data';
+import { SupabaseRequestError } from '@/supabase/client';
 
 export async function copyImageToLibrary(sourceUri: string, _fileName: string): Promise<string> {
-  return sourceUri;
+  // Inline image data is persisted by repository.insertBookmark, unlike blob URLs
+  // whose backing bytes disappear on reload. Storage quota errors propagate there.
+  if (typeof localStorage === 'undefined') throw new Error('Browser storage unavailable.');
+  if (sourceUri.startsWith('data:')) { imageDataBytes(sourceUri); return sourceUri; }
+  if (!sourceUri.startsWith('blob:')) throw new Error('Unsupported browser image source.');
+  const response = await fetch(sourceUri);
+  if (!response.ok) throw new Error('Could not read pasted image.');
+  return imageBlobData(await response.blob());
 }
 
-/**
- * Web has no image-only capture path to upload (see module doc), so this
- * should never actually be called — it throws rather than silently no-op so
- * a caller mistake is visible immediately instead of masquerading as a
- * successful upload.
- */
+/** Upload the durable binary using the existing authenticated storage target. */
 export async function uploadImageFile(
-  _localUri: string,
-  _uploadUrl: string,
-  _headers: Record<string, string>,
+  localUri: string,
+  uploadUrl: string,
+  headers: Record<string, string>,
 ): Promise<void> {
-  throw new Error('Image upload is not supported on web.');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const result = await fetch(uploadUrl, {
+      method: 'POST', headers, body: new Uint8Array(imageDataBytes(localUri)).buffer, signal: controller.signal,
+    });
+    if (!result.ok) throw new SupabaseRequestError(`Image upload failed with HTTP ${result.status}`, result.status);
+  } finally { clearTimeout(timeout); }
 }
 
-/** See module doc — never actually called on web. */
-export function localFileSizeBytes(_localUri: string): number {
-  throw new Error('Image upload is not supported on web.');
+/** Size check before attempting storage upload. */
+export function localFileSizeBytes(localUri: string): number {
+  return imageDataBytes(localUri).byteLength;
 }

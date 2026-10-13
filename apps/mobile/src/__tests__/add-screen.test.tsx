@@ -1,6 +1,14 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
+const mockReadClipboard = jest.fn();
+const mockCopyImage = jest.fn(async (..._args: unknown[]) => 'file:///durable/image.png');
+jest.mock('@/share/smart-clipboard', () => ({ readSmartClipboard: () => mockReadClipboard() }));
+jest.mock('@/storage/image-store', () => ({
+  copyImageToLibrary: (...args: unknown[]) => mockCopyImage(...args),
+  localFileSizeBytes: () => 1, uploadImageFile: jest.fn(),
+}));
+
 // Native focus is imperative; record it while preserving real input rendering.
 const mockInputFocus = jest.fn();
 jest.mock('react-native', () => {
@@ -418,4 +426,101 @@ test('keyboard Next focuses the title after mounting collapsed link details and 
   expect(mockInputFocus).toHaveBeenCalledTimes(1);
   await fireEvent(urlInput, 'submitEditing');
   expect(mockInputFocus).toHaveBeenCalledTimes(2);
+});
+
+
+describe('smart Add capture', () => {
+  beforeEach(() => { fakeRepo.__reset([]); mockReadClipboard.mockReset(); mockCopyImage.mockReset(); mockCopyImage.mockResolvedValue('file:///durable/image.png'); });
+  it('separates commerce text pasted into the URL and persists reviewed fields', async () => {
+    const screen = await renderAddScreen();
+    await fireEvent.changeText(screen.getByPlaceholderText('https://'), '[특가] 낫또 https://example.com/item?sku=42\n가격 6,990원');
+    expect(screen.getByPlaceholderText('https://').props.value).toBe('https://example.com/item?sku=42');
+    expect(screen.getByLabelText('Title (optional)').props.value).toBe('[특가] 낫또');
+    expect(screen.getByLabelText('Note').props.value).toBe('가격 6,990원');
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(fakeRepo.__bookmarks()[0]).toMatchObject({title:'[특가] 낫또', notes:'가격 6,990원'});
+  });
+  it('previews replacement and keeps user-authored details when declined', async () => {
+    const screen = await renderAddScreen();
+    await fireEvent.changeText(screen.getByPlaceholderText('https://'), 'https://example.com/draft');
+    await fireEvent.press(screen.getByText('Add details'));
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'My title');
+    mockReadClipboard.mockResolvedValue({ text:'Replacement https://example.org/new' });
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    await screen.findByText('Replace draft');
+    expect(screen.getByLabelText('Title (optional)').props.value).toBe('My title');
+    await fireEvent.press(screen.getByText('Keep editing'));
+    expect(screen.getByPlaceholderText('https://').props.value).toBe('https://example.com/draft');
+  });
+  it('ignores clipboard reads that finish after a mode change', async () => {
+    let resolve!: (value: {text:string}) => void;
+    mockReadClipboard.mockImplementation(() => new Promise((done) => {resolve=done;}));
+    const screen = await renderAddScreen();
+    await act(async () => { void (screen.getByTestId('add-paste').props.onClick ?? screen.getByTestId('add-paste').props.onPress)(); });
+    await fireEvent.press(screen.getByTestId('add-mode-note'));
+    await fireEvent.changeText(screen.getByLabelText('Note'), 'Newer draft');
+    await act(async () => resolve({text:'Stale https://example.com'}));
+    expect(screen.getByTestId('add-mode-note').props.accessibilityState.selected).toBe(true);
+    expect(screen.getByLabelText('Note').props.value).toBe('Newer draft');
+  });
+  it('image save waits for the durable copy and retains notes', async () => {
+    let resolve!: (value:string) => void;
+    mockCopyImage.mockImplementationOnce(() => new Promise((done) => {resolve=done;}));
+    mockReadClipboard.mockResolvedValue({text:'Caption',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:null}});
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    await screen.findByText('Save image');
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'Screenshot');
+    await act(async () => { void (screen.getByTestId('add-save').props.onClick ?? screen.getByTestId('add-save').props.onPress)(); });
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(fakeRepo.__bookmarks()).toHaveLength(0);
+    await act(async () => resolve('file:///durable/image.png'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(fakeRepo.__bookmarks()[0]).toMatchObject({content_type:'image',title:'Screenshot',notes:'Caption',local_image_uri:'file:///durable/image.png'});
+    expect(fakeRepo.__queue()[0].payload.content_type).toBe('image');
+  });
+  it('failed image copy retries the same capture without acknowledging failed persistence', async () => {
+    mockCopyImage.mockRejectedValueOnce(new Error('Disk full'));
+    mockReadClipboard.mockResolvedValue({text:'',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:null}});
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    await screen.findByText('Save image');
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await screen.findByText(en['add.saveFailed'] as string);
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(fakeRepo.__bookmarks()).toHaveLength(0);
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(mockCopyImage).toHaveBeenCalledTimes(2);
+    expect(fakeRepo.__bookmarks()).toHaveLength(1);
+    expect(fakeRepo.__queue()).toHaveLength(1);
+  });
+  it('does not navigate after unmount while a save finishes', async () => {
+    let resolve!: (value:string) => void;
+    mockCopyImage.mockImplementationOnce(() => new Promise((done) => {resolve=done;}));
+    mockReadClipboard.mockResolvedValue({text:'',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:null}});
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    await screen.findByText('Save image');
+    await act(async () => { void (screen.getByTestId('add-save').props.onClick ?? screen.getByTestId('add-save').props.onPress)(); });
+    await screen.unmount();
+    await act(async () => resolve('file:///durable/image.png'));
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(fakeRepo.__bookmarks()).toHaveLength(1);
+  });
+  it('image removal retains text and independent mode drafts', async () => {
+    mockReadClipboard.mockResolvedValue({text:'Image notes',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:null}});
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    await screen.findByText('Save image');
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'Caption');
+    await fireEvent.press(screen.getByTestId('add-mode-note'));
+    await fireEvent.changeText(screen.getByLabelText('Note'), 'Independent note');
+    await fireEvent.press(screen.getByTestId('add-mode-image'));
+    await fireEvent.press(screen.getByTestId('add-remove-image'));
+    expect(screen.getByLabelText('Title (optional)').props.value).toBe('Caption');
+    expect(screen.getByLabelText('Note').props.value).toBe('Image notes');
+    expect(screen.getByTestId('add-save').props.accessibilityState.disabled).toBe(true);
+  });
 });

@@ -7,6 +7,7 @@ screen when changing composition or interactions across several sections.
 
 | Task | Implementation to read first | Focused component suite / Node file |
 | --- | --- | --- |
+| Add form, smart paste, image preview, draft replacement | `features/add/use-add-draft.ts`, `app/add.tsx`; `share/smart-clipboard.ts` / `.native.ts` | `add-screen`; `domain/smart-parse.test.ts`, `storage/image-store.test.ts` |
 | Save a link, note, or shared image | `store/bookmarks/use-add-bookmark.ts` | `bookmarks-store`, `add-screen`, `share-intent-handler` |
 | Import a library | `store/bookmarks/use-import-bookmarks.ts`, `use-import-outbox-sync.ts` | `mass-import-sync`, `settings-import` |
 | Edit fields or refresh previews | `store/bookmarks/use-bookmark-edits.ts` | `bookmarks-store`, `title-backfill-store` |

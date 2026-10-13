@@ -21,7 +21,7 @@ import { ensureRepositoryReady } from '@/store/bookmarks/repository-ready';
 import { type AddBookmarkResult } from '@/store/bookmarks/types';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import {
-  useCallback
+  useCallback, useRef
 } from "react";
 
 interface Dependencies {
@@ -57,6 +57,20 @@ export function useAddBookmark({
   markEnrichmentStale,
   enqueueMutation,
 }: Dependencies) {
+  // Replay the same durable operation after a failed acknowledgement. An optimistic
+  // row is not evidence that its image, bookmark row, and queue were committed.
+  const captureWrites = useRef(new Map<string, { retry: () => Promise<boolean>; pending: Promise<boolean> | null }>());
+  const startCaptureWrite = (key: string | undefined, retry: () => Promise<boolean>) => {
+    if (!key) return retry();
+    const job = { retry, pending: null as Promise<boolean> | null };
+    captureWrites.current.set(key, job);
+    job.pending = retry().then((ok) => {
+      job.pending = null;
+      if (ok) captureWrites.current.delete(key);
+      return ok;
+    });
+    return job.pending;
+  };
 
   const addBookmark = useCallback(
     ({
@@ -98,7 +112,12 @@ export function useAddBookmark({
         return {
           status: "duplicate",
           bookmark: replayedCapture,
-          persisted: Promise.resolve(true),
+          persisted: (() => {
+            const job = capture_client_id ? captureWrites.current.get(capture_client_id) : undefined;
+            if (!job) return Promise.resolve(true);
+            if (job.pending) return job.pending;
+            return startCaptureWrite(capture_client_id, job.retry);
+          })(),
         };
       }
       // A shared image becomes an image bookmark: capture is local-first and
@@ -209,8 +228,9 @@ export function useAddBookmark({
         // — `syncNow`/`resetLibrary` already defer while it's nonzero and
         // self-retrigger once it clears, so reusing it here needs no changes
         // to either of them.
-        localCreateFlushesInFlight.current += 1;
-        const persisted = ensureRepositoryReady()
+        const persistImage = () => {
+          localCreateFlushesInFlight.current += 1;
+          return ensureRepositoryReady()
           .then(() => copyImageToLibrary(image.uri, fileName))
           .then((durableUri) => {
             const stored: Bookmark = {
@@ -263,6 +283,8 @@ export function useAddBookmark({
             }
           });
 
+        };
+        const persisted = startCaptureWrite(capture_client_id, persistImage);
         return { status: "created", bookmark: imageBookmark, persisted };
       }
 
@@ -344,18 +366,14 @@ export function useAddBookmark({
 
         setBookmarks((current) => [note, ...(current ?? [])]);
         setQueue((current) => [...current, noteEntry]);
-        const persisted = ensureRepositoryReady()
-          .then(() =>
-            Promise.all([
-              repository.insertBookmark(note),
-              repository.enqueue(noteEntry),
-            ]),
-          )
+        const persisted = startCaptureWrite(capture_client_id, () => ensureRepositoryReady()
+          .then(() => repository.insertBookmark(note))
+          .then(() => repository.enqueue(noteEntry))
           .then(() => true)
           .catch((error) => {
             logStorageError("new text note", error);
             return false;
-          });
+          }));
 
         // No URL to derive metadata from; this transitions metadata_status to
         // 'skipped' via the existing, tested enrichment path.
@@ -539,18 +557,14 @@ export function useAddBookmark({
       // capture never waits on storage or (later) the network.
       setBookmarks((current) => [bookmark, ...(current ?? [])]);
       setQueue((current) => [...current, queueEntry]);
-      const persisted = ensureRepositoryReady()
-        .then(() =>
-          Promise.all([
-            repository.insertBookmark(bookmark),
-            repository.enqueue(queueEntry),
-          ]),
-        )
+      const persisted = startCaptureWrite(capture_client_id, () => ensureRepositoryReady()
+        .then(() => repository.insertBookmark(bookmark))
+        .then(() => repository.enqueue(queueEntry))
         .then(() => true)
         .catch((error) => {
           logStorageError("new bookmark", error);
           return false;
-        });
+        }));
 
       // Enrich after the bookmark is already visible and persisted.
       enrichInBackground(bookmark);

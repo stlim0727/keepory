@@ -354,7 +354,11 @@ const ALLOWED_SDP_MODULE_EXCEPTIONS = new Set([
   'domain/pending-tags.ts -> storage/types.ts',
   'domain/tag-data.ts -> storage/types.ts',
   'features/inbox/InboxItemRenderer.tsx -> app/bookmark/[id].tsx',
+  // Both image upload adapters report typed HTTP errors to the sync classifier.
   'storage/image-store.native.ts -> supabase/client.ts',
+  'storage/image-store.ts -> supabase/client.ts',
+  // Share intake is an entrypoint that invokes the optimistic capture command.
+  'share/share-intent-handler.tsx -> store/bookmarks.tsx',
   'sync/sync-bookmarks.ts -> api/bookmarks.ts',
   'ui/AiEnrichmentBurstToast.tsx -> store/bookmarks.tsx',
   'ui/SplashReadinessObserver.tsx -> store/bookmarks.tsx',

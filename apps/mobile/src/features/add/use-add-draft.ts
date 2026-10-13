@@ -1,0 +1,54 @@
+import { useEffect, useRef, useState } from 'react';
+import type { SharedImage } from '@/domain/image-share';
+import { parseSmartInput } from '@/domain/smart-parse';
+import type { TextFormat } from '@/domain/types';
+import { readSmartClipboard } from '@/share/smart-clipboard';
+
+export type AddMode = 'link' | 'note' | 'image';
+export interface AddDraft { url: string; title: string; memo: string; format: TextFormat; image?: SharedImage }
+const empty = (): AddDraft => ({ url: '', title: '', memo: '', format: 'plain' });
+export function useAddDraft() {
+  const [mode, setMode] = useState<AddMode>('link');
+  const [drafts, setDrafts] = useState<Record<AddMode, AddDraft>>({ link: empty(), note: empty(), image: empty() });
+  const [pending, setPending] = useState<{ mode: AddMode; draft: AddDraft } | null>(null);
+  const [status, setStatus] = useState<'reading' | 'empty' | 'denied' | 'imageMissing' | 'ready' | null>(null);
+  const epoch = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current++; }; }, []);
+  const draft = drafts[mode];
+  function invalidate() { epoch.current++; setPending(null); setStatus(null); }
+  function update(patch: Partial<AddDraft>) { invalidate(); setDrafts((prev) => ({ ...prev, [mode]: { ...prev[mode], ...patch } })); }
+  function changeMode(next: AddMode) { invalidate(); setMode(next); }
+  function apply(candidate: { mode: AddMode; draft: AddDraft }) {
+    epoch.current++;
+    setDrafts((prev) => ({ ...prev, [candidate.mode]: candidate.draft }));
+    setMode(candidate.mode); setPending(null); setStatus('ready');
+  }
+  function offer(text: string, image?: SharedImage) {
+    invalidate();
+    if (mode === 'image' && !image) { setStatus('imageMissing'); return; }
+    if (!image && !text.trim()) { setStatus('empty'); return; }
+    const parsed = parseSmartInput(text);
+    const candidate = image
+      ? { mode: 'image' as const, draft: { ...empty(), image, memo: text } }
+      : { mode: parsed.mode, draft: { ...empty(), url: parsed.url, title: parsed.title, memo: parsed.notes } };
+    const occupied = (value: AddDraft) => Boolean(value.url || value.title || value.memo || value.image);
+    if (occupied(draft) || occupied(drafts[candidate.mode])) { setPending(candidate); setStatus(null); }
+    else apply(candidate);
+  }
+  async function paste() {
+    const request = ++epoch.current;
+    setStatus('reading'); setPending(null);
+    try {
+      const result = await readSmartClipboard();
+      if (mounted.current && request === epoch.current) offer(result.text, result.image);
+    } catch { if (mounted.current && request === epoch.current) setStatus('denied'); }
+  }
+  async function receiveImage(read: () => Promise<SharedImage>, text: string) {
+    const request = ++epoch.current; setStatus('reading'); setPending(null);
+    try { const image = await read(); if (mounted.current && request === epoch.current) offer(text, image); }
+    catch { if (mounted.current && request === epoch.current) setStatus('denied'); }
+  }
+  return { mode, draft, pending, status, update, changeMode, paste, offer, receiveImage,
+    replace: () => pending && apply(pending), keep: invalidate, cancel: invalidate };
+}
