@@ -453,6 +453,22 @@ describe('smart Add capture', () => {
     await fireEvent.press(screen.getByText('Keep editing'));
     expect(screen.getByPlaceholderText('https://').props.value).toBe('https://example.com/draft');
   });
+  it('declining mixed text pasted into the URL preserves every existing field', async () => {
+    const screen = await renderAddScreen();
+    await fireEvent.changeText(screen.getByTestId('add-url'), 'https://example.com/original');
+    await fireEvent.press(screen.getByText('Add details'));
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'Original title');
+    await fireEvent.changeText(screen.getByLabelText('Note'), 'Original notes');
+    await fireEvent.changeText(screen.getByTestId('add-url'), 'Replacement https://example.org/new\nReplacement notes');
+    await screen.findByText('Replace draft');
+    await fireEvent.press(screen.getByText('Keep editing'));
+    expect(screen.getByTestId('add-url').props.value).toBe('https://example.com/original');
+    expect(screen.getByLabelText('Title (optional)').props.value).toBe('Original title');
+    expect(screen.getByLabelText('Note').props.value).toBe('Original notes');
+    await fireEvent.changeText(screen.getByTestId('add-url'), 'https://example.com/originalx');
+    expect(screen.getByTestId('add-url').props.value).toBe('https://example.com/originalx');
+    expect(screen.queryByText('Replace draft')).toBeNull();
+  });
   it('ignores clipboard reads that finish after a mode change', async () => {
     let resolve!: (value: {text:string}) => void;
     mockReadClipboard.mockImplementation(() => new Promise((done) => {resolve=done;}));
@@ -522,5 +538,80 @@ describe('smart Add capture', () => {
     expect(screen.getByLabelText('Title (optional)').props.value).toBe('Caption');
     expect(screen.getByLabelText('Note').props.value).toBe('Image notes');
     expect(screen.getByTestId('add-save').props.accessibilityState.disabled).toBe(true);
+  });
+});
+
+describe('capture persistence recovery after editing', () => {
+  beforeEach(() => {
+    fakeRepo.__reset([]);
+    mockCopyImage.mockReset();
+    mockCopyImage.mockResolvedValue('file:///durable/image.png');
+    mockReadClipboard.mockReset();
+  });
+  afterEach(() => jest.restoreAllMocks());
+  for (const mode of ['link', 'note', 'image'] as const) {
+    for (const stage of ['insertBookmark', 'enqueue'] as const) {
+      it(`${mode} keeps one edited capture and required queue after ${stage} fails`, async () => {
+        const screen = await renderAddScreen();
+        if (mode === 'image') {
+          mockReadClipboard.mockResolvedValue({text:'Image body',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:null}});
+          await fireEvent.press(screen.getByTestId('add-paste'));
+          await screen.findByText('Save image');
+        } else if (mode === 'note') {
+          await fireEvent.press(screen.getByTestId('add-mode-note'));
+          await fireEvent.changeText(screen.getByLabelText('Note'), 'Note body');
+        } else {
+          await fireEvent.changeText(screen.getByPlaceholderText('https://'), 'https://example.com/recovery');
+          await fireEvent.press(screen.getByText('Add details'));
+        }
+        await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'Before failure');
+        jest.spyOn(fakeRepo.repository, stage).mockRejectedValueOnce(new Error('Storage unavailable'));
+        await fireEvent.press(screen.getByTestId('add-save'));
+        await screen.findByText(en['add.saveFailed'] as string);
+        expect(mockBack).not.toHaveBeenCalled();
+        const insertedId = fakeRepo.__bookmarks()[0]?.id;
+        await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'After failure');
+        await fireEvent.press(screen.getByTestId('add-save'));
+        await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+        expect(fakeRepo.__bookmarks()).toHaveLength(1);
+        expect(fakeRepo.__bookmarks()[0].title).toBe('After failure');
+        if (insertedId) expect(fakeRepo.__bookmarks()[0].id).toBe(insertedId);
+        expect(fakeRepo.__queue()).toHaveLength(1);
+        expect(fakeRepo.__queue()[0].payload.title).toBe('After failure');
+        if (mode === 'image') expect(mockCopyImage).toHaveBeenCalledTimes(1);
+      });
+    }
+  }
+  it('retries a failed duplicate row update with the latest user-authored details', async () => {
+    fakeRepo.__reset([makeStoredBookmark({title:'A book already saved',title_is_derived:false})]);
+    const screen = await renderAddScreen();
+    await fireEvent.changeText(screen.getByPlaceholderText('https://'), 'https://example.com/stored');
+    await fireEvent.press(screen.getByText('Add details'));
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'Before failure');
+    jest.spyOn(fakeRepo.repository,'updateBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await screen.findByText(en['add.saveFailed'] as string);
+    expect(mockBack).not.toHaveBeenCalled();
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'After failure');
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(fakeRepo.__bookmarks()).toHaveLength(1);
+    expect(fakeRepo.__bookmarks()[0].title).toBe('After failure');
+  });
+  it('queues newly edited fields when retrying a failed timestamp-only duplicate save', async () => {
+    fakeRepo.__reset([makeStoredBookmark({title:'A book already saved',title_is_derived:false})]);
+    const screen = await renderAddScreen();
+    await fireEvent.changeText(screen.getByPlaceholderText('https://'), 'https://example.com/stored');
+    await fireEvent.press(screen.getByText('Add details'));
+    jest.spyOn(fakeRepo.repository,'updateBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await screen.findByText(en['add.saveFailed'] as string);
+    expect(mockBack).not.toHaveBeenCalled();
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'After failure');
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(fakeRepo.__bookmarks()).toHaveLength(1);
+    expect(fakeRepo.__bookmarks()[0].title).toBe('After failure');
+    expect(fakeRepo.__queue().some((entry) => entry.operation === 'update')).toBe(true);
   });
 });

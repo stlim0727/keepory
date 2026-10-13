@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { parseSmartInput } from '@/domain/smart-parse';
-import { useAddDraft } from '@/features/add/use-add-draft';
+import { useAddDraft, type AddMode } from '@/features/add/use-add-draft';
 import { useImagePaste } from '@/features/add/use-image-paste';
 import { makeClientId } from '@/store/bookmarks/helpers';
 import { parseCaptureParams } from '@/domain/web-capture';
@@ -57,7 +57,7 @@ export default function AddBookmarkScreen() {
   useImagePaste(pasteRoot, (read, text) => { if (!savingRef.current) void smart.receiveImage(read, text); }, (text) => {
     if (!savingRef.current) { smart.offer(text); setDetailsOpen(true); }
   });
-  const retry = useRef<{ fingerprint: string; clientId: string } | null>(null);
+  const captureIds = useRef<Partial<Record<AddMode, string>>>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
   const focusTitleAfterExpand = useRef(false);
   useEffect(() => {
@@ -154,12 +154,12 @@ export default function AddBookmarkScreen() {
     const trimmedTitle = title.trim();
 
     smart.cancel();
-    const fingerprint = JSON.stringify({ mode, url, title, memo, format, image });
-    if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, clientId: makeClientId() };
+    const clientId = captureIds.current[mode] ?? makeClientId();
+    captureIds.current[mode] = clientId;
     try {
       const result = mode === 'link'
         ? addBookmark({
-            capture_client_id: retry.current.clientId,
+            capture_attempt_id: clientId,
             url: trimmedUrl,
             title: trimmedTitle || undefined,
             notes: memo,
@@ -167,7 +167,7 @@ export default function AddBookmarkScreen() {
             notes_format: format,
           })
         : addBookmark({
-            capture_client_id: retry.current.clientId,
+            capture_attempt_id: clientId,
             image: mode === 'image' ? image : undefined,
             notes: mode === 'image' ? memo : undefined,
             notes_format: format,
@@ -245,10 +245,11 @@ export default function AddBookmarkScreen() {
               const lengthChange = Math.abs(value.length - url.length);
               const pasted = lengthChange > 8 || (value.includes('\n') && lengthChange > 1);
               const parsed = pasted ? parseSmartInput(value) : null;
-              setUrl(value);
               if (parsed?.mode === 'link' && (parsed.title || parsed.notes)) {
                 smart.offer(value);
                 setDetailsOpen(true);
+              } else {
+                setUrl(value);
               }
               setError(null);
             }}

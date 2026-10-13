@@ -13,3 +13,22 @@ test('invalid, empty and non-image sources are rejected', async () => {
   }
   await assert.rejects(imageBlobData(new Blob([], { type: 'image/png' })));
 });
+
+test('native decoding needs no browser base64 globals and rejects malformed data', () => {
+  const originalAtob = globalThis.atob;
+  const originalBtoa = globalThis.btoa;
+  Reflect.deleteProperty(globalThis, 'atob');
+  Reflect.deleteProperty(globalThis, 'btoa');
+  try {
+    assert.deepEqual(imageDataBytes('data:image/png;base64,AP8MYwE='), Uint8Array.from([0, 255, 12, 99, 1]));
+    assert.deepEqual(imageDataBytes('data:image/png;base64,AP8='), Uint8Array.from([0, 255]));
+    assert.deepEqual(imageDataBytes('data:image/png;base64,/w=='), Uint8Array.from([255]));
+    assert.deepEqual(imageDataBytes('data:image/png;base64,AP8M'), Uint8Array.from([0, 255, 12]));
+    for (const encoded of ['A===', '=AAA', 'AA=A', 'A', 'AAA', 'AB==', 'AAB=', '%%%%']) {
+      assert.throws(() => imageDataBytes(`data:image/png;base64,${encoded}`), /Invalid image data/);
+    }
+  } finally {
+    globalThis.atob = originalAtob;
+    globalThis.btoa = originalBtoa;
+  }
+});

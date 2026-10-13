@@ -113,6 +113,8 @@ export interface BookmarksContextValue {
     replace_existing_notes?: boolean;
     /** Stable native share attempt UUID used to dedupe replayed text/images. */
     capture_client_id?: string;
+    /** Session retry key for manual drafts; preserves an existing bookmark's client_id. */
+    capture_attempt_id?: string;
     description_format?: TextFormat;
     notes_format?: TextFormat;
     /** Shared text with no usable URL — saved as a text note. */

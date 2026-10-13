@@ -27,3 +27,22 @@ it('plain text needs no image write and clipboard denial propagates',async()=>{
  mockHasImage.mockRejectedValue(new Error('Denied'));
  await expect(readSmartClipboard()).rejects.toThrow('Denied');
 });
+
+it('reads native image bytes without browser base64 globals', async () => {
+ const originalAtob = globalThis.atob;
+ const originalBtoa = globalThis.btoa;
+ Reflect.deleteProperty(globalThis, 'atob');
+ Reflect.deleteProperty(globalThis, 'btoa');
+ try {
+  mockHasImage.mockResolvedValue(true);
+  mockGetImage.mockResolvedValue({data:'data:image/png;base64,AP8MYwE='});
+  mockWrite.mockResolvedValue(undefined);
+  expect(await readSmartClipboard()).toMatchObject({image:{uri:'file:///cache/clipboard.png'}});
+  expect(mockWrite).toHaveBeenCalledWith(Uint8Array.from([0,255,12,99,1]));
+  mockGetImage.mockResolvedValue({data:'data:image/png;base64,AA=A'});
+  await expect(readSmartClipboard()).rejects.toThrow('Invalid image data');
+ } finally {
+  globalThis.atob = originalAtob;
+  globalThis.btoa = originalBtoa;
+ }
+});
