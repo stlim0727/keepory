@@ -24,6 +24,19 @@ import {
   useCallback, useRef
 } from "react";
 
+interface CaptureWrite {
+  retry: (job?: CaptureWrite) => Promise<boolean>;
+  pending: Promise<boolean> | null;
+  bookmark: Bookmark;
+  entry?: LocalPendingBookmark;
+  image?: SharedImage;
+  copiedImage?: { source: string; durable: string };
+  baseline?: Bookmark;
+  mutationFields?: string[];
+  realOwnerId: string | null;
+  prerequisite?: CaptureWrite;
+}
+
 interface Dependencies {
   hideAccountCache: boolean;
   loadedBookmarks: Bookmark[];
@@ -65,17 +78,7 @@ export function useAddBookmark({
 }: Dependencies) {
   // Replay the same durable operation after a failed acknowledgement. An optimistic
   // row is not evidence that its image, bookmark row, and queue were committed.
-  const captureWrites = useRef(new Map<string, {
-    retry: () => Promise<boolean>;
-    pending: Promise<boolean> | null;
-    bookmark: Bookmark;
-    entry?: LocalPendingBookmark;
-    image?: SharedImage;
-    copiedImage?: { source: string; durable: string };
-    baseline?: Bookmark;
-    mutationFields?: string[];
-    realOwnerId: string | null;
-  }>());
+  const captureWrites = useRef(new Map<string, CaptureWrite>());
   const hiddenCache = useRef(hideAccountCache);
   hiddenCache.current = hideAccountCache;
   const realOwner = useRef(realOwnerId);
@@ -85,23 +88,36 @@ export function useAddBookmark({
     captureWrites.current.clear();
     epoch.current = resetEpoch.current;
   }
+  const runCaptureWrite = (job: CaptureWrite): Promise<boolean> => {
+    if (job.pending) return job.pending;
+    job.pending = (async () => {
+      if (job.prerequisite) {
+        if (!await runCaptureWrite(job.prerequisite)) return false;
+        job.prerequisite = undefined;
+      }
+      return job.retry(job);
+    })().then((ok) => { job.pending = null; return ok; });
+    return job.pending;
+  };
   const startCaptureWrite = (
-    key: string | undefined, retry: () => Promise<boolean>, bookmark: Bookmark,
+    key: string | undefined, retry: CaptureWrite['retry'], bookmark: Bookmark,
     entry?: LocalPendingBookmark, image?: SharedImage, baseline?: Bookmark, mutationFields?: string[],
   ) => {
     if (!key) return retry();
     const previous = captureWrites.current.get(key);
-    const job = { retry, bookmark, entry, image, baseline: baseline ?? previous?.baseline,
+    const sameRow = previous?.bookmark.id === bookmark.id;
+    const job: CaptureWrite = { retry, bookmark, entry, image, baseline: baseline ?? (sameRow ? previous?.baseline : undefined),
       mutationFields: mutationFields ?? previous?.mutationFields,
       realOwnerId: previous ? previous.realOwnerId : realOwner.current,
-      copiedImage: previous?.copiedImage, pending: null as Promise<boolean> | null };
+      copiedImage: sameRow ? previous?.copiedImage : undefined,
+      prerequisite: sameRow ? previous?.prerequisite : previous,
+      pending: null };
     captureWrites.current.set(key, job);
-    job.pending = retry().then((ok) => {
-      job.pending = null;
+    const pending = runCaptureWrite(job).then((ok) => {
       if (ok && captureWrites.current.get(key) === job) captureWrites.current.delete(key);
       return ok;
     });
-    return job.pending;
+    return pending;
   };
 
   const addBookmark = useCallback(
@@ -137,9 +153,9 @@ export function useAddBookmark({
       const attemptKey = capture_attempt_id ?? capture_client_id;
       const epochAtStart = resetEpoch.current;
       const ownerAtStart = realOwner.current;
-      const assertOwnership = () => {
-        const row = attemptKey ? captureWrites.current.get(attemptKey)?.bookmark : undefined;
-        const jobOwner = attemptKey ? captureWrites.current.get(attemptKey)?.realOwnerId : ownerAtStart;
+      const assertOwnership = (job?: CaptureWrite) => {
+        const row = job?.bookmark;
+        const jobOwner = job ? job.realOwnerId : ownerAtStart;
         if (resetEpoch.current !== epochAtStart || (jobOwner && realOwner.current && jobOwner !== realOwner.current) || (row && isBookmarkSyncedOnce(row) &&
           (hiddenCache.current || !bookmarksRef.current?.some((value) => value.id === row.id)))) {
           throw new Error('Capture ownership changed.');
@@ -348,22 +364,23 @@ export function useAddBookmark({
         // — `syncNow`/`resetLibrary` already defer while it's nonzero and
         // self-retrigger once it clears, so reusing it here needs no changes
         // to either of them.
-        const persistImage = () => {
-          const job = attemptKey ? captureWrites.current.get(attemptKey) : undefined;
+        const persistImage = (job?: CaptureWrite) => {
           const source = job?.image ?? image;
           const row = job?.bookmark ?? imageBookmark;
           const entry = job?.entry ?? imageEntry;
           localCreateFlushesInFlight.current += 1;
           return ensureRepositoryReady()
           .then(async () => {
-            assertOwnership();
+            assertOwnership(job);
             if (job?.copiedImage?.source === source.uri) return job.copiedImage.durable;
-            const durable = await copyImageToLibrary(source.uri, localImageFileName(id, source));
+            // A replacement copy must never delete the file still referenced by
+            // the durable row if copying or the subsequent row write fails.
+            const durable = await copyImageToLibrary(source.uri, localImageFileName(`${id}-${makeClientId()}`, source));
             if (job) job.copiedImage = { source: source.uri, durable };
             return durable;
           })
           .then((durableUri) => {
-            assertOwnership();
+            assertOwnership(job);
             const stored: Bookmark = {
               ...row,
               local_image_uri: durableUri,
@@ -383,9 +400,9 @@ export function useAddBookmark({
             // two partial states a crash lands on — unspecified.
             return repository
               .insertBookmark(stored)
-              .then(() => { assertOwnership(); return repository.enqueue(entry); });
+              .then(() => { assertOwnership(job); return repository.enqueue(entry); });
           })
-          .then(() => { assertOwnership(); return true; })
+          .then(() => { assertOwnership(job); return true; })
           .catch((error) => {
             logStorageError("new image bookmark", error);
             return false;
@@ -496,10 +513,10 @@ export function useAddBookmark({
         setQueue((current) => [...current, noteEntry]);
         bookmarksRef.current = [note, ...(bookmarksRef.current ?? [])];
         queueRef.current = [...queueRef.current, noteEntry];
-        const persisted = startCaptureWrite(attemptKey, () => ensureRepositoryReady()
-          .then(() => { assertOwnership(); return repository.insertBookmark(attemptKey ? captureWrites.current.get(attemptKey)?.bookmark ?? note : note); })
-          .then(() => { assertOwnership(); return repository.enqueue(attemptKey ? captureWrites.current.get(attemptKey)?.entry ?? noteEntry : noteEntry); })
-          .then(() => { assertOwnership(); return true; })
+        const persisted = startCaptureWrite(attemptKey, (job) => ensureRepositoryReady()
+          .then(() => { assertOwnership(job); return repository.insertBookmark(job?.bookmark ?? note); })
+          .then(() => { assertOwnership(job); return repository.enqueue(job?.entry ?? noteEntry); })
+          .then(() => { assertOwnership(job); return true; })
           .catch((error) => {
             logStorageError("new text note", error);
             return false;
@@ -597,17 +614,17 @@ export function useAddBookmark({
             bookmark.id === existing.id ? updated : bookmark,
           );
         }
-        const persisted = startCaptureWrite(attemptKey, () => ensureRepositoryReady()
-          .then(() => { assertOwnership(); return repository.updateBookmark(attemptKey ? captureWrites.current.get(attemptKey)?.bookmark ?? updated : updated); })
+        const persisted = startCaptureWrite(attemptKey, (job) => ensureRepositoryReady()
+          .then(() => { assertOwnership(job); return repository.updateBookmark(job?.bookmark ?? updated); })
           .then(async () => {
-            assertOwnership();
-            const fields = attemptKey ? captureWrites.current.get(attemptKey)?.mutationFields ?? [] : changedSyncFields(existing, updated);
+            assertOwnership(job);
+            const fields = job?.mutationFields ?? (syncsRemotely ? changedSyncFields(existing, updated) : []);
             if (fields.length && hasSyncedOnce(existing.id)) {
               return enqueueMutation(existing.id, "update", "capture", fields);
             }
             return true;
           })
-          .then((saved) => { assertOwnership(); return saved; })
+          .then((saved) => { assertOwnership(job); return saved; })
           .catch((error) => {
             logStorageError("duplicate save", error);
             return false;
@@ -693,10 +710,10 @@ export function useAddBookmark({
       setQueue((current) => [...current, queueEntry]);
       bookmarksRef.current = [bookmark, ...(bookmarksRef.current ?? [])];
       queueRef.current = [...queueRef.current, queueEntry];
-      const persisted = startCaptureWrite(attemptKey, () => ensureRepositoryReady()
-        .then(() => { assertOwnership(); return repository.insertBookmark(attemptKey ? captureWrites.current.get(attemptKey)?.bookmark ?? bookmark : bookmark); })
-        .then(() => { assertOwnership(); return repository.enqueue(attemptKey ? captureWrites.current.get(attemptKey)?.entry ?? queueEntry : queueEntry); })
-        .then(() => { assertOwnership(); return true; })
+      const persisted = startCaptureWrite(attemptKey, (job) => ensureRepositoryReady()
+        .then(() => { assertOwnership(job); return repository.insertBookmark(job?.bookmark ?? bookmark); })
+        .then(() => { assertOwnership(job); return repository.enqueue(job?.entry ?? queueEntry); })
+        .then(() => { assertOwnership(job); return true; })
         .catch((error) => {
           logStorageError("new bookmark", error);
           return false;

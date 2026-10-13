@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePreventRemove, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -70,6 +70,9 @@ export default function AddBookmarkScreen() {
     }
   }, [mode, detailsOpen]);
   const [saving, setSaving] = useState(false);
+  // Protect the draft from system Back, modal dismissal, and browser navigation
+  // until the local row, image, and outbox have acknowledged persistence.
+  const allowRemoval = usePreventRemove(saving);
   const savingRef = useRef(false);
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -193,6 +196,8 @@ export default function AddBookmarkScreen() {
       // bookmark is already visible in Inbox, so capture stays fast and
       // non-blocking.
       show(result.status === 'duplicate' ? t('toast.duplicate') : t('toast.saved'));
+      setSaving(false);
+      allowRemoval();
       dismissManual();
     } catch { if (mountedRef.current) setError(t('add.saveFailed')); }
     finally { savingRef.current = false; if (mountedRef.current) setSaving(false); }

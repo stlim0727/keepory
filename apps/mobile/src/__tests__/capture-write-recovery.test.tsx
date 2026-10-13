@@ -7,6 +7,31 @@ import { makeStoredBookmark, type FakeRepositoryModule } from './helpers/fake-re
 
 jest.mock('@/storage/repository', () => require('./helpers/fake-repository').createFakeRepositoryModule());
 jest.mock('@/storage/image-store', () => ({ copyImageToLibrary: jest.fn(async () => 'file:///durable.png') }));
+const mockFiles = new Map<string, string>();
+const mockCopyFailures = new Set<string>();
+jest.mock('expo-file-system', () => ({
+  Paths: { document: 'file:///documents' }, UploadType: { BINARY_CONTENT: 0 },
+  Directory: class {
+    uri: string;
+    exists = true;
+    constructor(parent: string, name: string) { this.uri = `${parent}/${name}`; }
+    create() {}
+  },
+  File: class {
+    uri: string;
+    constructor(parent: string | { uri: string }, name?: string) {
+      this.uri = name ? `${typeof parent === 'string' ? parent : parent.uri}/${name}` : parent as string;
+    }
+    get exists() { return mockFiles.has(this.uri); }
+    delete() { mockFiles.delete(this.uri); }
+    copy(destination: { uri: string }) {
+      if (mockCopyFailures.has(this.uri)) throw new Error('copy failed');
+      const bytes = mockFiles.get(this.uri);
+      if (bytes === undefined) throw new Error('source missing');
+      mockFiles.set(destination.uri, bytes);
+    }
+  },
+}));
 const fake = jest.requireMock('@/storage/repository') as FakeRepositoryModule;
 
 async function harness(rows: Bookmark[] = [], owner: string | null = null) {
@@ -158,4 +183,70 @@ it('does not resurrect discarded account-owned duplicate rows', async () => {
   expect((await capture(h, input)).persisted).toBe(false);
   expect(update).toHaveBeenCalledTimes(1);
   expect(h.result.current.bookmarks).toEqual([]);
+});
+
+it('finishes the original duplicate outbox before persisting a changed retry URL', async () => {
+  const original = makeStoredBookmark({ ever_synced: true });
+  fake.__reset([original]);
+  const events: string[] = [];
+  const insert = fake.repository.insertBookmark;
+  jest.spyOn(fake.repository, 'insertBookmark').mockImplementation(async (row) => { events.push('new-row'); await insert(row); });
+  const h = await harness([original]);
+  h.enqueueMutation.mockImplementationOnce(async () => { events.push('old-queue-failed'); return false; });
+  h.enqueueMutation.mockImplementationOnce(async () => { events.push('old-queue'); return true; });
+  const input = { capture_attempt_id: 'changed-url', url: original.url!, notes: 'Original edit', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const next = await capture(h, { ...input, url: 'https://new.example/path', notes: 'New URL notes' });
+  expect(next.persisted).toBe(true);
+  expect(next.bookmark.id).not.toBe(original.id);
+  expect(events).toEqual(['old-queue-failed', 'old-queue', 'new-row']);
+  expect(fake.__bookmarks().find((row) => row.id === original.id)?.notes).toBe('Original edit');
+  expect(fake.__queue()[0].local_id).toBe(next.bookmark.id);
+});
+
+it('keeps a failed original outbox as a prerequisite across changed-URL retries', async () => {
+  const original = makeStoredBookmark({ ever_synced: true });
+  fake.__reset([original]);
+  const insert = jest.spyOn(fake.repository, 'insertBookmark');
+  const h = await harness([original]);
+  h.enqueueMutation.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const input = { capture_attempt_id: 'changed-url', url: original.url!, notes: 'Original edit', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const newInput = { ...input, url: 'https://new.example/path' };
+  const failed = await capture(h, newInput);
+  expect(failed.persisted).toBe(false);
+  expect(insert).not.toHaveBeenCalled();
+  const retry = await capture(h, newInput);
+  expect(retry.persisted).toBe(true);
+  expect(retry.bookmark.id).toBe(failed.bookmark.id);
+  expect(insert).toHaveBeenCalledTimes(1);
+  expect(h.enqueueMutation).toHaveBeenCalledTimes(3);
+});
+
+it('preserves old durable image bytes if a replacement copy fails after enqueue failure', async () => {
+  mockFiles.clear(); mockCopyFailures.clear();
+  mockFiles.set('file:///first.png', 'original bytes');
+  mockFiles.set('file:///replacement.png', 'replacement bytes');
+  const images = jest.requireMock('@/storage/image-store') as { copyImageToLibrary: jest.Mock };
+  const native = jest.requireActual('@/storage/image-store.native') as typeof import('@/storage/image-store.native');
+  images.copyImageToLibrary.mockImplementation(native.copyImageToLibrary);
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'replacement', image: { uri: 'file:///first.png', mimeType: 'image/png', fileName: 'first.png' } };
+  const first = await capture(h, input);
+  expect(first.persisted).toBe(false);
+  const oldUri = fake.__bookmarks()[0].local_image_uri!;
+  expect(mockFiles.get(oldUri)).toBe('original bytes');
+  mockCopyFailures.add('file:///replacement.png');
+  const replacement = { ...input, image: { ...input.image, uri: 'file:///replacement.png' } };
+  expect((await capture(h, replacement)).persisted).toBe(false);
+  expect(mockFiles.get(oldUri)).toBe('original bytes');
+  expect(fake.__bookmarks()[0].local_image_uri).toBe(oldUri);
+  mockCopyFailures.clear();
+  expect((await capture(h, replacement)).persisted).toBe(true);
+  const newUri = fake.__bookmarks()[0].local_image_uri!;
+  expect(newUri).not.toBe(oldUri);
+  expect(mockFiles.get(newUri)).toBe('replacement bytes');
+  expect(mockFiles.get(oldUri)).toBe('original bytes');
+  images.copyImageToLibrary.mockImplementation(async () => 'file:///durable.png');
 });

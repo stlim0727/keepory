@@ -46,10 +46,13 @@ jest.mock('@/domain/enrichment', () => ({
 }));
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
+let mockRemovalPrevented = false;
+const mockAllowRemoval = jest.fn(() => { mockRemovalPrevented = false; });
 let mockParams: Record<string, string> = {};
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), navigate: jest.fn(), replace: mockReplace, back: mockBack }),
   useLocalSearchParams: () => mockParams,
+  usePreventRemove: (prevent: boolean) => { mockRemovalPrevented = prevent; return mockAllowRemoval; },
 }));
 
 // Drive the responsive sheet rule off a controllable viewport.
@@ -81,6 +84,8 @@ async function renderAddScreen() {
 beforeEach(() => {
   mockBack.mockClear();
   mockReplace.mockClear();
+  mockAllowRemoval.mockClear();
+  mockRemovalPrevented = false;
   mockParams = {};
   mockWindowSize.width = 390;
   mockWindowSize.height = 844;
@@ -510,6 +515,29 @@ describe('smart Add capture', () => {
     await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
     expect(mockCopyImage).toHaveBeenCalledTimes(2);
     expect(fakeRepo.__bookmarks()).toHaveLength(1);
+    expect(fakeRepo.__queue()).toHaveLength(1);
+  });
+  it('protects navigation while saving, retains a failed draft, and permits durable dismissal', async () => {
+    let failCopy!: (reason: Error) => void;
+    mockCopyImage.mockImplementationOnce(() => new Promise((_resolve, reject) => { failCopy = reject; }));
+    mockReadClipboard.mockResolvedValue({text:'Retained caption',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:null}});
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    await screen.findByText('Save image');
+    await act(async () => { void (screen.getByTestId('add-save').props.onClick ?? screen.getByTestId('add-save').props.onPress)(); });
+    expect(mockRemovalPrevented).toBe(true);
+    expect(mockAllowRemoval).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
+    await act(async () => failCopy(new Error('disk full')));
+    await screen.findByText(en['add.saveFailed'] as string);
+    expect(mockRemovalPrevented).toBe(false);
+    expect(screen.getByLabelText('Note').props.value).toBe('Retained caption');
+    expect(mockBack).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(mockAllowRemoval).toHaveBeenCalledTimes(1);
+    expect(mockAllowRemoval.mock.invocationCallOrder[0]).toBeLessThan(mockBack.mock.invocationCallOrder[0]);
+    expect(fakeRepo.__bookmarks()[0].notes).toBe('Retained caption');
     expect(fakeRepo.__queue()).toHaveLength(1);
   });
   it('does not navigate after unmount while a save finishes', async () => {
