@@ -23,7 +23,7 @@ import {
 } from "@/sync/sync-bookmarks";
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import {
-  useCallback
+  useCallback, useEffect, useRef
 } from "react";
 
 interface Dependencies {
@@ -44,6 +44,9 @@ interface Dependencies {
   clearAiRetry: (bookmarkId: string) => void;
   clearAiServerQueued: (bookmarkId: string) => void;
   aiSuggestionsModeRef: RefObject<AiSuggestionsMode>;
+  aiSuggestionsReadyRef: RefObject<boolean>;
+  awaitAiSuggestionsPreference: (session?: SupabaseAuthSession | null) => Promise<void>;
+  waitForAiSuggestionsReady: (userId: string, cancelled: () => boolean) => Promise<boolean>;
   autoAcceptEnrichmentRef: RefObject<((bookmarkId: string, enrichment: AIEnrichment) => Promise<void>) | null>;
   noteUnseenSuggestions: (enrichment: AIEnrichment) => void;
   armAiRetry: (bookmarkId: string) => Promise<boolean>;
@@ -75,6 +78,9 @@ export function useAiEnrichmentRequest({
   clearAiRetry,
   clearAiServerQueued,
   aiSuggestionsModeRef,
+  aiSuggestionsReadyRef,
+  awaitAiSuggestionsPreference,
+  waitForAiSuggestionsReady,
   autoAcceptEnrichmentRef,
   noteUnseenSuggestions,
   armAiRetry,
@@ -87,6 +93,13 @@ export function useAiEnrichmentRequest({
   markAiServerQueued,
   syncAiRetryIds,
 }: Dependencies) {
+  const liveAuth = useRef(auth);
+  liveAuth.current = auth;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   // Ask the backend to (re)generate AI suggestions for a synced bookmark. The
   // edge function writes the enrichment and returns it, so we surface results
@@ -122,6 +135,10 @@ export function useAiEnrichmentRequest({
       // Library-reset race guard: snapshot the epoch now; every settle path
       // below re-checks it and discards if a reset completed meanwhile.
       const epochAtStart = resetEpoch.current;
+      const ownerAtStart = auth.session.user.id;
+      const stillOwned = () => mounted.current && resetEpoch.current === epochAtStart &&
+        liveAuth.current.session?.user.id === ownerAtStart &&
+        !!bookmarksRef.current?.some((item) => item.id === bookmarkId);
       aiEnriching.current.add(bookmarkId);
       setEnrichingIds((prev) => new Set(prev).add(bookmarkId));
       if (source === "manual") {
@@ -146,6 +163,15 @@ export function useAiEnrichmentRequest({
         if (!session) {
           return "AI suggestions need the cloud — Supabase is not available right now.";
         }
+        if (!stillOwned() || session.user.id !== ownerAtStart) return "sync_deferred";
+        const initialPolicy = awaitAiSuggestionsPreference(session);
+        if (source !== "manual") await initialPolicy;
+        if (!stillOwned()) return "sync_deferred";
+        if (source !== "manual" && (!aiSuggestionsReadyRef.current || aiSuggestionsModeRef.current === "off")) {
+          deferAiEnrichmentUntilSync(bookmarkId);
+          aiTriggerAttempted.current.delete(bookmarkId);
+          return "sync_deferred";
+        }
         // Send the device's freshest metadata: the cloud row can still be a bare
         // URL (on-device OpenGraph enrichment may not have synced yet), and the
         // model would otherwise have nothing to reason about.
@@ -166,6 +192,7 @@ export function useAiEnrichmentRequest({
             // Best effort: proceed to check if upload succeeded
           }
         }
+        if (!stillOwned()) return "sync_deferred";
         // Queue payloads intentionally omit unchanged fields, so an unfile
         // update has `{}` and cannot be identified from `collection_id` alone.
         // Any queued local mutation may therefore make this device's folder
@@ -219,7 +246,16 @@ export function useAiEnrichmentRequest({
             // rather than the one that actually reached the rate-limit
             // check. Reassign so every later use of `session` (including
             // the enqueue diagnostics) reflects what this call actually used.
+            if (!stillOwned() || refreshed.user.id !== ownerAtStart) return "sync_deferred";
             session = refreshed;
+            const refreshedPolicy = awaitAiSuggestionsPreference(refreshed);
+            if (source !== "manual") await refreshedPolicy;
+            if (!stillOwned()) return "sync_deferred";
+            if (source !== "manual" && (!aiSuggestionsReadyRef.current || aiSuggestionsModeRef.current === "off")) {
+              deferAiEnrichmentUntilSync(bookmarkId);
+              aiTriggerAttempted.current.delete(bookmarkId);
+              return "sync_deferred";
+            }
             enrichment = await createSyncApi(refreshed).requestEnrichment(
               bookmarkId,
               metadata,
@@ -232,9 +268,7 @@ export function useAiEnrichmentRequest({
         // A library reset completed while this request was in flight: the
         // bookmark (and its cloud row) are gone, so discard the result rather
         // than resurrect an enrichment for it in the just-cleared state.
-        if (resetEpoch.current !== epochAtStart) {
-          return null;
-        }
+        if (!stillOwned()) return null;
         // Newest enrichment for this bookmark wins (getEnrichment also picks newest).
         setEnrichments((current) => [
           enrichment,
@@ -242,6 +276,7 @@ export function useAiEnrichmentRequest({
         ]);
         try {
           await ensureRepositoryReady();
+          if (!stillOwned()) return null;
           await repository.upsertEnrichments([enrichment]);
         } catch (error) {
           logStorageError("ai enrichment", error);
@@ -249,6 +284,7 @@ export function useAiEnrichmentRequest({
         // A written enrichment row means this bookmark no longer needs a
         // retry — clear any armed marker from an earlier failed attempt
         // (auto or manual; unified — see armAiRetry below).
+        if (!stillOwned()) return null;
         clearAiRetry(bookmarkId);
         // Covers a later attempt (local retry, manual tap) succeeding
         // directly rather than via the overflow queue's delivery: this
@@ -264,31 +300,34 @@ export function useAiEnrichmentRequest({
         // a failed attempt (which would both discard the fetched enrichment
         // above — it never happened, the write already landed — and wrongly
         // arm a retry for a request that actually succeeded).
-        if (aiSuggestionsModeRef.current === "auto_accept") {
-          try {
-            await autoAcceptEnrichmentRef.current?.(bookmarkId, enrichment);
-          } catch (error) {
-            recordLog(
-              "warn",
-              `ai-enrich auto_accept failed: ${error instanceof Error ? error.message : String(error)}`,
-            );
+        // Save first, then decide application using the live account policy.
+        // A still-running policy load must finish; if it failed transiently,
+        // release the successful request while retaining a deferred decision.
+        if (source !== "manual") await awaitAiSuggestionsPreference();
+        const ownerId = session.user.id;
+        const applyWhenReady = async () => {
+          if (!await waitForAiSuggestionsReady(ownerId, () =>
+            resetEpoch.current !== epochAtStart || !bookmarksRef.current?.some((item) => item.id === bookmarkId) ||
+            enrichmentsRef.current.some((item) => item.bookmark_id === bookmarkId && item.updated_at > enrichment.updated_at))) return;
+          if (aiSuggestionsModeRef.current === "auto_accept") {
+            try {
+              await autoAcceptEnrichmentRef.current?.(bookmarkId, enrichment);
+            } catch (error) {
+              recordLog("warn", `ai-enrich auto_accept failed: ${error instanceof Error ? error.message : String(error)}`);
+            }
           }
-        }
-        // A background auto-enrichment lands without the user looking at this
-        // bookmark, so flag it for the Inbox "new suggestions" banner. A manual
-        // "Suggest with AI" tap happens on the Detail screen — the user is
-        // already witnessing it — so it doesn't (and Detail clears the flag).
-        // In auto_accept mode this only fires for whatever auto-accept left
-        // behind (e.g. a pending summary — auto-accept never touches notes).
-        if (source === "auto" || source === "preview") {
-          noteUnseenSuggestions(enrichment);
-        }
+          // Notification is a completion side effect too: a cancelled or
+          // departed owner's result must not repopulate another cache's flags.
+          if (source === "auto" || source === "preview") noteUnseenSuggestions(enrichment);
+        };
+        if (aiSuggestionsReadyRef.current) await applyWhenReady();
+        else void applyWhenReady();
         return null;
       } catch (error) {
         // A library reset completed while this request was in flight: the
         // bookmark is gone, so record nothing — no retry marker, no overflow
         // enqueue — or the reset's just-emptied bookkeeping gets repopulated.
-        if (resetEpoch.current !== epochAtStart) {
+        if (!stillOwned()) {
           return error instanceof Error
             ? error.message
             : "Could not generate AI suggestions.";
@@ -623,6 +662,8 @@ export function useAiEnrichmentRequest({
     },
     [
       auth,
+      awaitAiSuggestionsPreference,
+      waitForAiSuggestionsReady,
       noteUnseenSuggestions,
       armAiRetry,
       clearAiRetry,

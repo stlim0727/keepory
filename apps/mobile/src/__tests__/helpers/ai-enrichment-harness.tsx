@@ -42,6 +42,21 @@ jest.mock('@/supabase/auth-provider', () => ({
   SupabaseAuthProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
+// Quota/retry suites simulate known real accounts as well as guests. Keep
+// their account preference read available instead of treating missing test
+// network credentials as an unknown preference on a new device.
+jest.mock('@/supabase/client', () => ({
+  ...jest.requireActual('@/supabase/client'),
+  createSupabaseClient: () => ({
+    request: async () => [],
+    getUser: async () => ({
+      id: mockHarness.authSession?.user.id,
+      user_metadata: { ai_suggestions_mode: 'confirm' },
+    }),
+    updateUserMetadata: async () => ({}),
+  }),
+}));
+
 jest.mock('@/domain/enrichment', () => ({
   enrichBookmark: async () => ({ patch: {}, metadata_status: 'complete' }),
 }));

@@ -450,8 +450,11 @@ test('queued logout rehomes the latest image title and notes instead of its depa
   const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
   const getMeta = fakeRepo.repository.getMeta;
   let readStarted = false;
+  let ownerReads = 0;
   const delayedRead = jest.spyOn(fakeRepo.repository, 'getMeta').mockImplementation(async (key) => {
-    if (key === CACHE_OWNER_KEY && !readStarted) {
+    // Skip preference migration's ownership snapshot; hold the account
+    // reconciliation read inside serialized tag work, as this test requires.
+    if (key === CACHE_OWNER_KEY && ++ownerReads === 2 && !readStarted) {
       readStarted = true;
       await readGate;
     }

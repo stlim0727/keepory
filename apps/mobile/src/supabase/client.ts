@@ -380,6 +380,17 @@ export class StashSupabaseClient {
     return session;
   }
 
+  /** Read current account metadata instead of trusting the cached session user. */
+  async getUser(
+    accessToken: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<SupabaseAuthUser> {
+    return this.request<SupabaseAuthUser>('/auth/v1/user', {
+      accessToken,
+      signal: options.signal,
+    });
+  }
+
   /**
    * Merge `data` into the authenticated user's GoTrue `user_metadata` and return
    * the updated user. GoTrue's user-update route is `PUT /user` (PATCH is only

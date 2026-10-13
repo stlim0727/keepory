@@ -25,6 +25,7 @@ screen when changing composition or interactions across several sections.
 | Cards / list / folder rendering | `features/inbox/InboxItemRenderer.tsx`, `presentation.tsx`, `layout.ts` | `inbox-screen`, `inbox-facet-placeholder` |
 | Settings account actions | `features/settings/AccountSection.tsx`, `use-account-actions.ts` | `settings-account` |
 | Settings activity / sync status | `features/settings/ActivitySection.tsx`, `SettingsScreen.tsx` | `settings-sync-breakdown`, `settings-sync-breakdown-ai-quota` |
+| AI setting login / account persistence | `store/bookmarks/use-ai-suggestions-preference.ts` | `ai-suggestions-account-preference`, `ai-suggestions-mode-store` |
 | Settings preferences | `features/settings/PreferencesSection.tsx` | `settings-ai-suggestions`, `settings-push-notifications`, `settings-session-replay` |
 | Settings import/export/reset | `features/settings/DataSection.tsx`, `use-export-actions.ts`, `use-import-actions.ts`, `use-reset-actions.ts` | `settings-export`, `settings-import`, `reset-library` |
 | API create/update/dedupe / image storage | `api/bookmark-writes.ts`, `bookmark-helpers.ts` | `api/bookmarks.test.ts` |

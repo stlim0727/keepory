@@ -1,3 +1,4 @@
+import { useAiSuggestionsPreference } from '@/store/bookmarks/use-ai-suggestions-preference';
 import { AI_RETRY_BACKOFF_MS, EMPTY_TAGS, EMPTY_TAG_DATA, ENRICHMENT_FETCH_CONCURRENCY, METADATA_SYNC_DEBOUNCE_MS, PENDING_TAG_OPS_KEY, SYNC_PAUSED_KEY, UNSEEN_SUGGESTIONS_KEY } from '@/store/bookmarks/constants';
 import { isActiveBookmark, isBookmarkSyncedOnce, logStorageError, makeBookmarkId, parseTagOps, tagRetryReadyAt } from '@/store/bookmarks/helpers';
 import { ensureRepositoryReady } from '@/store/bookmarks/repository-ready';
@@ -47,12 +48,6 @@ import {
   pendingSummary,
   suggestedFolderTokens
 } from "@/domain/ai-suggestions";
-import {
-  AI_SUGGESTIONS_MODE_PREF_KEY,
-  DEFAULT_AI_SUGGESTIONS_MODE,
-  serializeAiSuggestionsMode,
-  type AiSuggestionsMode
-} from "@/domain/ai-suggestions-pref";
 import { resolveAliasedId } from "@/domain/bookmark-id-swap";
 import { buildBookmarkProcessingSnapshot } from "@/domain/bookmark-processing";
 import { createConcurrencyLimiter } from "@/domain/concurrency";
@@ -425,11 +420,10 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
   // callbacks/effects so a live Settings change takes effect immediately
   // without needing every effect to depend on the reactive value; `aiSuggestionsMode`
   // state exists only so Settings can display the current choice.
-  const aiSuggestionsModeRef = useRef<AiSuggestionsMode>(
-    DEFAULT_AI_SUGGESTIONS_MODE,
-  );
-  const [aiSuggestionsMode, setAiSuggestionsModeState] =
-    useState<AiSuggestionsMode>(DEFAULT_AI_SUGGESTIONS_MODE);
+  const { aiSuggestionsMode, aiSuggestionsModeRef, setAiSuggestionsMode,
+    aiSuggestionsReady, aiSuggestionsReadyRef,
+    awaitAiSuggestionsPreference, awaitAiSuggestionsLocalReady, waitForAiSuggestionsReady, localRecoveryVersion } =
+    useAiSuggestionsPreference(auth, offline);
   // Staggered dispatch queue for automatic AI-enrichment triggers (STASH #574
   // Phase 1) — see `domain/ai-enrichment-burst.ts`. Only the two background
   // "trigger for a batch of ids" call sites route through this; the single-
@@ -504,22 +498,6 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       syncPendingForceRef.current = false;
       void syncNowRef.current?.({ force: pendingForce }).catch(() => { });
     }
-  }, []);
-
-  // Change + durably persist the AI-suggestions mode. The ref updates
-  // synchronously so the very next auto-trigger check (even one already
-  // mid-flight in the same tick) observes the new mode.
-  const setAiSuggestionsMode = useCallback((mode: AiSuggestionsMode) => {
-    aiSuggestionsModeRef.current = mode;
-    setAiSuggestionsModeState(mode);
-    ensureRepositoryReady()
-      .then(() =>
-        repository.setMeta(
-          AI_SUGGESTIONS_MODE_PREF_KEY,
-          serializeAiSuggestionsMode(mode),
-        ),
-      )
-      .catch((error) => logStorageError("ai suggestions mode", error));
   }, []);
 
   // STASH #574 Phase 1: dismiss the "N bookmarks summarized & tagged" toast
@@ -1149,8 +1127,6 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     [enqueueMutation, hasSyncedOnce, noteQueuedChange],
   );
   useLibraryHydration({
-    aiSuggestionsModeRef,
-    setAiSuggestionsModeState,
     syncPausedRef,
     setSyncPausedState,
     pendingAiTrigger,
@@ -1536,6 +1512,9 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     clearAiRetry,
     clearAiServerQueued,
     aiSuggestionsModeRef,
+    aiSuggestionsReadyRef,
+    awaitAiSuggestionsPreference,
+    waitForAiSuggestionsReady,
     autoAcceptEnrichmentRef,
     noteUnseenSuggestions,
     armAiRetry,
@@ -1979,11 +1958,14 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
   );
   const { syncNow } = useSyncCoordinator({
     libraryResetInFlightRef,
+    resetEpoch,
     syncInFlight,
     syncPendingRef,
     syncPendingForceRef,
     localCreateFlushesInFlight,
     auth,
+    awaitAiSuggestionsPreference,
+    awaitAiSuggestionsLocalReady,
     syncPausedRef,
     offlineRef,
     reconcileAccountTransition,
@@ -2017,6 +1999,8 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     addUnseenSuggestion,
     aiEnriching,
     aiSuggestionsModeRef,
+    aiSuggestionsReadyRef,
+    waitForAiSuggestionsReady,
     aiRetryState,
     clearAiRetry,
     aiServerQueued,
@@ -2199,6 +2183,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       bookmarks === null ||
       !auth.session ||
       pendingAiTrigger.current.size === 0 ||
+      !aiSuggestionsReadyRef.current ||
       aiSuggestionsModeRef.current === "off"
     ) {
       return;
@@ -2259,12 +2244,17 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     bookmarks,
     auth.session,
     aiSuggestionsMode,
+    aiSuggestionsReady,
     requestAiEnrichment,
     clearPendingAiTrigger,
   ]);
   const { checkAiRetries, fetchAiServerQueueSnapshot } = useAiRetryLifecycle({
     auth,
     aiSuggestionsModeRef,
+    aiSuggestionsReady,
+    aiSuggestionsReadyRef,
+    awaitAiSuggestionsPreference,
+    aiTriggerAttempted,
     queueRef,
     aiRetryState,
     aiEnriching,
@@ -2505,6 +2495,13 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       });
   }, [auth, bookmarks, lazyMintQueueKey]);
 
+  // A transient ownership snapshot failure must not consume the initial pull.
+  useEffect(() => {
+    if (localRecoveryVersion > 0 && reconciledCacheUserIdRef.current !== authRef.current.userId) {
+      lastSyncedUserId.current = null;
+    }
+  }, [localRecoveryVersion]);
+
   // Pull on first ready, and again whenever the signed-in user changes —
   // including the anonymous → real upgrade at sign-in and an account switch.
   // Runs even with an empty queue so remote changes (other devices, cloud AI
@@ -2551,7 +2548,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       void syncNow();
     }
   }, [
-    bookmarks, offline, syncPaused,
+    bookmarks, offline, syncPaused, localRecoveryVersion,
     auth.userId,
     auth.status,
     isSyncing,

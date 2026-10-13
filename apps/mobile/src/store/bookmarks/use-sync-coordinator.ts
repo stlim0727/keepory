@@ -96,11 +96,14 @@ import { Platform } from "react-native";
 
 interface Dependencies {
   libraryResetInFlightRef: RefObject<boolean>;
+  resetEpoch: RefObject<number>;
   syncInFlight: RefObject<boolean>;
   syncPendingRef: RefObject<boolean>;
   syncPendingForceRef: RefObject<boolean>;
   localCreateFlushesInFlight: RefObject<number>;
   auth: ReturnType<typeof useSupabaseAuth>;
+  awaitAiSuggestionsPreference: (session?: SupabaseAuthSession | null) => Promise<void>;
+  awaitAiSuggestionsLocalReady: () => Promise<void>;
   syncPausedRef: RefObject<boolean>;
   offlineRef: RefObject<boolean>;
   reconcileAccountTransition: (currentUser: { id: string; isAnonymous: boolean; }) => Promise<boolean>;
@@ -134,6 +137,8 @@ interface Dependencies {
   addUnseenSuggestion: (enrichment: AIEnrichment, next: Set<string>) => boolean;
   aiEnriching: RefObject<Set<string>>;
   aiSuggestionsModeRef: RefObject<AiSuggestionsMode>;
+  aiSuggestionsReadyRef: RefObject<boolean>;
+  waitForAiSuggestionsReady: (userId: string, cancelled: () => boolean) => Promise<boolean>;
   aiRetryState: RefObject<Record<string, AiRetryState>>;
   clearAiRetry: (bookmarkId: string) => void;
   aiServerQueued: RefObject<Set<string>>;
@@ -159,11 +164,14 @@ interface Dependencies {
 
 export function useSyncCoordinator({
   libraryResetInFlightRef,
+  resetEpoch,
   syncInFlight,
   syncPendingRef,
   syncPendingForceRef,
   localCreateFlushesInFlight,
   auth,
+  awaitAiSuggestionsPreference,
+  awaitAiSuggestionsLocalReady,
   syncPausedRef,
   offlineRef,
   reconcileAccountTransition,
@@ -197,6 +205,8 @@ export function useSyncCoordinator({
   addUnseenSuggestion,
   aiEnriching,
   aiSuggestionsModeRef,
+  aiSuggestionsReadyRef,
+  waitForAiSuggestionsReady,
   aiRetryState,
   clearAiRetry,
   aiServerQueued,
@@ -223,6 +233,7 @@ export function useSyncCoordinator({
   const syncNow = useCallback(
     async (options?: { force?: boolean }): Promise<boolean> => {
       const force = options?.force === true;
+      const epochAtStart = resetEpoch.current;
       if (libraryResetInFlightRef.current) return false;
       if (syncInFlight.current) {
         syncPendingRef.current = true;
@@ -254,6 +265,7 @@ export function useSyncCoordinator({
         const sessionUser = auth.session.user;
         try {
           await ensureRepositoryReady();
+          await awaitAiSuggestionsLocalReady();
           const owner = await readCacheOwner(repository);
           if (owner?.id !== sessionUser.id || owner.isAnonymous !== (sessionUser.is_anonymous !== false)) {
             syncInFlight.current = true;
@@ -279,6 +291,9 @@ export function useSyncCoordinator({
       const recoveryRequested = authRecoveryPendingRef.current;
       try {
         await ensureRepositoryReady();
+        // Local ownership/migration needs no network preference response.
+        await awaitAiSuggestionsLocalReady();
+        if (libraryResetInFlightRef.current) return false;
         // Re-ensure the session so a token that expired while the app stayed
         // open is refreshed before we sync; otherwise every entry would fail
         // against a stale bearer token until restart.
@@ -302,6 +317,9 @@ export function useSyncCoordinator({
         if (!accountReady) {
           return false;
         }
+        // The local library is already visible; remote work waits for its mode.
+        await awaitAiSuggestionsPreference(session);
+        if (libraryResetInFlightRef.current || authRef.current.userId !== currentUser.id) return false;
         // Successful sign-in/refresh is recovery for stale auth failures only,
         // after durable account ownership has been reconciled. No null refresh
         // or fallback bearer may authorize this bypass. Consume it once so a
@@ -334,6 +352,10 @@ export function useSyncCoordinator({
         queueRef.current = durableQueue;
         if (bookmarksChanged) setBookmarks(durableBookmarks);
         if (queueChanged) setQueue(durableQueue);
+        // Complete the durable local reload even if sync was paused while
+        // ownership reconciliation was reading, so concurrent local edits
+        // cannot be replaced by that earlier snapshot. Stop before networking.
+        if (syncPausedRef.current || offlineRef.current) return false;
 
         // Upload-then-pull: even with nothing to upload, the pull still runs.
         // Defer creates whose metadata is still fetching, so that metadata rides
@@ -1874,7 +1896,7 @@ export function useSyncCoordinator({
                   if (!aiEnriching.current.has(enrichment.bookmark_id)) {
                     workerDrivenCount += 1;
                   }
-                  if (aiSuggestionsModeRef.current === "auto_accept") {
+                  if (!aiSuggestionsReadyRef.current || aiSuggestionsModeRef.current === "auto_accept") {
                     workerAutoAcceptTargets.push(enrichment);
                   }
                 }
@@ -1958,17 +1980,19 @@ export function useSyncCoordinator({
             // enrichment's suggestions get applied here just like a
             // direct-dispatch enrichment already does in requestAiEnrichment.
             for (const enrichment of workerAutoAcceptTargets) {
-              try {
-                await autoAcceptEnrichmentRef.current?.(
-                  enrichment.bookmark_id,
-                  enrichment,
-                );
-              } catch (error) {
-                recordLog(
-                  "warn",
-                  `ai-enrich auto_accept (sync) failed: ${error instanceof Error ? error.message : String(error)}`,
-                );
-              }
+              const applyWhenReady = async () => {
+                if (!await waitForAiSuggestionsReady(currentUser.id, () =>
+                  resetEpoch.current !== epochAtStart || libraryResetInFlightRef.current || !bookmarksRef.current?.some((row) => row.id === enrichment.bookmark_id) ||
+                  enrichmentsRef.current.some((row) => row.bookmark_id === enrichment.bookmark_id && row.updated_at > enrichment.updated_at))) return;
+                if (aiSuggestionsModeRef.current !== "auto_accept") return;
+                try {
+                  await autoAcceptEnrichmentRef.current?.(enrichment.bookmark_id, enrichment);
+                } catch (error) {
+                  recordLog("warn", `ai-enrich auto_accept (sync) failed: ${error instanceof Error ? error.message : String(error)}`);
+                }
+              };
+              if (aiSuggestionsReadyRef.current) await applyWhenReady();
+              else void applyWhenReady();
             }
           } catch (error) {
             if (error instanceof PullPausedError) {
@@ -2038,6 +2062,9 @@ export function useSyncCoordinator({
     },
     [
       auth,
+      awaitAiSuggestionsPreference,
+      awaitAiSuggestionsLocalReady,
+      waitForAiSuggestionsReady,
       enqueueMutation,
       requestAiEnrichment,
       syncTagOps,
