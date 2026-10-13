@@ -250,3 +250,61 @@ it('preserves old durable image bytes if a replacement copy fails after enqueue 
   expect(mockFiles.get(oldUri)).toBe('original bytes');
   images.copyImageToLibrary.mockImplementation(async () => 'file:///durable.png');
 });
+
+it.each(['row', 'queue'])('reuses the failed duplicate job for tracking URL edits after %s failure', async (failure) => {
+  const original = makeStoredBookmark({ ever_synced: true, title: 'User title', title_is_derived: false, notes: '**Existing**', notes_format: 'markdown' });
+  fake.__reset([original]);
+  const h = await harness([original]);
+  if (failure === 'row') jest.spyOn(fake.repository, 'updateBookmark').mockRejectedValueOnce(new Error('row failed'));
+  else h.enqueueMutation.mockResolvedValueOnce(false);
+  const input = { capture_attempt_id: 'tracking-retry', url: original.url!, notes: 'New notes', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const retry = await capture(h, { ...input, url: `${original.url}?utm_source=shared`, title: 'Derived source hint', title_is_derived: true });
+  expect(retry.persisted).toBe(true);
+  expect(retry.bookmark.id).toBe(original.id);
+  expect(fake.__bookmarks()).toHaveLength(1);
+  expect(fake.__bookmarks()[0]).toMatchObject({ url: original.url, notes: 'New notes', title: 'User title', title_is_derived: false });
+  expect(h.enqueueMutation.mock.calls.at(-1)?.[3]).toContain('notes');
+});
+
+it('restores the original duplicate baseline when tracking URL retry clears failed replacement', async () => {
+  const original = makeStoredBookmark({ ever_synced: true, title: 'User title', title_is_derived: false, notes: '**Existing**', notes_format: 'markdown' });
+  fake.__reset([original]);
+  const h = await harness([original]);
+  h.enqueueMutation.mockResolvedValueOnce(false);
+  const input = { capture_attempt_id: 'tracking-retry', url: original.url!, notes: 'Failed notes', title: 'Failed title', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const retry = await capture(h, { ...input, url: `${original.url}?utm_source=shared`, title: '', notes: '', notes_format: 'plain' });
+  expect(retry.persisted).toBe(true);
+  expect(fake.__bookmarks()[0]).toMatchObject({ url: original.url, notes: '**Existing**', notes_format: 'markdown', title: 'User title', title_is_derived: false });
+  expect(h.enqueueMutation.mock.calls.at(-1)?.[3]).toContain('notes');
+});
+
+it.each(['row', 'queue'])('preserves filename-derived image title on unchanged undefined-title retry after %s failure', async (failure) => {
+  if (failure === 'row') jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('row failed'));
+  else jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'image-title', image: { uri: 'file:///design.png', mimeType: 'image/png', fileName: 'Design reference.png' } };
+  const first = await capture(h, input);
+  expect(first.persisted).toBe(false);
+  const retry = await capture(h, input);
+  expect(retry.persisted).toBe(true);
+  expect(fake.__bookmarks()[0].title).toBe(first.bookmark.title);
+  expect(fake.__bookmarks()[0].title_is_derived).toBe(first.bookmark.title_is_derived);
+  expect(fake.__queue()[0].payload.title).toBe(first.bookmark.title);
+});
+
+it('derives a replacement image title from its filename and honors an explicit empty title', async () => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed')).mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'image-title', image: { uri: 'file:///first.png', mimeType: 'image/png', fileName: 'First reference.png' } };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const replacement = { ...input, image: { ...input.image, uri: 'file:///second.png', fileName: 'Second reference.png' } };
+  const second = await capture(h, replacement);
+  expect(second.persisted).toBe(false);
+  expect(fake.__bookmarks()[0].title).toBe('Second reference');
+  const cleared = await capture(h, { ...replacement, title: '' });
+  expect(cleared.persisted).toBe(true);
+  expect(fake.__bookmarks()[0].title).toBeNull();
+  expect(fake.__queue()[0].payload.title).toBeUndefined();
+});

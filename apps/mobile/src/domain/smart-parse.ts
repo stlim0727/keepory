@@ -28,9 +28,14 @@ export function parseSmartInput(text: string): SmartInput {
     // Remove a wrapper around the link, never brackets around meaningful text.
     const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}', '<': '>' };
     if (start > 0 && pairs[text[start - 1]] === text[end]) { start--; end++; }
-    const remainder = (text.slice(0, start) + text.slice(end)).trim();
-    const lines = remainder.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    return { mode: 'link', url, title: lines.shift() ?? '', notes: lines.join('\n') };
+    const lines = (text.slice(0, start) + text.slice(end)).split(/\r?\n/);
+    const titleIndex = lines.findIndex((line) => line.trim());
+    const notes = titleIndex < 0 ? [] : lines.slice(titleIndex + 1);
+    // Remove outer separator lines, preserving authored indentation, paragraph
+    // gaps, and Markdown hard-break spaces inside the note itself.
+    while (notes.length && !notes[0].trim()) notes.shift();
+    while (notes.length && !notes.at(-1)!.trim()) notes.pop();
+    return { mode: 'link', url, title: titleIndex < 0 ? '' : lines[titleIndex].trim(), notes: notes.join('\n') };
   }
   return { mode: 'note', url: '', title: '', notes: text };
 }

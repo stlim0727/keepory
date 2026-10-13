@@ -47,10 +47,11 @@ export default function AddBookmarkScreen() {
   const asSheet = width >= 760;
   const { addBookmark, isLoading } = useBookmarks();
   const { show } = useCaptureToast();
-  const smart = useAddDraft();
+  const [failedMode, setFailedMode] = useState<AddMode | null>(null);
+  const smart = useAddDraft(failedMode);
   const { mode, draft: { url, title, memo, format, image } } = smart;
   const setUrl = (value: string) => smart.update({ url: value });
-  const setTitle = (value: string) => smart.update({ title: value });
+  const setTitle = (value: string) => smart.update({ title: value, titleEdited: true });
   const [error, setError] = useState<string | null>(null);
   const titleInputRef = useRef<React.ComponentRef<typeof TextInput> | null>(null);
   const pasteRoot = useRef<React.ComponentRef<typeof View> | null>(null);
@@ -155,6 +156,7 @@ export default function AddBookmarkScreen() {
     setSaving(true);
     const trimmedUrl = url.trim();
     const trimmedTitle = title.trim();
+    const submittedTitle = trimmedTitle || (smart.draft.titleEdited ? '' : undefined);
 
     smart.cancel();
     const clientId = captureIds.current[mode] ?? makeClientId();
@@ -164,7 +166,7 @@ export default function AddBookmarkScreen() {
         ? addBookmark({
             capture_attempt_id: clientId,
             url: trimmedUrl,
-            title: trimmedTitle || undefined,
+            title: submittedTitle,
             notes: memo,
             replace_existing_notes: true,
             notes_format: format,
@@ -174,7 +176,7 @@ export default function AddBookmarkScreen() {
             image: mode === 'image' ? image : undefined,
             notes: mode === 'image' ? memo : undefined,
             notes_format: format,
-            title: trimmedTitle || undefined,
+            title: submittedTitle,
             shared_text: memo,
             description_format: format,
           });
@@ -188,6 +190,7 @@ export default function AddBookmarkScreen() {
       const persisted = await result.persisted;
       if (!mountedRef.current) return;
       if (persisted !== true) {
+        setFailedMode(mode);
         setError(t('add.saveFailed'));
         return;
       }
@@ -196,10 +199,11 @@ export default function AddBookmarkScreen() {
       // bookmark is already visible in Inbox, so capture stays fast and
       // non-blocking.
       show(result.status === 'duplicate' ? t('toast.duplicate') : t('toast.saved'));
+      setFailedMode(null);
       setSaving(false);
       allowRemoval();
       dismissManual();
-    } catch { if (mountedRef.current) setError(t('add.saveFailed')); }
+    } catch { if (mountedRef.current) { setFailedMode(mode); setError(t('add.saveFailed')); } }
     finally { savingRef.current = false; if (mountedRef.current) setSaving(false); }
   }
 
@@ -233,11 +237,12 @@ export default function AddBookmarkScreen() {
 
         {(['link', 'note', 'image'] as const).map((value) => <Button key={value}
           testID={`add-mode-${value}`} variant={mode === value ? 'primary' : 'ghost'}
-          accessibilityState={{ selected: mode === value }} accessibilityLabel={t(value === 'link' ? 'add.modeLinkA11y' : value === 'note' ? 'add.modeMemoA11y' : 'add.modeImageA11y')} style={fontScale >= 1.5 ? undefined : { flex: 1 }} disabled={saving}
+          accessibilityState={{ selected: mode === value, disabled: saving || failedMode !== null }} accessibilityLabel={t(value === 'link' ? 'add.modeLinkA11y' : value === 'note' ? 'add.modeMemoA11y' : 'add.modeImageA11y')} style={fontScale >= 1.5 ? undefined : { flex: 1 }} disabled={saving || failedMode !== null}
           onPress={() => { smart.changeMode(value); setError(null); }}>
           {t(value === 'link' ? 'add.modeLink' : value === 'note' ? 'add.modeMemo' : 'add.modeImage')}
         </Button>)}
       </View>
+      {failedMode && smart.status !== 'savePending' ? <Text accessibilityLiveRegion="polite" style={{ color: palette.textSecondary }}>{t('add.clipboard.savePending')}</Text> : null}
       <Card elevated={false} style={styles.captureCard}>
         <View pointerEvents={saving ? 'none' : 'auto'} style={{ gap: 10 }}>
         {mode === 'link' ? <>

@@ -173,7 +173,8 @@ export function useAddBookmark({
       // Changing the URL after a failed duplicate update starts a different
       // bookmark; it must never change the existing bookmark's address.
       const changedDuplicateUrl = capture_attempt_id !== undefined && incomplete && !incomplete.entry &&
-        url !== undefined && normalizeUrl(url) !== incomplete.bookmark.url;
+        url !== undefined && normalizeUrl(url) !== incomplete.bookmark.url &&
+        currentDedupeKey(incomplete.bookmark) !== canonicalizeUrl(normalizeUrl(url) ?? url);
       const replayedCapture = changedDuplicateUrl ? undefined : incomplete
         ? captureBookmarks.find((row) => row.id === incomplete.bookmark.id) ?? incomplete.bookmark
         : attemptKey ? captureBookmarks.find(
@@ -191,20 +192,29 @@ export function useAddBookmark({
         }
         // A failed draft remains one capture even after editing. Update the row
         // AND its required create payload before retrying the durable operation.
-        const normalizedRetry = url === undefined ? replayedCapture.url : normalizeUrl(url);
-        if (url !== undefined && (!normalizedRetry || isUrlTooLong(canonicalizeUrl(normalizedRetry)))) {
+        const requestedRetry = url === undefined ? replayedCapture.url : normalizeUrl(url);
+        if (url !== undefined && (!requestedRetry || isUrlTooLong(canonicalizeUrl(requestedRetry)))) {
           return { status: "invalid", error: "This web address cannot be saved." };
         }
+        // Canonical-equivalent duplicate input may update the draft details,
+        // but must retain the existing bookmark's original address.
+        const normalizedRetry = job.entry ? requestedRetry : replayedCapture.url;
         const hasDraft = capture_attempt_id !== undefined &&
           (image !== undefined || url !== undefined || shared_text !== undefined);
         const baseline = job.baseline ?? replayedCapture;
         const isRepairable = isRepairableSourceTitle(baseline);
         const improveTitle = Boolean(title?.trim()) && (!title_is_derived || baseline.title == null || baseline.title_is_derived === true || isRepairable);
         const improveNotes = Boolean(notes?.trim()) && (replace_existing_notes || !baseline.notes);
+        const imageChanged = image !== undefined && image.uri !== job.image?.uri;
+        const imageTitle = title !== undefined ? title.trim() || null
+          : imageChanged && replayedCapture.title_is_derived !== false ? imageTitleFromFileName(image?.fileName)
+          : replayedCapture.title;
+        const imageTitleDerived = title !== undefined ? (title.trim() ? title_is_derived : undefined)
+          : imageChanged && replayedCapture.title_is_derived !== false ? undefined : replayedCapture.title_is_derived;
         const updated: Bookmark = hasDraft ? {
           ...replayedCapture,
-          title: job.entry ? title?.trim() || null : improveTitle ? title!.trim() : baseline.title,
-          title_is_derived: job.entry ? (title?.trim() ? title_is_derived : undefined) : improveTitle ? title_is_derived : isRepairable ? true : baseline.title_is_derived,
+          title: job.entry ? replayedCapture.content_type === 'image' ? imageTitle : title?.trim() || null : improveTitle ? title!.trim() : baseline.title,
+          title_is_derived: job.entry ? replayedCapture.content_type === 'image' ? imageTitleDerived : (title?.trim() ? title_is_derived : undefined) : improveTitle ? title_is_derived : isRepairable ? true : baseline.title_is_derived,
           notes: job.entry ? (notes || null) : improveNotes ? notes! : baseline.notes,
           notes_format: job.entry || improveNotes ? notes_format : baseline.notes_format,
           description: replayedCapture.content_type === "text" ? (shared_text ?? replayedCapture.description) : replayedCapture.description,

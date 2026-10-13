@@ -577,6 +577,50 @@ describe('capture persistence recovery after editing', () => {
     mockReadClipboard.mockReset();
   });
   afterEach(() => jest.restoreAllMocks());
+  it.each(['link', 'note', 'image'] as const)('keeps a failed %s capture reachable until that mode is retried', async (mode) => {
+    const screen = await renderAddScreen();
+    if (mode === 'image') {
+      mockReadClipboard.mockResolvedValue({text:'Original image caption',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:'image.png'}});
+      await fireEvent.press(screen.getByTestId('add-paste'));
+      await screen.findByText('Save image');
+    } else if (mode === 'note') {
+      await fireEvent.press(screen.getByTestId('add-mode-note'));
+      await fireEvent.changeText(screen.getByLabelText('Note'), 'Original note');
+    } else {
+      await fireEvent.changeText(screen.getByPlaceholderText('https://'), 'https://example.com/failed-mode');
+    }
+    jest.spyOn(fakeRepo.repository, 'insertBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await screen.findByText(en['add.saveFailed'] as string);
+    const other = mode === 'note' ? 'image' : 'note';
+    expect(screen.getByTestId(`add-mode-${other}`).props.accessibilityState.disabled).toBe(true);
+    await fireEvent.press(screen.getByTestId(`add-mode-${other}`));
+    mockReadClipboard.mockResolvedValue(mode === 'image' ? {text:'https://example.com/other'} :
+      {text:'Another capture',image:{uri:'file:///other.png',mimeType:'image/png',fileName:null}});
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    expect(screen.getByTestId(`add-mode-${mode}`).props.accessibilityState.selected).toBe(true);
+    expect(mockBack).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(fakeRepo.__bookmarks()).toHaveLength(1);
+    expect(fakeRepo.__bookmarks()[0].content_type).toBe(mode === 'link' ? 'url' : mode === 'note' ? 'text' : 'image');
+    expect(fakeRepo.__queue()).toHaveLength(1);
+  });
+  it('lets an explicit title clear survive an image-save failure and retry', async () => {
+    mockReadClipboard.mockResolvedValue({text:'',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:'photo.png'}});
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    await screen.findByText('Save image');
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'Title to clear');
+    jest.spyOn(fakeRepo.repository, 'insertBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await screen.findByText(en['add.saveFailed'] as string);
+    await fireEvent.changeText(screen.getByLabelText('Title (optional)'), '');
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+    expect(fakeRepo.__bookmarks()[0].title).toBeNull();
+    expect(fakeRepo.__queue()[0].payload.title).toBeUndefined();
+  });
   for (const mode of ['link', 'note', 'image'] as const) {
     for (const stage of ['insertBookmark', 'enqueue'] as const) {
       it(`${mode} keeps one edited capture and required queue after ${stage} fails`, async () => {

@@ -33,3 +33,11 @@ test('plain notes preserve raw body, including whitespace and unsupported scheme
     assert.deepEqual(parseSmartInput(text), { mode: 'note', url: '', title: '', notes: text });
   }
 });
+test('mixed clipboard notes preserve indentation, paragraphs, and hard-break spaces', () => {
+  assert.deepEqual(parseSmartInput('  Title\nhttps://example.com/code\n\n    const value = 1;\n    console.log(value);\n\nSecond paragraph  \n\n'), {
+    mode: 'link', url: 'https://example.com/code', title: 'Title',
+    notes: '    const value = 1;\n    console.log(value);\n\nSecond paragraph  ',
+  });
+  assert.equal(parseSmartInput('https://example.com\r\nTitle\r\n\r\n  Nested list\r\n\r\nAnother paragraph').notes,
+    '  Nested list\n\nAnother paragraph');
+});

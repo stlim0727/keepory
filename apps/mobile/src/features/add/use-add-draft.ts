@@ -5,20 +5,20 @@ import type { TextFormat } from '@/domain/types';
 import { readSmartClipboard } from '@/share/smart-clipboard';
 
 export type AddMode = 'link' | 'note' | 'image';
-export interface AddDraft { url: string; title: string; memo: string; format: TextFormat; image?: SharedImage }
+export interface AddDraft { url: string; title: string; titleEdited?: boolean; memo: string; format: TextFormat; image?: SharedImage }
 const empty = (): AddDraft => ({ url: '', title: '', memo: '', format: 'plain' });
-export function useAddDraft() {
+export function useAddDraft(lockedMode: AddMode | null = null) {
   const [mode, setMode] = useState<AddMode>('link');
   const [drafts, setDrafts] = useState<Record<AddMode, AddDraft>>({ link: empty(), note: empty(), image: empty() });
   const [pending, setPending] = useState<{ mode: AddMode; draft: AddDraft } | null>(null);
-  const [status, setStatus] = useState<'reading' | 'empty' | 'denied' | 'imageMissing' | 'ready' | null>(null);
+  const [status, setStatus] = useState<'reading' | 'empty' | 'denied' | 'imageMissing' | 'savePending' | 'ready' | null>(null);
   const epoch = useRef(0);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current++; }; }, []);
   const draft = drafts[mode];
   function invalidate() { epoch.current++; setPending(null); setStatus(null); }
   function update(patch: Partial<AddDraft>) { invalidate(); setDrafts((prev) => ({ ...prev, [mode]: { ...prev[mode], ...patch } })); }
-  function changeMode(next: AddMode) { invalidate(); setMode(next); }
+  function changeMode(next: AddMode) { if (lockedMode && next !== lockedMode) return; invalidate(); setMode(next); }
   function apply(candidate: { mode: AddMode; draft: AddDraft }) {
     epoch.current++;
     setDrafts((prev) => ({ ...prev, [candidate.mode]: candidate.draft }));
@@ -32,6 +32,7 @@ export function useAddDraft() {
     const candidate = image
       ? { mode: 'image' as const, draft: { ...empty(), image, memo: text } }
       : { mode: parsed.mode, draft: { ...empty(), url: parsed.url, title: parsed.title, memo: parsed.notes } };
+    if (lockedMode && candidate.mode !== lockedMode) { setStatus('savePending'); return; }
     const occupied = (value: AddDraft) => Boolean(value.url || value.title || value.memo || value.image);
     if (occupied(draft) || occupied(drafts[candidate.mode])) { setPending(candidate); setStatus(null); }
     else apply(candidate);
