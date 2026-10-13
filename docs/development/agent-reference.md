@@ -339,6 +339,9 @@ Delete `apps/mobile/dist/` afterwards; it is gitignored.
 
 ## Collaboration And PR Workflow
 
+Use the [agent PR execution checklist](pr-execution-retrospective.md) for
+preparation, grouped review fixes, handoff evidence, and completion checks.
+
 - For changes that couple sync scheduling, drivers, authentication recovery, or
   status UI, use [the sync change review guide](../design/sync-change-review.md)
   before publishing. If review repeatedly finds the same mechanism in another

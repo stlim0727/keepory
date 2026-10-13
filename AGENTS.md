@@ -1,6 +1,6 @@
 # Keepory agent orientation
 
-Last updated: 2026-10-09 (feature and store module boundaries; task-based context).
+Last updated: 2026-10-13 (PR ownership and review methodology reference).
 
 Keepory (historically named Stash in code) is an Expo SDK 58 / React Native
 bookmark app in `apps/mobile`, with local-first storage, Supabase REST sync,
@@ -126,6 +126,9 @@ CI automatically executes the full test matrix (`pnpm test` and `pnpm test:compo
   cannot verify it. Follow `docs/development/releasing.md`.
 
 ## Review and operational work
+
+Use the [agent PR execution checklist](docs/development/pr-execution-retrospective.md)
+to prepare coherent changes and preserve review evidence across handoffs.
 
 Follow the [reference's PR workflow](docs/development/agent-reference.md#collaboration-and-pr-workflow)
 and `docs/design/sync-change-review.md` for sync-related changes. Use a fresh
