@@ -283,7 +283,9 @@ export default function AddBookmarkScreen() {
       </View>
       {failedMode && smart.status !== 'savePending' ? <Text accessibilityLiveRegion="polite" style={{ color: palette.textSecondary }}>{t('add.clipboard.savePending')}</Text> : null}
       <Card elevated={false} style={styles.captureCard}>
-        <View pointerEvents={saving ? 'none' : 'auto'} style={{ gap: 10 }}>
+        {/* Keep a native parent while input blocking changes; flattening this
+            wrapper on save completion can reparent Fabric children. */}
+        <View collapsable={false} pointerEvents={saving ? 'none' : 'auto'} style={{ gap: 10 }}>
         {mode === 'link' ? <>
           <Text style={[styles.label, { color: palette.textSecondary }]}>{t('add.urlLabel')}</Text>
           <TextInput testID="add-url" accessibilityLabel={t('add.urlLabel')}
