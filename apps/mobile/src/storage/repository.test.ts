@@ -591,3 +591,18 @@ test('orphan recovery quota failure does not publish undurable queue', async () 
   assert.deepEqual(await repository.listQueue(), []);
   assert.deepEqual(await repository.getBookmark(bookmark.id), bookmark);
 });
+
+test('failed enqueue leaves the durable orphan discoverable for immediate recovery without reload', async () => {
+  await repository.init([]);
+  const bookmark = makeBookmark('failed-enqueue-orphan');
+  const entry = rehomeFailure(bookmark.id);
+  await repository.insertBookmark(bookmark);
+  const durableBefore = memoryStorage.getItem('stash.queue');
+  memoryStorage.failNextWriteTo = 'stash.queue';
+  await assert.rejects(repository.enqueue(entry), /injected write failure/);
+  assert.deepEqual(await repository.listQueue(), []);
+  assert.equal(memoryStorage.getItem('stash.queue'), durableBefore);
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), true);
+  assert.deepEqual(await repository.listQueue(), [entry]);
+  assert.deepEqual(JSON.parse(memoryStorage.getItem('stash.queue')!), [entry]);
+});

@@ -321,8 +321,9 @@ class WebBookmarkRepository implements BookmarkRepository {
   }
 
   async enqueue(entry: LocalPendingBookmark): Promise<void> {
-    this.queue = [...this.queue.filter((existing) => existing.local_id !== entry.local_id), entry];
-    this.write(QUEUE_KEY, this.queue);
+    const nextQueue = [...this.queue.filter((existing) => existing.local_id !== entry.local_id), entry];
+    this.write(QUEUE_KEY, nextQueue);
+    this.queue = nextQueue;
   }
 
   async recoverQueueEntry(expectedBookmark: Bookmark, entry: LocalPendingBookmark): Promise<boolean> {
