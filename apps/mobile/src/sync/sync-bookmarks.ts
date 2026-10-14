@@ -444,7 +444,9 @@ export async function syncCreateQueueEntryBatch(
     for (let index = 0; index < entries.length; index++) {
       const checkpointed = await checkpointCreatePayload(repository, entries[index]!, uploadedPayloads[index]!);
       if (!checkpointed) throw new Error('Create queue entry was superseded before bulk dispatch.');
-      entries[index] = checkpointed;
+      // The coordinator's per-entry fallback shares these entry objects with
+      // its upload queue. Retain their identity so it also sees the checkpoint.
+      Object.assign(entries[index]!, checkpointed);
     }
     if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {
       throw new Error('Signed-in identity changed before this bulk create could be dispatched.');

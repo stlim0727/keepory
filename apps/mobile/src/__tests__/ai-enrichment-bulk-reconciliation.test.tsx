@@ -21,12 +21,16 @@ test('a bulk chunk failure with a row-specific permanent error isolates just the
     makeStoredBookmark({
       id: goodId,
       url: 'https://example.com/good',
+      title: 'Post-capture good title',
+      notes: 'Post-capture good caption',
       sync_status: 'pending',
       metadata_status: 'complete',
     }),
     makeStoredBookmark({
       id: badId,
       url: 'https://example.com/bad',
+      title: 'Post-capture bad title',
+      notes: 'Post-capture bad caption',
       sync_status: 'pending',
       metadata_status: 'complete',
     }),
@@ -76,6 +80,14 @@ test('a bulk chunk failure with a row-specific permanent error isolates just the
   expect(badQueueEntry?.last_error).toContain('exceeds btree version');
 
   expect(apiMock.__spies.createBookmark).toHaveBeenCalledTimes(2);
+  // The failed bulk checkpoint must also reach the original per-entry queue
+  // snapshots; otherwise CAS rejects the fallback before its API call.
+  expect(apiMock.__spies.createBookmark).toHaveBeenNthCalledWith(1, expect.objectContaining({
+    id: goodId, title: 'Post-capture good title', notes: 'Post-capture good caption',
+  }));
+  expect(apiMock.__spies.createBookmark).toHaveBeenNthCalledWith(2, expect.objectContaining({
+    id: badId, title: 'Post-capture bad title', notes: 'Post-capture bad caption',
+  }));
 });
 
 test('a bulk create success with no matching local bookmark still durably clears its queue entry', async () => {
