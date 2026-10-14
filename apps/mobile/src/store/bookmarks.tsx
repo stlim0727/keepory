@@ -1337,6 +1337,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     hasSyncedOnce,
     bookmarksRef,
     queueRef,
+    idAliases,
     resetEpoch,
     realOwnerId: auth.session && auth.session.user.is_anonymous !== true ? auth.userId : null,
     pendingUserTitleEdits,

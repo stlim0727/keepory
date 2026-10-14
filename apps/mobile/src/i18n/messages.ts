@@ -425,6 +425,8 @@ export const en = {
   'add.removeImage': 'Remove image',
   'add.saveImage': 'Save image',
   'add.saveFailed': 'Could not save on this device. Your draft is ready to retry.',
+  'add.discardPrompt': 'Leave without retrying? This draft has not finished saving on this device.',
+  'add.discardDraft': 'Leave without retrying',
   'add.replacePrompt': 'Replace your draft with this clipboard content?',
   'add.replaceDraft': 'Replace draft',
   'add.keepEditing': 'Keep editing',

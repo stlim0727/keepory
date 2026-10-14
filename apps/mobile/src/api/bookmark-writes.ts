@@ -45,6 +45,15 @@ interface CreateBookmarkDependencies {
   findBookmarkById: (id: string) => Promise<RemoteBookmark | null>;
 }
 
+// A device-owned create may already have landed before local recovery finishes.
+// Keep its newest title/image, while omitted fields preserve server metadata.
+function ownCaptureRetryFields(input: CreateBookmarkInput): UpdateBookmarkInput {
+  return {
+    ...(input.title !== undefined ? { title: input.title?.trim() || null } : {}),
+    ...(input.preview_image_url !== undefined ? { preview_image_url: input.preview_image_url?.trim() || null } : {}),
+  };
+}
+
 export async function createBookmark(this: CreateBookmarkDependencies, input: CreateBookmarkInput): Promise<CreateBookmarkOutput> {
   const payload = requirePayload(input);
   const timestamp = nowIso();
@@ -91,6 +100,7 @@ export async function createBookmark(this: CreateBookmarkDependencies, input: Cr
     const isOwnRetry = clientId !== null && existing.client_id === clientId;
     await this.updateBookmark(existing.id, {
       ...(isOwnRetry ? {
+        ...ownCaptureRetryFields(input),
         description: description ?? undefined,
         notes: input.notes === undefined ? undefined : notes,
         description_format: input.description_format,
@@ -184,6 +194,7 @@ export async function createBookmark(this: CreateBookmarkDependencies, input: Cr
           (clientId !== null && duplicate.client_id === clientId);
         await this.updateBookmark(duplicate.id, {
           ...(isOwnRetry ? {
+            ...ownCaptureRetryFields(input),
             description: description ?? undefined,
             notes: input.notes === undefined ? undefined : notes,
             description_format: input.description_format,
@@ -344,9 +355,11 @@ export async function createBookmarks(this: CreateBookmarksDependencies, inputs:
       // patching its description with this request's payload would
       // corrupt an unrelated row.
       const isOwnRetry = item.clientId !== null && existing.client_id === item.clientId;
-      const hasContent = item.body.description !== null || inputs[index].notes !== undefined;
+      const hasContent = item.body.description !== null || inputs[index].notes !== undefined ||
+        inputs[index].title !== undefined || inputs[index].preview_image_url !== undefined;
       if (isOwnRetry && hasContent) {
         duplicateContentUpdates.set(existing.id, {
+          ...ownCaptureRetryFields(inputs[index]),
           description: item.body.description ?? undefined,
           notes: inputs[index].notes === undefined ? undefined : item.body.notes,
           description_format: item.body.description !== null ? item.body.description_format : undefined,

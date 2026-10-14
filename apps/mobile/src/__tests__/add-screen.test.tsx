@@ -47,12 +47,15 @@ jest.mock('@/domain/enrichment', () => ({
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
 let mockRemovalPrevented = false;
+let mockPreventedRemoval: ((options: { repeat: () => void }) => void) | undefined;
 const mockAllowRemoval = jest.fn(() => { mockRemovalPrevented = false; });
 let mockParams: Record<string, string> = {};
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), navigate: jest.fn(), replace: mockReplace, back: mockBack }),
   useLocalSearchParams: () => mockParams,
-  usePreventRemove: (prevent: boolean) => { mockRemovalPrevented = prevent; return mockAllowRemoval; },
+  usePreventRemove: (prevent: boolean, callback?: (options: { repeat: () => void }) => void) => {
+    mockRemovalPrevented = prevent; mockPreventedRemoval = callback; return mockAllowRemoval;
+  },
 }));
 
 // Drive the responsive sheet rule off a controllable viewport.
@@ -86,6 +89,7 @@ beforeEach(() => {
   mockReplace.mockClear();
   mockAllowRemoval.mockClear();
   mockRemovalPrevented = false;
+  mockPreventedRemoval = undefined;
   mockParams = {};
   mockWindowSize.width = 390;
   mockWindowSize.height = 844;
@@ -530,7 +534,7 @@ describe('smart Add capture', () => {
     expect(mockBack).not.toHaveBeenCalled();
     await act(async () => failCopy(new Error('disk full')));
     await screen.findByText(en['add.saveFailed'] as string);
-    expect(mockRemovalPrevented).toBe(false);
+    expect(mockRemovalPrevented).toBe(true);
     expect(screen.getByLabelText('Note').props.value).toBe('Retained caption');
     expect(mockBack).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByTestId('add-save'));
@@ -619,7 +623,28 @@ describe('capture persistence recovery after editing', () => {
     await fireEvent.press(screen.getByTestId('add-save'));
     await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
     expect(fakeRepo.__bookmarks()[0].title).toBeNull();
-    expect(fakeRepo.__queue()[0].payload.title).toBeUndefined();
+    expect(fakeRepo.__queue()[0].payload.title).toBeNull();
+  });
+  it('requires explicit abandonment after a failed save before Close or system Back can remove the draft', async () => {
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-mode-note'));
+    await fireEvent.changeText(screen.getByLabelText('Note'), 'Unfinished capture');
+    jest.spyOn(fakeRepo.repository, 'insertBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await screen.findByText(en['add.saveFailed'] as string);
+    expect(mockRemovalPrevented).toBe(true);
+    await fireEvent.press(screen.getByLabelText('Close'));
+    await screen.findByText(en['add.discardPrompt'] as string);
+    expect(mockBack).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Keep editing'));
+    expect(screen.getByLabelText('Note').props.value).toBe('Unfinished capture');
+    const repeat = jest.fn();
+    await act(async () => { mockPreventedRemoval?.({ repeat }); });
+    await screen.findByText(en['add.discardPrompt'] as string);
+    expect(repeat).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText(en['add.discardDraft'] as string));
+    expect(repeat).toHaveBeenCalledTimes(1);
+    expect(mockRemovalPrevented).toBe(false);
   });
   for (const mode of ['link', 'note', 'image'] as const) {
     for (const stage of ['insertBookmark', 'enqueue'] as const) {

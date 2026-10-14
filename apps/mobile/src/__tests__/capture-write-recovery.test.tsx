@@ -36,6 +36,7 @@ const fake = jest.requireMock('@/storage/repository') as FakeRepositoryModule;
 
 async function harness(rows: Bookmark[] = [], owner: string | null = null) {
   const resetEpoch = { current: 0 };
+  const idAliases = { current: new Map<string, string>() };
   const enqueueMutation = jest.fn<Promise<boolean>, [string, 'update' | 'delete', SyncChangeSource?, string[]?]>(async () => true);
   let hidden = false;
   const hook = await renderHook(() => {
@@ -47,16 +48,16 @@ async function harness(rows: Bookmark[] = [], owner: string | null = null) {
     queueRef.current = queue;
     const capture = useAddBookmark({
       hideAccountCache: hidden, loadedBookmarks: bookmarks ?? [], setBookmarks, setQueue,
-      bookmarksRef, queueRef, resetEpoch, realOwnerId: owner,
+      bookmarksRef, queueRef, idAliases, resetEpoch, realOwnerId: owner,
       localCreateFlushesInFlight: useRef(0), syncPendingRef: useRef(false), syncPendingForceRef: useRef(false),
       syncNowRef: useRef(null), pendingUserTitleEdits: useRef(new Set<string>()),
       enrichInBackground: () => {}, markEnrichmentStale: () => {},
-      hasSyncedOnce: (id) => rows.some((row) => row.id === id && row.ever_synced === true),
+      hasSyncedOnce: (id) => bookmarksRef.current?.some((row) => row.id === id && row.ever_synced === true) ?? false,
       enqueueMutation,
     });
     return { ...capture, bookmarks, queue, bookmarksRef, queueRef, setBookmarks, setQueue };
   });
-  return { ...hook, resetEpoch, enqueueMutation, switchOwner: async (next: string | null) => { owner = next; await hook.rerender({}); }, hide: async () => { hidden = true; await hook.rerender({}); } };
+  return { ...hook, resetEpoch, idAliases, enqueueMutation, switchOwner: async (next: string | null) => { owner = next; await hook.rerender({}); }, hide: async () => { hidden = true; await hook.rerender({}); } };
 }
 
 async function capture(h: Awaited<ReturnType<typeof harness>>, input: Parameters<ReturnType<typeof useAddBookmark>['addBookmark']>[0]) {
@@ -306,5 +307,149 @@ it('derives a replacement image title from its filename and honors an explicit e
   const cleared = await capture(h, { ...replacement, title: '' });
   expect(cleared.persisted).toBe(true);
   expect(fake.__bookmarks()[0].title).toBeNull();
-  expect(fake.__queue()[0].payload.title).toBeUndefined();
+  expect(fake.__queue()[0].payload.title).toBeNull();
+});
+
+it.each([true, false])('invalidates orphan-upload confirmation only when image source changes: %s', async (replaceImage) => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'orphan-image', image: { uri: 'file:///first.png', mimeType: 'image/png', fileName: 'First.png' } };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const uploaded = { ...fake.__bookmarks()[0], preview_image_url: 'https://storage.example/first.png', local_image_uploaded_for_user_id: 'real-a', ever_synced: true, sync_status: 'synced' as const };
+  await fake.repository.updateBookmark(uploaded);
+  await act(async () => { h.result.current.setBookmarks([uploaded]); });
+  const retryInput = { ...input, notes: 'Changed caption', image: replaceImage ? { ...input.image, uri: 'file:///second.png', fileName: 'Second.png' } : input.image };
+  const retry = await capture(h, retryInput);
+  expect(retry.persisted).toBe(true);
+  expect(fake.__bookmarks()[0].preview_image_url).toBe(replaceImage ? null : uploaded.preview_image_url);
+  expect(fake.__bookmarks()[0].local_image_uploaded_for_user_id).toBe(replaceImage ? null : uploaded.local_image_uploaded_for_user_id);
+  expect(fake.__bookmarks()[0].notes).toBe('Changed caption');
+  expect(fake.__queue()[0].operation).toBe('create');
+});
+
+it('preserves existing duplicate description format after failed notes capture', async () => {
+  const original = makeStoredBookmark({ ever_synced: true, description: '**Markdown description**', description_format: 'markdown' });
+  fake.__reset([original]);
+  const h = await harness([original]);
+  h.enqueueMutation.mockResolvedValueOnce(false);
+  const input = { capture_attempt_id: 'format-retry', url: original.url!, notes: 'Notes', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect((await capture(h, input)).persisted).toBe(true);
+  expect(fake.__bookmarks()[0].description_format).toBe('markdown');
+  expect(h.enqueueMutation.mock.calls.at(-1)?.[3]).not.toContain('description_format');
+});
+
+it('retries a failed create through an adopted remote identity without resurrecting the old row', async () => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness([], 'real-a');
+  const input = { capture_attempt_id: 'adopt-create', shared_text: 'Original body' };
+  const first = await capture(h, input);
+  expect(first.persisted).toBe(false);
+  const adopted = { ...fake.__bookmarks()[0], id: 'remote-adopted-id', client_id: 'remote-client', ever_synced: true, sync_status: 'synced' as const };
+  fake.__reset([adopted]);
+  h.idAliases.current.set(first.bookmark.id, adopted.id);
+  await act(async () => { h.result.current.setBookmarks([adopted]); h.result.current.setQueue([]); });
+  const retry = await capture(h, { ...input, shared_text: 'Edited body' });
+  expect(retry.persisted).toBe(true);
+  expect(retry.bookmark.id).toBe(adopted.id);
+  expect(fake.__bookmarks()).toHaveLength(1);
+  expect(fake.__bookmarks()[0]).toMatchObject({ id: adopted.id, client_id: adopted.client_id, description: 'Edited body' });
+  expect(fake.__queue()[0]).toMatchObject({ local_id: adopted.id, payload: { id: adopted.id, client_id: adopted.client_id, shared_text: 'Edited body' } });
+});
+
+it('carries a failed anonymous duplicate through a rehome alias and retains duplicate replacement rules', async () => {
+  const original = makeStoredBookmark({ ever_synced: true, notes: '**Original notes**', notes_format: 'markdown', title: 'User title', title_is_derived: false });
+  fake.__reset([original]);
+  const h = await harness([original]);
+  h.enqueueMutation.mockResolvedValueOnce(false);
+  const input = { capture_attempt_id: 'carry-duplicate', url: original.url!, notes: 'Failed replacement', replace_existing_notes: true };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const rehomed = { ...fake.__bookmarks()[0], id: 'rehomed-id', client_id: 'rehomed-client', ever_synced: false, sync_status: 'pending' as const };
+  const entry: LocalPendingBookmark = { local_id: rehomed.id, remote_id: null, operation: 'create', changes: [{ source: 'account_rehome', fields: [], at: rehomed.updated_at }], payload: { id: rehomed.id, client_id: rehomed.client_id, url: rehomed.url! }, sync_status: 'pending', retry_count: 0, last_error: null, created_at: rehomed.created_at, updated_at: rehomed.updated_at };
+  fake.__reset([rehomed]);
+  await fake.repository.enqueue(entry);
+  h.idAliases.current.set(original.id, rehomed.id);
+  await h.switchOwner('real-a');
+  await act(async () => { h.result.current.setBookmarks([rehomed]); h.result.current.setQueue([entry]); });
+  const retry = await capture(h, { ...input, title: 'Derived hint', title_is_derived: true, notes: '', notes_format: 'plain' });
+  expect(retry.persisted).toBe(true);
+  expect(fake.__bookmarks()).toHaveLength(1);
+  expect(fake.__bookmarks()[0]).toMatchObject({ id: rehomed.id, client_id: rehomed.client_id, title: 'User title', title_is_derived: false, notes: '**Original notes**', notes_format: 'markdown' });
+  expect(fake.__queue()[0]).toMatchObject({ local_id: rehomed.id, operation: 'create', payload: { id: rehomed.id, client_id: rehomed.client_id, notes: '**Original notes**', notes_format: 'markdown' } });
+});
+
+it('refreshes the current identity after a pending image copy and preserves the latest queue identity', async () => {
+  const images = jest.requireMock('@/storage/image-store') as { copyImageToLibrary: jest.Mock };
+  let finish!: (uri: string) => void;
+  images.copyImageToLibrary.mockImplementationOnce(() => new Promise<string>((resolve) => { finish = resolve; }));
+  const h = await harness();
+  let first!: AddBookmarkResult;
+  await act(async () => { first = h.result.current.addBookmark({ capture_attempt_id: 'image-adopt', image: { uri: 'file:///image.png', fileName: 'image.png', mimeType: 'image/png' } }); });
+  if (first.status === 'invalid') throw new Error(first.error);
+  const acknowledgement = first.persisted;
+  const remapped = { ...first.bookmark, id: 'current-image-id', client_id: 'current-image-client' };
+  const entry = { ...h.result.current.queue[0], local_id: remapped.id, payload: { ...h.result.current.queue[0].payload, id: remapped.id, client_id: remapped.client_id } };
+  fake.__reset([remapped]);
+  h.idAliases.current.set(first.bookmark.id, remapped.id);
+  await h.switchOwner('real-a');
+  await act(async () => { h.result.current.setBookmarks([remapped]); h.result.current.setQueue([entry]); });
+  let persisted!: boolean;
+  await act(async () => { finish('file:///durable.png'); persisted = await acknowledgement; });
+  expect(persisted).toBe(true);
+  expect(fake.__bookmarks()).toHaveLength(1);
+  expect(fake.__bookmarks()[0].id).toBe(remapped.id);
+  expect(fake.__queue()[0]).toMatchObject({ local_id: remapped.id, payload: { id: remapped.id, client_id: remapped.client_id } });
+  expect(h.result.current.bookmarks?.map((row) => row.id)).toEqual([remapped.id]);
+});
+
+it('binds a guest capture to its real owner so a subsequent direct real-account switch blocks retry', async () => {
+  const insert = jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('row failed')).mockRejectedValueOnce(new Error('row failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'owner-binding', shared_text: 'Private body' };
+  expect((await capture(h, input)).persisted).toBe(false);
+  await h.switchOwner('real-a');
+  expect((await capture(h, input)).persisted).toBe(false);
+  await h.switchOwner('real-b');
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect(insert).toHaveBeenCalledTimes(2);
+});
+
+it('uses the replacement filename after a whole image draft replacement removes an earlier custom title', async () => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'replace-custom-title', title: 'Earlier custom title', image: { uri: 'file:///first.png', fileName: 'First reference.png', mimeType: 'image/png' } };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const retry = await capture(h, { ...input, title: undefined, image: { ...input.image, uri: 'file:///second.png', fileName: 'Second reference.png' } });
+  expect(retry.persisted).toBe(true);
+  expect(fake.__bookmarks()[0]).toMatchObject({ title: 'Second reference', title_is_derived: undefined });
+});
+
+it('marks a cleared orphan-uploaded image caption explicitly and preserves unrelated description format', async () => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'caption-clear', notes: 'Original caption', image: { uri: 'file:///image.png', fileName: 'image.png', mimeType: 'image/png' } };
+  expect((await capture(h, input)).persisted).toBe(false);
+  const uploaded = { ...fake.__bookmarks()[0], description: '**Cloud description**', description_format: 'markdown' as const, preview_image_url: 'https://storage.example/image.png', local_image_uploaded_for_user_id: 'real-a', ever_synced: true, sync_status: 'synced' as const };
+  await fake.repository.updateBookmark(uploaded);
+  await act(async () => { h.result.current.setBookmarks([uploaded]); });
+  expect((await capture(h, { ...input, notes: '', notes_format: 'plain', description_format: 'plain' })).persisted).toBe(true);
+  expect(fake.__bookmarks()[0]).toMatchObject({ notes: null, description: '**Cloud description**', description_format: 'markdown', preview_image_url: uploaded.preview_image_url });
+  expect(fake.__queue()[0].payload.notes).toBe('');
+  expect(fake.__queue()[0].payload.description_format).toBe('markdown');
+});
+
+it('does not transfer a departed real owner through a server adoption alias while its row remains visible', async () => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness([], 'real-a');
+  const input = { capture_attempt_id: 'adoption-owner-race', shared_text: 'Private body' };
+  const first = await capture(h, input);
+  expect(first.persisted).toBe(false);
+  const adopted = { ...fake.__bookmarks()[0], id: 'server-owned-by-a', ever_synced: true, sync_status: 'synced' as const };
+  fake.__reset([adopted]);
+  h.idAliases.current.set(first.bookmark.id, adopted.id);
+  await act(async () => { h.result.current.setBookmarks([adopted]); h.result.current.setQueue([]); });
+  await h.switchOwner('real-b');
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect(fake.__queue()).toEqual([]);
+  expect(fake.__bookmarks()).toEqual([adopted]);
 });

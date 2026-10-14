@@ -310,8 +310,10 @@ function createUploadPayload(
   }
   const payload: CreateBookmarkInput = {
     ...entry.payload,
-    title: latestAtUpload.title ?? undefined,
-    notes: latestAtUpload.notes ?? undefined,
+    // A cleared known title is explicit; an untouched missing title must not
+    // erase generated cloud metadata on a device-owned idempotent retry.
+    title: latestAtUpload.title ?? (entry.payload.title !== undefined ? null : undefined),
+    notes: latestAtUpload.notes ?? (entry.payload.notes !== undefined ? '' : undefined),
     ...(latestAtUpload.description_format !== undefined ? { description_format: latestAtUpload.description_format } : {}),
     ...(latestAtUpload.notes_format !== undefined ? { notes_format: latestAtUpload.notes_format } : {}),
     ...(latestAtUpload.deleted_at ? { deleted_at: latestAtUpload.deleted_at } : {}),

@@ -308,6 +308,8 @@ export const ko: Catalog = {
   'add.removeImage': '이미지 제거',
   'add.saveImage': '이미지 저장',
   'add.saveFailed': '이 기기에 저장하지 못했어요. 작성한 내용으로 다시 시도해 주세요.',
+  'add.discardPrompt': '다시 시도하지 않고 나갈까요? 이 기기에 저장이 완료되지 않았어요.',
+  'add.discardDraft': '다시 시도하지 않고 나가기',
   'add.replacePrompt': '클립보드 내용으로 작성 중인 내용을 바꿀까요?',
   'add.replaceDraft': '작성 내용 바꾸기',
   'add.keepEditing': '계속 작성',

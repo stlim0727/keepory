@@ -712,7 +712,7 @@ test('simulation: real syncQueueEntry reconciles duplicate adoption and an in-fl
       [PENDING_ENRICHMENT_RESTORE_KEY]: JSON.stringify([enrichmentRestore]),
     },
   });
-  const sentTitles: Array<string | undefined> = [];
+  const sentTitles: Array<string | null | undefined> = [];
   const updatedTitles: Array<string | null> = [];
   let result: EntrySyncResult | undefined;
   const simulation = new DeterministicSimulation(

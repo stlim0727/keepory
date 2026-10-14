@@ -71,9 +71,16 @@ export default function AddBookmarkScreen() {
     }
   }, [mode, detailsOpen]);
   const [saving, setSaving] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const resumeRemoval = useRef<(() => void) | null>(null);
   // Protect the draft from system Back, modal dismissal, and browser navigation
   // until the local row, image, and outbox have acknowledged persistence.
-  const allowRemoval = usePreventRemove(saving);
+  const allowRemoval = usePreventRemove(saving || failedMode !== null, ({ repeat }) => {
+    if (!savingRef.current && failedMode) {
+      resumeRemoval.current = repeat;
+      setConfirmDiscard(true);
+    }
+  });
   const savingRef = useRef(false);
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -150,6 +157,23 @@ export default function AddBookmarkScreen() {
     else router.back();
   }
 
+  function requestDismiss() {
+    if (savingRef.current) return;
+    if (failedMode) { setConfirmDiscard(true); return; }
+    smart.cancel();
+    dismissManual();
+  }
+
+  function discardFailedDraft() {
+    const repeat = resumeRemoval.current;
+    resumeRemoval.current = null;
+    setConfirmDiscard(false);
+    setFailedMode(null);
+    smart.cancel();
+    if (repeat) repeat();
+    else { allowRemoval(); dismissManual(); }
+  }
+
   async function handleSave() {
     if (!canSave || savingRef.current || smart.pending || smart.status === 'reading') return;
     savingRef.current = true;
@@ -220,6 +244,11 @@ export default function AddBookmarkScreen() {
       if (!savingRef.current) { smart.update({ memo: value, format: nextFormat }); setError(null); }
     }} />;
   const content = <>
+    {confirmDiscard ? <Card elevated={false} style={styles.captureCard}>
+      <Text accessibilityRole="alert" style={{ color: palette.text }}>{t('add.discardPrompt')}</Text>
+      <Button variant="secondary" onPress={() => { resumeRemoval.current = null; setConfirmDiscard(false); }}>{t('add.keepEditing')}</Button>
+      <Button variant="danger" onPress={discardFailedDraft}>{t('add.discardDraft')}</Button>
+    </Card> : null}
     <ScrollView testID="add-scroll" style={[styles.scroll, { backgroundColor: palette.background }]}
       contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Button testID="add-paste" variant="secondary" disabled={saving || smart.status === 'reading'} onPress={smart.paste}>
@@ -302,7 +331,7 @@ export default function AddBookmarkScreen() {
         accessibilityRole="button"
         accessibilityLabel={t('common.close')}
         disabled={saving} accessibilityState={{ disabled: saving }}
-        onPress={() => { if (!savingRef.current) { smart.cancel(); dismissManual(); } }}
+        onPress={requestDismiss}
         hitSlop={8}
         style={({ pressed }) => [styles.headerClose, pressed && { opacity: 0.6 }]}
       >
@@ -325,7 +354,7 @@ export default function AddBookmarkScreen() {
         accessibilityRole="button"
         accessibilityLabel={t('common.close')}
         disabled={saving} accessibilityState={{ disabled: saving }}
-        onPress={() => { if (!savingRef.current) { smart.cancel(); dismissManual(); } }}
+        onPress={requestDismiss}
       />
       <View ref={pasteRoot} style={[styles.sheetPanel, { backgroundColor: palette.background }]}>
         {header}

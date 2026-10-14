@@ -505,6 +505,19 @@ test('bulk create: uploads latest titles and replaces local rows with returned r
   assert.equal(calls.length, 0);
 });
 
+test('create retry forwards an explicitly cleared live title rather than the stale queued title', async () => {
+  const row = makeBookmark({ title: null });
+  let uploaded: CreateBookmarkInput | undefined;
+  const api = fakeApi({ createBookmark: async (input: CreateBookmarkInput) => {
+    uploaded = input;
+    return { bookmark_id: row.id, status: 'duplicate', metadata_status: 'pending' };
+  } });
+  const { repository } = fakeRepository();
+  await syncQueueEntry(api, repository, makeCreateEntry({ payload: { url: row.url!, title: 'Old title', notes: 'Old caption', client_id: 'own-capture' } }), () => row);
+  assert.equal(uploaded?.title, null);
+  assert.equal(uploaded?.notes, '');
+});
+
 test('bulk create: preserves enrichment_policy skip from entry payload in uploaded payload', async () => {
   const skipEntry = makeCreateEntry({
     local_id: 'local-skip',
