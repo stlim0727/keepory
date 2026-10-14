@@ -18,6 +18,7 @@ import {
 } from "@/storage/image-store";
 import { repository } from "@/storage/repository";
 import { currentDedupeKey, isActiveBookmark, isBookmarkSyncedOnce, logStorageError, makeBookmarkId, makeClientId } from '@/store/bookmarks/helpers';
+import { abandonCaptureWrite, cleanObsoleteImages, type CaptureWrite } from '@/store/bookmarks/capture-write-recovery';
 import { ensureRepositoryReady } from '@/store/bookmarks/repository-ready';
 import { type AddBookmarkResult } from '@/store/bookmarks/types';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
@@ -25,19 +26,6 @@ import {
   useCallback, useRef
 } from "react";
 
-interface CaptureWrite {
-  retry: (job?: CaptureWrite) => Promise<boolean>;
-  pending: Promise<boolean> | null;
-  bookmark: Bookmark;
-  entry?: LocalPendingBookmark;
-  image?: SharedImage;
-  copiedImage?: { source: string; durable: string };
-  imageReplaced?: boolean;
-  baseline?: Bookmark;
-  mutationFields?: string[];
-  realOwnerId: string | null;
-  prerequisite?: CaptureWrite;
-}
 
 interface Dependencies {
   hideAccountCache: boolean;
@@ -150,6 +138,7 @@ export function useAddBookmark({
       mutationFields: mutationFields ?? previous?.mutationFields,
       realOwnerId: previous ? previous.realOwnerId : realOwner.current,
       copiedImage: sameRow ? previous?.copiedImage : undefined,
+      obsoleteImageUris: sameRow ? previous?.obsoleteImageUris : undefined,
       imageReplaced: sameRow ? previous?.imageReplaced : undefined,
       prerequisite: sameRow ? previous?.prerequisite : previous,
       pending: null };
@@ -160,6 +149,11 @@ export function useAddBookmark({
     });
     return pending;
   };
+
+  const abandonCapture = (attemptKey: string) => abandonCaptureWrite({
+    attemptKey, captureWrites, resetEpoch, realOwner,
+    idAliases, bookmarksRef, queueRef, setBookmarks, setQueue,
+  });
 
   const addBookmark = useCallback(
     ({
@@ -434,7 +428,12 @@ export function useAddBookmark({
             // A replacement copy must never delete the file still referenced by
             // the durable row if copying or the subsequent row write fails.
             const durable = await copyImageToLibrary(source.uri, localImageFileName(`${job?.bookmark.id ?? id}-${makeClientId()}`, source));
-            if (job) job.copiedImage = { source: source.uri, durable };
+            if (job) {
+              if (job.copiedImage && job.copiedImage.durable !== durable) {
+                job.obsoleteImageUris = [...(job.obsoleteImageUris ?? []), job.copiedImage.durable];
+              }
+              job.copiedImage = { source: source.uri, durable };
+            }
             return durable;
           })
           .then((durableUri) => {
@@ -458,7 +457,12 @@ export function useAddBookmark({
             // two partial states a crash lands on — unspecified.
             return repository
               .insertBookmark(stored)
-              .then(() => { assertOwnership(job); return repository.enqueue(job?.entry ?? imageEntry); });
+              .then(async () => {
+                assertOwnership(job);
+                if (job) await cleanObsoleteImages(job).catch((error) => logStorageError('superseded image staging', error));
+                assertOwnership(job);
+                return repository.enqueue(job?.entry ?? imageEntry);
+              });
           })
           .then(() => { assertOwnership(job); return true; })
           .catch((error) => {
@@ -788,5 +792,5 @@ export function useAddBookmark({
     },
     [loadedBookmarks, hideAccountCache, enrichInBackground, hasSyncedOnce, enqueueMutation, markEnrichmentStale],
   );
-  return { addBookmark };
+  return { addBookmark, abandonCapture };
 }

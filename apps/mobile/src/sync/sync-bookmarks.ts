@@ -891,7 +891,7 @@ export async function syncQueueEntry(
     const checkpointed = await checkpointCreatePayload(repository, entry, payload);
     if (!checkpointed) {
       const latest = (await repository.listQueue()).find((item) => item.local_id === entry.local_id);
-      return { entry: latest ?? entry };
+      return { entry: latest ?? entry, uploadedImageUrl };
     }
     entry = checkpointed;
     if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {

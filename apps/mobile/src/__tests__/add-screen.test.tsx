@@ -6,6 +6,7 @@ const mockCopyImage = jest.fn(async (..._args: unknown[]) => 'file:///durable/im
 jest.mock('@/share/smart-clipboard', () => ({ readSmartClipboard: () => mockReadClipboard() }));
 jest.mock('@/storage/image-store', () => ({
   copyImageToLibrary: (...args: unknown[]) => mockCopyImage(...args),
+  deleteLibraryImage: jest.fn(async () => {}),
   localFileSizeBytes: () => 1, uploadImageFile: jest.fn(),
 }));
 
@@ -643,7 +644,7 @@ describe('capture persistence recovery after editing', () => {
     await screen.findByText(en['add.discardPrompt'] as string);
     expect(repeat).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByText(en['add.discardDraft'] as string));
-    expect(repeat).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(repeat).toHaveBeenCalledTimes(1));
     expect(mockRemovalPrevented).toBe(false);
   });
   for (const mode of ['link', 'note', 'image'] as const) {

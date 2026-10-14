@@ -1334,7 +1334,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       .then(() => repository.upsertEnrichments([stale]))
       .catch((error) => logStorageError("enrichment staleness", error));
   }, []);
-  const { addBookmark } = useAddBookmark({
+  const { addBookmark, abandonCapture } = useAddBookmark({
     hideAccountCache,
     loadedBookmarks,
     setBookmarks,
@@ -2872,6 +2872,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       getEnrichment,
       getBookmarkProcessing,
       addBookmark,
+      abandonCapture,
       importBookmarks,
       trashBookmark,
       restoreBookmark,
@@ -2943,6 +2944,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       getEnrichment,
       getBookmarkProcessing,
       addBookmark,
+      abandonCapture,
       importBookmarks,
       trashBookmark,
       restoreBookmark,

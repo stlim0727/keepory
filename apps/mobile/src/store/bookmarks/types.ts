@@ -122,6 +122,8 @@ export interface BookmarksContextValue {
     /** A shared image to capture as an image bookmark (local-only for now). */
     image?: SharedImage;
   }) => AddBookmarkResult;
+  /** Reconcile a failed manual attempt with durable state before leaving. */
+  abandonCapture: (attemptKey: string) => Promise<boolean>;
   /**
    * Re-ingest items parsed from an imported file. Local-first like addBookmark:
    * each URL is added with pending states, deduped against the existing library

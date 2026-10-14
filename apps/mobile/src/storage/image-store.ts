@@ -5,6 +5,9 @@
 import { imageBlobData, imageDataBytes } from '@/domain/image-data';
 import { SupabaseRequestError } from '@/supabase/client';
 
+/** Inline browser image bytes have no separately owned file to remove. */
+export async function deleteLibraryImage(_uri: string): Promise<void> {}
+
 export async function copyImageToLibrary(sourceUri: string, _fileName: string): Promise<string> {
   // Inline image data is persisted by repository.insertBookmark, unlike blob URLs
   // whose backing bytes disappear on reload. Storage quota errors propagate there.

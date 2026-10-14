@@ -672,6 +672,29 @@ test('create: an image upload persists the FRESHEST row, not a stale pre-upload 
   assert.equal(uploadStepPersist?.title, 'Edited mid-upload');
 });
 
+test('create: a removed queue after image upload retains the Storage cleanup signal when checkpoint rejects', async () => {
+  const entry = makeCreateEntry({ payload: { content_type: 'image', client_id: 'image-capture' } });
+  const { repository } = fakeRepository([entry]);
+  let bookmark: Bookmark | undefined = makeBookmark({ content_type: 'image', local_image_uri: 'file:///image.png' });
+  let uploaded = false;
+  let creates = 0;
+  repository.checkpointCreatePayload = async () => {
+    assert.equal(uploaded, true);
+    bookmark = undefined;
+    repository.listQueue = async () => [];
+    return false;
+  };
+  const imageUrl = 'https://storage.example/image-capture.png';
+  const result = await syncQueueEntry(fakeApi({ createBookmark: async () => { creates++; throw new Error('unexpected create'); } }), repository, entry, () => bookmark,
+    async () => { uploaded = true; return imageUrl; });
+  assert.equal(creates, 0);
+  assert.equal(result.uploadedImageUrl, imageUrl);
+  assert.equal(result.bookmarkUpdate, undefined);
+  assert.deepEqual(planDeletedMidFlightCleanup(result.entry.remote_id, result.uploadedImageUrl, entry.local_id), {
+    remoteIdToDelete: null, imageIdToCleanUp: entry.local_id,
+  });
+});
+
 test('create: an image bookmark uploads its binary before creating the row, then becomes a confirmed synced row', async () => {
   const { calls, repository } = fakeRepository();
   const imageBookmark = makeBookmark({

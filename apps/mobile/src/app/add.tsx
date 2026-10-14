@@ -45,7 +45,7 @@ export default function AddBookmarkScreen() {
   // phones keep the full-screen layout (mirrors Report's sheet).
   const { width, height, fontScale } = useWindowDimensions();
   const asSheet = width >= 760;
-  const { addBookmark, isLoading } = useBookmarks();
+  const { addBookmark, abandonCapture, isLoading } = useBookmarks();
   const { show } = useCaptureToast();
   const [failedMode, setFailedMode] = useState<AddMode | null>(null);
   const smart = useAddDraft(failedMode);
@@ -164,7 +164,17 @@ export default function AddBookmarkScreen() {
     dismissManual();
   }
 
-  function discardFailedDraft() {
+  async function discardFailedDraft() {
+    if (savingRef.current || !failedMode) return;
+    savingRef.current = true;
+    setSaving(true);
+    const attemptKey = captureIds.current[failedMode];
+    let reconciled = false;
+    try { reconciled = !attemptKey || await abandonCapture(attemptKey); }
+    catch { reconciled = false; }
+    finally { savingRef.current = false; if (mountedRef.current) setSaving(false); }
+    if (!mountedRef.current) return;
+    if (!reconciled) { setError(t('add.saveFailed')); return; }
     const repeat = resumeRemoval.current;
     resumeRemoval.current = null;
     setConfirmDiscard(false);
@@ -246,8 +256,8 @@ export default function AddBookmarkScreen() {
   const content = <>
     {confirmDiscard ? <Card elevated={false} style={styles.captureCard}>
       <Text accessibilityRole="alert" style={{ color: palette.text }}>{t('add.discardPrompt')}</Text>
-      <Button variant="secondary" onPress={() => { resumeRemoval.current = null; setConfirmDiscard(false); }}>{t('add.keepEditing')}</Button>
-      <Button variant="danger" onPress={discardFailedDraft}>{t('add.discardDraft')}</Button>
+      <Button variant="secondary" disabled={saving} onPress={() => { resumeRemoval.current = null; setConfirmDiscard(false); }}>{t('add.keepEditing')}</Button>
+      <Button variant="danger" disabled={saving} onPress={discardFailedDraft}>{t('add.discardDraft')}</Button>
     </Card> : null}
     <ScrollView testID="add-scroll" style={[styles.scroll, { backgroundColor: palette.background }]}
       contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">

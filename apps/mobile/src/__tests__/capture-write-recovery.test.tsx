@@ -6,7 +6,7 @@ import type { AddBookmarkResult } from '@/store/bookmarks/types';
 import { makeStoredBookmark, type FakeRepositoryModule } from './helpers/fake-repository';
 
 jest.mock('@/storage/repository', () => require('./helpers/fake-repository').createFakeRepositoryModule());
-jest.mock('@/storage/image-store', () => ({ copyImageToLibrary: jest.fn(async () => 'file:///durable.png') }));
+jest.mock('@/storage/image-store', () => ({ copyImageToLibrary: jest.fn(async () => 'file:///durable.png'), deleteLibraryImage: jest.fn(async () => {}) }));
 const mockFiles = new Map<string, string>();
 const mockCopyFailures = new Set<string>();
 jest.mock('expo-file-system', () => ({
@@ -71,6 +71,73 @@ async function capture(h: Awaited<ReturnType<typeof harness>>, input: Parameters
 }
 
 beforeEach(() => { jest.restoreAllMocks(); jest.spyOn(console, 'warn').mockImplementation(() => {}); fake.__reset([]); });
+
+it('removes an undurable optimistic capture and outbox before abandoning, retaining unrelated captures', async () => {
+  const original = makeStoredBookmark();
+  fake.__reset([original]);
+  jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('disk full'));
+  const h = await harness([original]);
+  const failed = await capture(h, { capture_attempt_id: 'abandon', shared_text: 'Undurable body' });
+  expect(failed.persisted).toBe(false);
+  expect(h.result.current.bookmarks).toHaveLength(2);
+  await act(async () => { expect(await h.result.current.abandonCapture('abandon')).toBe(true); });
+  expect(h.result.current.bookmarks).toEqual([original]);
+  expect(h.result.current.bookmarksRef.current).toEqual([original]);
+  expect(h.result.current.queue).toEqual([]);
+  expect(h.result.current.queueRef.current).toEqual([]);
+});
+
+it('retains a partially durable row while removing its undurable optimistic queue on abandonment', async () => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness();
+  expect((await capture(h, { capture_attempt_id: 'partial', shared_text: 'Durable body' })).persisted).toBe(false);
+  await act(async () => { expect(await h.result.current.abandonCapture('partial')).toBe(true); });
+  expect(h.result.current.bookmarks).toEqual(fake.__bookmarks());
+  expect(h.result.current.bookmarks).toHaveLength(1);
+  expect(h.result.current.queue).toEqual(fake.__queue());
+  expect(h.result.current.queue).toEqual([]);
+});
+
+it('restores the durable duplicate baseline when abandoning a failed replacement', async () => {
+  const original = makeStoredBookmark({ ever_synced: true, notes: '**Existing**', notes_format: 'markdown' });
+  fake.__reset([original]);
+  jest.spyOn(fake.repository, 'updateBookmark').mockRejectedValueOnce(new Error('row failed'));
+  const h = await harness([original]);
+  expect((await capture(h, { capture_attempt_id: 'duplicate-abandon', url: original.url!, notes: 'Undurable notes', replace_existing_notes: true })).persisted).toBe(false);
+  await act(async () => { expect(await h.result.current.abandonCapture('duplicate-abandon')).toBe(true); });
+  expect(h.result.current.bookmarks).toEqual([original]);
+  expect(fake.__bookmarks()).toEqual([original]);
+});
+
+it('keeps the failed attempt retryable if abandonment cannot read durable state', async () => {
+  jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('row failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'read-failed', shared_text: 'Retained draft' };
+  const first = await capture(h, input);
+  jest.spyOn(fake.repository, 'listBookmarks').mockRejectedValueOnce(new Error('read failed'));
+  await act(async () => { expect(await h.result.current.abandonCapture(input.capture_attempt_id)).toBe(false); });
+  expect(h.result.current.bookmarks?.[0].id).toBe(first.bookmark.id);
+  const retry = await capture(h, input);
+  expect(retry.persisted).toBe(true);
+  expect(retry.bookmark.id).toBe(first.bookmark.id);
+});
+
+it('does not overwrite a newer live operation while abandonment reads storage', async () => {
+  jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('row failed'));
+  const h = await harness();
+  const first = await capture(h, { capture_attempt_id: 'concurrent-abandon', shared_text: 'Failed body' });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  jest.spyOn(fake.repository, 'listQueue').mockImplementationOnce(async () => { await gate; return []; });
+  let abandoned!: Promise<boolean>;
+  await act(async () => { abandoned = h.result.current.abandonCapture('concurrent-abandon'); });
+  const newer = { ...first.bookmark, description: 'Newer live edit' };
+  await act(async () => { h.result.current.setBookmarks([newer]); });
+  let result!: boolean;
+  await act(async () => { release(); result = await abandoned; });
+  expect(result).toBe(false);
+  expect(h.result.current.bookmarks).toEqual([newer]);
+});
 
 it('routes URL corrections through a new capture after orphan sync already confirmed the original create', async () => {
   jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
@@ -245,9 +312,10 @@ it('preserves old durable image bytes if a replacement copy fails after enqueue 
   mockFiles.clear(); mockCopyFailures.clear();
   mockFiles.set('file:///first.png', 'original bytes');
   mockFiles.set('file:///replacement.png', 'replacement bytes');
-  const images = jest.requireMock('@/storage/image-store') as { copyImageToLibrary: jest.Mock };
+  const images = jest.requireMock('@/storage/image-store') as { copyImageToLibrary: jest.Mock; deleteLibraryImage: jest.Mock };
   const native = jest.requireActual('@/storage/image-store.native') as typeof import('@/storage/image-store.native');
   images.copyImageToLibrary.mockImplementation(native.copyImageToLibrary);
+  images.deleteLibraryImage.mockImplementation(native.deleteLibraryImage);
   jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
   const h = await harness();
   const input = { capture_attempt_id: 'replacement', image: { uri: 'file:///first.png', mimeType: 'image/png', fileName: 'first.png' } };
@@ -261,12 +329,21 @@ it('preserves old durable image bytes if a replacement copy fails after enqueue 
   expect(mockFiles.get(oldUri)).toBe('original bytes');
   expect(fake.__bookmarks()[0].local_image_uri).toBe(oldUri);
   mockCopyFailures.clear();
+  jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('replacement row failed'));
+  expect((await capture(h, replacement)).persisted).toBe(false);
+  expect(mockFiles.get(oldUri)).toBe('original bytes');
+  expect(fake.__bookmarks()[0].local_image_uri).toBe(oldUri);
+  const stagedUri = h.result.current.bookmarks?.[0].local_image_uri!;
+  expect(stagedUri).not.toBe(oldUri);
+  expect(mockFiles.get(stagedUri)).toBe('replacement bytes');
   expect((await capture(h, replacement)).persisted).toBe(true);
   const newUri = fake.__bookmarks()[0].local_image_uri!;
+  expect(newUri).toBe(stagedUri);
   expect(newUri).not.toBe(oldUri);
   expect(mockFiles.get(newUri)).toBe('replacement bytes');
-  expect(mockFiles.get(oldUri)).toBe('original bytes');
+  expect(mockFiles.has(oldUri)).toBe(false);
   images.copyImageToLibrary.mockImplementation(async () => 'file:///durable.png');
+  images.deleteLibraryImage.mockImplementation(async () => {});
 });
 
 it.each(['row', 'queue'])('reuses the failed duplicate job for tracking URL edits after %s failure', async (failure) => {
