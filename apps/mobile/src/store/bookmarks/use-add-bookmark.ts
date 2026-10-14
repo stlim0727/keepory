@@ -37,6 +37,7 @@ interface Dependencies {
   syncPendingForceRef: RefObject<boolean>;
   syncNowRef: RefObject<((options?: { force?: boolean; }) => Promise<boolean>) | null>;
   enrichInBackground: (bookmark: Bookmark) => void;
+  cancelCaptureEnrichment: (ids: ReadonlySet<string>) => void;
   hasSyncedOnce: (bookmarkId: string) => boolean;
   bookmarksRef: RefObject<Bookmark[] | null>;
   queueRef: RefObject<LocalPendingBookmark[]>;
@@ -58,6 +59,7 @@ export function useAddBookmark({
   syncPendingForceRef,
   syncNowRef,
   enrichInBackground,
+  cancelCaptureEnrichment,
   hasSyncedOnce,
   bookmarksRef,
   queueRef,
@@ -150,10 +152,10 @@ export function useAddBookmark({
     return pending;
   };
 
-  const abandonCapture = (attemptKey: string) => abandonCaptureWrite({
+  const abandonCapture = useCallback((attemptKey: string) => abandonCaptureWrite({
     attemptKey, captureWrites, resetEpoch, realOwner,
-    idAliases, bookmarksRef, queueRef, setBookmarks, setQueue,
-  });
+    idAliases, bookmarksRef, queueRef, setBookmarks, setQueue, cancelCaptureEnrichment, enrichInBackground,
+  }), [resetEpoch, idAliases, bookmarksRef, queueRef, setBookmarks, setQueue, cancelCaptureEnrichment, enrichInBackground]);
 
   const addBookmark = useCallback(
     ({

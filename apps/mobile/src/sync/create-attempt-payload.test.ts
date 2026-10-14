@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { BookmarkApi } from '@/api/bookmarks';
 import type { Bookmark, CreateBookmarkInput, LocalPendingBookmark } from '@/domain/types';
 import type { BookmarkRepository } from '@/storage/types';
-import { syncCreateQueueEntryBatch, syncQueueEntry } from './sync-bookmarks.ts';
+import { BulkCreateSupersededError, syncCreateQueueEntryBatch, syncQueueEntry } from './sync-bookmarks.ts';
 
 function fixture() {
   const now = '2026-10-14T00:00:00.000Z';
@@ -81,7 +81,7 @@ for (const bulk of [false, true]) {
       f.supersede(operation);
       let calls = 0;
       const api = { createBookmark: async () => { calls++; throw new Error('unexpected dispatch'); }, createBookmarks: async () => { calls++; throw new Error('unexpected dispatch'); } } as unknown as BookmarkApi;
-      if (bulk) await assert.rejects(syncCreateQueueEntryBatch(api, [f.entry], () => f.row, undefined, f.repository));
+      if (bulk) await assert.rejects(syncCreateQueueEntryBatch(api, [f.entry], () => f.row, undefined, f.repository), BulkCreateSupersededError);
       else await syncQueueEntry(api, f.repository, f.entry, () => f.row);
       assert.equal(calls, 0);
       assert.deepEqual(f.queue(), [f.replacement]);

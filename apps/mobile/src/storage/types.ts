@@ -117,6 +117,9 @@ export interface BookmarkRepository {
   repairStalledCollectionRlsEntries(): Promise<number>;
   listQueue(): Promise<LocalPendingBookmark[]>;
   enqueue(entry: LocalPendingBookmark): Promise<void>;
+  /** Recover a missing outbox only while the exact durable bookmark remains unchanged.
+   * False if the row or queue has been superseded; rejects on persistence failure. */
+  recoverQueueEntry?(expectedBookmark: Bookmark, entry: LocalPendingBookmark): Promise<boolean>;
   updateQueueEntry(entry: LocalPendingBookmark): Promise<void>;
   /** Atomically retain the last attempted create payload without changing queue
    * metadata/version. False when the expected create was removed or superseded. */

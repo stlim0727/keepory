@@ -43,3 +43,32 @@ test('native payload checkpoint cannot overwrite a mutation that wins the actor 
     db.close();
   }
 });
+
+const recoverySql = nativeSource.match(/`(INSERT OR IGNORE INTO local_pending_bookmarks[\s\S]*?WHERE EXISTS \(SELECT 1 FROM bookmarks WHERE id = \? AND data = \?\))`/)?.[1];
+assert.ok(recoverySql);
+test('native recovery checks exact durable row and preserves newer queue operations', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(`CREATE TABLE bookmarks (id TEXT PRIMARY KEY, data TEXT);
+      CREATE TABLE local_pending_bookmarks (local_id TEXT PRIMARY KEY, remote_id TEXT, operation TEXT,
+      payload TEXT, sync_status TEXT, retry_count INTEGER, last_error TEXT, last_error_kind TEXT,
+      health_escalated_at TEXT, created_at TEXT, updated_at TEXT, last_attempt_at TEXT, changes TEXT)`);
+    const expected = JSON.stringify({ id: 'id', title: 'captured' });
+    const recover = () => db.prepare(recoverySql).run('id', null, 'create', '{}', 'pending', 0,
+      null, null, null, 'created', 'updated', null, null, 'id', expected).changes;
+    assert.equal(recover(), 0);
+    db.prepare('INSERT INTO bookmarks VALUES (?, ?)').run('id', expected);
+    assert.equal(recover(), 1);
+    for (const operation of ['create', 'update', 'delete']) {
+      db.prepare('UPDATE local_pending_bookmarks SET operation = ?, updated_at = ?').run(operation, 'newer');
+      assert.equal(recover(), 0);
+      assert.equal(db.prepare('SELECT updated_at FROM local_pending_bookmarks').get()?.updated_at, 'newer');
+      assert.equal(db.prepare('SELECT operation FROM local_pending_bookmarks').get()?.operation, operation);
+    }
+    db.exec('DELETE FROM local_pending_bookmarks');
+    db.prepare('UPDATE bookmarks SET data = ?').run(JSON.stringify({ id: 'id', title: 'edited' }));
+    assert.equal(recover(), 0);
+    db.exec('DELETE FROM bookmarks');
+    assert.equal(recover(), 0);
+  } finally { db.close(); }
+});

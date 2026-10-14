@@ -383,6 +383,14 @@ async function checkpointCreatePayload(
   return { ...entry, payload };
 }
 
+/** No network attempt occurred; the coordinator must reload superseded work. */
+export class BulkCreateSupersededError extends Error {
+  constructor() {
+    super('Create queue entry was superseded before bulk dispatch.');
+    this.name = 'BulkCreateSupersededError';
+  }
+}
+
 export async function syncCreateQueueEntryBatch(
   api: BookmarkApi,
   entries: LocalPendingBookmark[],
@@ -443,7 +451,7 @@ export async function syncCreateQueueEntryBatch(
     // path must retain what the server may have accepted, including field presence.
     for (let index = 0; index < entries.length; index++) {
       const checkpointed = await checkpointCreatePayload(repository, entries[index]!, uploadedPayloads[index]!);
-      if (!checkpointed) throw new Error('Create queue entry was superseded before bulk dispatch.');
+      if (!checkpointed) throw new BulkCreateSupersededError();
       // The coordinator's per-entry fallback shares these entry objects with
       // its upload queue. Retain their identity so it also sees the checkpoint.
       Object.assign(entries[index]!, checkpointed);

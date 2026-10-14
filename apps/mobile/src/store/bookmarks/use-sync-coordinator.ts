@@ -67,6 +67,7 @@ import {
 } from "@/sync/reconcile-diagnostics";
 import {
   BULK_CREATE_SYNC_CHUNK_SIZE,
+  BulkCreateSupersededError,
   IMAGE_TOO_LARGE_ERROR_TEXT,
   IMAGE_UNSUPPORTED_FORMAT_ERROR_TEXT,
   applySyncQueueHealthEscalation,
@@ -1426,6 +1427,15 @@ export function useSyncCoordinator({
                 bulkSyncedLocalIds.add(entry.local_id);
               }
             } catch (error) {
+              if (error instanceof BulkCreateSupersededError) {
+                // The checkpoint lost to newer durable work before dispatch.
+                // Defer this snapshot, including later chunks, without counting
+                // retries or letting stale creates fall through to single sync.
+                for (const entry of bulkCreateEntries) {
+                  bulkSyncedLocalIds.add(entry.local_id);
+                }
+                break;
+              }
               // Only this chunk failed — mark just its entries 'failed' (with
               // retry accounting, like any other sync failure) and stop trying
               // further chunks this run, since a bulk-endpoint failure likely

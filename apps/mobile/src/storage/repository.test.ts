@@ -553,3 +553,41 @@ test('create payload checkpoint quota failure leaves memory and durable retry pa
   assert.equal(await repository.checkpointCreatePayload!(expected, payload), true);
   assert.deepEqual(await repository.listQueue(), [{ ...expected, payload }]);
 });
+
+test('orphan recovery requires unchanged durable row and absent queue', async () => {
+  await repository.init([]);
+  const bookmark = makeBookmark('orphan');
+  const entry = rehomeFailure(bookmark.id);
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+  await repository.insertBookmark(bookmark);
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), true);
+  await repository.init([]);
+  assert.deepEqual(await repository.listQueue(), [entry]);
+  for (const operation of ['create', 'update', 'delete'] as const) {
+    const newer = { ...entry, operation, updated_at: 'newer' };
+    await repository.enqueue(newer);
+    assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+    assert.deepEqual(await repository.listQueue(), [newer]);
+  }
+  await repository.removeQueueEntry(bookmark.id);
+  await repository.updateBookmark({ ...bookmark, title: 'edited' });
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+  await repository.deleteBookmark(bookmark.id);
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+  await repository.insertBookmark(bookmark);
+  await repository.clearAllData();
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+  assert.deepEqual(await repository.listQueue(), []);
+});
+
+test('orphan recovery quota failure does not publish undurable queue', async () => {
+  await repository.init([]);
+  const bookmark = makeBookmark('quota-orphan');
+  await repository.insertBookmark(bookmark);
+  memoryStorage.capacityBytes = 0;
+  await assert.rejects(repository.recoverQueueEntry!(bookmark, rehomeFailure(bookmark.id)), /quota/i);
+  assert.deepEqual(await repository.listQueue(), []);
+  await repository.init([]);
+  assert.deepEqual(await repository.listQueue(), []);
+  assert.deepEqual(await repository.getBookmark(bookmark.id), bookmark);
+});

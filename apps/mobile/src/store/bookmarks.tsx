@@ -1105,11 +1105,12 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
             : bookmarksRef.current;
           try {
             await ensureRepositoryReady();
+            if (resetEpoch.current !== epochAtStart || backgroundEnrichmentRequests.current.get(bookmark.id) !== request) return;
             await repository.updateBookmark(updated);
           } catch (error) {
             logStorageError("metadata enrichment", error);
           }
-          if (resetEpoch.current !== epochAtStart) {
+          if (resetEpoch.current !== epochAtStart || backgroundEnrichmentRequests.current.get(bookmark.id) !== request) {
             // A reset can land behind this write on native, where storage work
             // is serialized on a single actor tail — the write above may have
             // already landed against freshly-cleared storage. Don't compound
@@ -1334,6 +1335,13 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       .then(() => repository.upsertEnrichments([stale]))
       .catch((error) => logStorageError("enrichment staleness", error));
   }, []);
+  const cancelCaptureEnrichment = useCallback((ids: ReadonlySet<string>) => {
+    for (const id of backgroundEnrichmentRequests.current.keys()) {
+      if (!ids.has(resolveAliasedId(id, idAliases.current))) continue;
+      backgroundEnrichmentRequests.current.delete(id);
+      enriching.current.delete(id);
+    }
+  }, []);
   const { addBookmark, abandonCapture } = useAddBookmark({
     hideAccountCache,
     loadedBookmarks,
@@ -1344,6 +1352,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     syncPendingForceRef,
     syncNowRef,
     enrichInBackground,
+    cancelCaptureEnrichment,
     hasSyncedOnce,
     bookmarksRef,
     queueRef,

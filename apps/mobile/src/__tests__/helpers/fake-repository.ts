@@ -127,6 +127,14 @@ export function createFakeRepositoryModule(): FakeRepositoryModule {
     updateQueueEntry: async (entry) => {
       queue = [...queue.filter((q) => q.local_id !== entry.local_id), entry];
     },
+    recoverQueueEntry: async (expectedBookmark, entry) => {
+      const current = bookmarks.find((bookmark) => bookmark.id === expectedBookmark.id);
+      if (expectedBookmark.id !== entry.local_id || !current ||
+        JSON.stringify(current) !== JSON.stringify(expectedBookmark) ||
+        queue.some((queued) => queued.local_id === entry.local_id)) return false;
+      queue = [...queue, entry];
+      return true;
+    },
     checkpointCreatePayload: async (expected, payload) => {
       const current = queue.find((entry) => entry.local_id === expected.local_id);
       if (!current || current.operation !== 'create' || current.updated_at !== expected.updated_at ||

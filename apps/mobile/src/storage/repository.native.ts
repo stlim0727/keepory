@@ -558,6 +558,22 @@ class SqliteBookmarkRepository implements BookmarkRepository {
     );
   }
 
+  async recoverQueueEntry(expectedBookmark: Bookmark, entry: LocalPendingBookmark): Promise<boolean> {
+    if (expectedBookmark.id !== entry.local_id) return false;
+    const result = await this.connection.run((db) => db.runAsync(
+      `INSERT OR IGNORE INTO local_pending_bookmarks
+       (local_id, remote_id, operation, payload, sync_status, retry_count, last_error, last_error_kind, health_escalated_at, created_at, updated_at, last_attempt_at, changes)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (SELECT 1 FROM bookmarks WHERE id = ? AND data = ?)`,
+      [entry.local_id, entry.remote_id, entry.operation, JSON.stringify(entry.payload),
+        entry.sync_status, entry.retry_count, entry.last_error, entry.last_error_kind ?? null,
+        entry.health_escalated_at ?? null, entry.created_at, entry.updated_at,
+        entry.last_attempt_at ?? null, entry.changes ? JSON.stringify(entry.changes) : null,
+        expectedBookmark.id, JSON.stringify(expectedBookmark)],
+    ), 'recoverQueueEntry');
+    return result.changes === 1;
+  }
+
   async checkpointCreatePayload(
     expected: LocalPendingBookmark,
     payload: CreateBookmarkInput,

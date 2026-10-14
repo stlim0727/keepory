@@ -52,6 +52,7 @@ async function harness(rows: Bookmark[] = [], owner: string | null = null) {
       localCreateFlushesInFlight: useRef(0), syncPendingRef: useRef(false), syncPendingForceRef: useRef(false),
       syncNowRef: useRef(null), pendingUserTitleEdits: useRef(new Set<string>()),
       enrichInBackground: () => {}, markEnrichmentStale: () => {},
+      cancelCaptureEnrichment: () => {},
       hasSyncedOnce: (id) => bookmarksRef.current?.some((row) => row.id === id && row.ever_synced === true) ?? false,
       enqueueMutation,
     });
@@ -87,7 +88,7 @@ it('removes an undurable optimistic capture and outbox before abandoning, retain
   expect(h.result.current.queueRef.current).toEqual([]);
 });
 
-it('retains a partially durable row while removing its undurable optimistic queue on abandonment', async () => {
+it('retains a partially durable row and repairs its durable outbox before abandonment', async () => {
   jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
   const h = await harness();
   expect((await capture(h, { capture_attempt_id: 'partial', shared_text: 'Durable body' })).persisted).toBe(false);
@@ -95,7 +96,8 @@ it('retains a partially durable row while removing its undurable optimistic queu
   expect(h.result.current.bookmarks).toEqual(fake.__bookmarks());
   expect(h.result.current.bookmarks).toHaveLength(1);
   expect(h.result.current.queue).toEqual(fake.__queue());
-  expect(h.result.current.queue).toEqual([]);
+  expect(h.result.current.queue).toHaveLength(1);
+  expect(h.result.current.queue[0]).toMatchObject({ operation: 'create', payload: { shared_text: 'Durable body' } });
 });
 
 it('restores the durable duplicate baseline when abandoning a failed replacement', async () => {
@@ -107,6 +109,20 @@ it('restores the durable duplicate baseline when abandoning a failed replacement
   await act(async () => { expect(await h.result.current.abandonCapture('duplicate-abandon')).toBe(true); });
   expect(h.result.current.bookmarks).toEqual([original]);
   expect(fake.__bookmarks()).toEqual([original]);
+});
+
+it('keeps partial capture recovery open when its missing durable queue cannot be repaired', async () => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness();
+  const input = { capture_attempt_id: 'repair-failed', shared_text: 'Durable body' };
+  const first = await capture(h, input);
+  expect(first.persisted).toBe(false);
+  jest.spyOn(fake.repository, 'recoverQueueEntry').mockRejectedValueOnce(new Error('repair failed'));
+  await act(async () => { expect(await h.result.current.abandonCapture('repair-failed')).toBe(false); });
+  const retry = await capture(h, input);
+  expect(retry.persisted).toBe(true);
+  expect(retry.bookmark.id).toBe(first.bookmark.id);
+  expect(fake.__queue()).toHaveLength(1);
 });
 
 it('keeps the failed attempt retryable if abandonment cannot read durable state', async () => {
