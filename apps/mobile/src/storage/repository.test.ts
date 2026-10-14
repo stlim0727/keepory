@@ -12,6 +12,7 @@ class MemoryStorage {
   private store = new Map<string, string>();
   failNextWriteTo: string | null = null;
   setItemCallCount = 0;
+  capacityBytes = Infinity;
   getItem(key: string): string | null {
     return this.store.has(key) ? (this.store.get(key) as string) : null;
   }
@@ -19,6 +20,13 @@ class MemoryStorage {
     if (this.failNextWriteTo === key) {
       this.failNextWriteTo = null;
       throw new Error(`injected write failure: ${key}`);
+    }
+    const next = new Map(this.store);
+    next.set(key, String(value));
+    const bytes = [...next].reduce((total, [storedKey, storedValue]) =>
+      total + 2 * (storedKey.length + storedValue.length), 0);
+    if (bytes > this.capacityBytes) {
+      throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
     }
     this.setItemCallCount += 1;
     this.store.set(key, String(value));
@@ -439,4 +447,109 @@ test('immediate retry after an interrupted collection repair commits the durable
   assert.equal(durableEntry.sync_status, 'pending');
   assert.equal(durableEntry.payload.collection_id, undefined);
   assert.equal(memoryStorage.getItem('stash.collectionRepairPending'), null);
+});
+
+
+test('an image exceeding browser capacity leaves memory unchanged and a smaller capture succeeds without reload', async () => {
+  await repository.init([]);
+  const original = makeBookmark('already-saved');
+  await repository.insertBookmark(original);
+  const durableBefore = memoryStorage.getItem('stash.bookmarks');
+  memoryStorage.capacityBytes = 10_000;
+  const image: Bookmark = {
+    ...makeBookmark('too-large-image'),
+    content_type: 'image',
+    url: null,
+    local_image_uri: `data:image/png;base64,${'A'.repeat(10_000)}`,
+  };
+  await assert.rejects(repository.insertBookmark(image), { name: 'QuotaExceededError' });
+  assert.deepEqual(await repository.listBookmarks(), [original]);
+  assert.equal(memoryStorage.getItem('stash.bookmarks'), durableBefore);
+
+  const small = makeBookmark('small-capture');
+  await repository.insertBookmark(small);
+  const expected = [original, small].sort((a, b) => a.id.localeCompare(b.id));
+  assert.deepEqual((await repository.listBookmarks()).sort((a, b) => a.id.localeCompare(b.id)), expected);
+  assert.deepEqual(JSON.parse(memoryStorage.getItem('stash.bookmarks')!).sort(
+    (a: Bookmark, b: Bookmark) => a.id.localeCompare(b.id),
+  ), expected);
+});
+
+test('rejected bookmark edits and batch upserts preserve the last durable rows in memory', async () => {
+  await repository.init([]);
+  const original = makeBookmark('saved');
+  await repository.insertBookmark(original);
+  const durableBefore = memoryStorage.getItem('stash.bookmarks');
+  memoryStorage.capacityBytes = 10_000;
+  const oversized = { ...original, notes: 'large edit'.repeat(2_000) };
+  await assert.rejects(repository.updateBookmark(oversized), { name: 'QuotaExceededError' });
+  await assert.rejects(repository.replaceBookmark(original.id, { ...oversized, id: 'replacement' }), {
+    name: 'QuotaExceededError',
+  });
+  await assert.rejects(repository.upsertBookmarks!([oversized, makeBookmark('new')]), {
+    name: 'QuotaExceededError',
+  });
+  await assert.rejects(repository.insertImportBatch!([{
+    ...oversized, id: 'imported',
+  }], []), { name: 'QuotaExceededError' });
+  assert.deepEqual(await repository.listBookmarks(), [original]);
+  assert.equal(memoryStorage.getItem('stash.bookmarks'), durableBefore);
+  await repository.updateBookmark({ ...original, title: 'small edit' });
+  assert.equal((await repository.getBookmark(original.id))?.title, 'small edit');
+});
+
+test('failed bookmark deletions and reset preserve memory until durable storage accepts them', async () => {
+  await repository.init([]);
+  const original = makeBookmark('saved');
+  await repository.insertBookmark(original);
+  for (const remove of [
+    () => repository.deleteBookmark(original.id),
+    () => repository.deleteBookmarks!([original.id]),
+    () => repository.clearAllData(),
+  ]) {
+    memoryStorage.failNextWriteTo = 'stash.bookmarks';
+    await assert.rejects(remove(), /injected write failure/);
+    assert.deepEqual(await repository.listBookmarks(), [original]);
+    assert.deepEqual(JSON.parse(memoryStorage.getItem('stash.bookmarks')!), [original]);
+  }
+  await repository.deleteBookmark(original.id);
+  assert.deepEqual(await repository.listBookmarks(), []);
+});
+
+
+test('create payload checkpoint preserves retry metadata and rejects stale or superseded work', async () => {
+  await repository.init([]);
+  const expected = rehomeFailure('checkpoint');
+  await repository.enqueue(expected);
+  const payload = { ...expected.payload, title: 'upload attempt title' };
+  assert.equal(await repository.checkpointCreatePayload!(expected, payload), true);
+  assert.deepEqual(await repository.listQueue(), [{ ...expected, payload }]);
+  assert.equal(await repository.checkpointCreatePayload!(expected, { title: 'stale attempt' }), false);
+  const latest = { ...expected, payload, updated_at: '2026-10-02T10:00:00Z' };
+  await repository.enqueue(latest);
+  assert.equal(await repository.checkpointCreatePayload!({ ...expected, payload }, {}), false);
+  for (const operation of ['update', 'delete'] as const) {
+    const mutation = { ...latest, operation };
+    await repository.enqueue(mutation);
+    assert.equal(await repository.checkpointCreatePayload!(latest, {}), false);
+    assert.deepEqual(await repository.listQueue(), [mutation]);
+  }
+  await repository.removeQueueEntry(latest.local_id);
+  assert.equal(await repository.checkpointCreatePayload!(latest, {}), false);
+});
+
+test('create payload checkpoint quota failure leaves memory and durable retry payload unchanged', async () => {
+  await repository.init([]);
+  const expected = rehomeFailure('quota-checkpoint');
+  await repository.enqueue(expected);
+  const durableBefore = memoryStorage.getItem('stash.queue');
+  memoryStorage.capacityBytes = 5_000;
+  await assert.rejects(repository.checkpointCreatePayload!(expected, {
+    ...expected.payload, notes: 'A'.repeat(5_000),
+  }), { name: 'QuotaExceededError' });
+  assert.deepEqual(await repository.listQueue(), [expected]);
+  assert.equal(memoryStorage.getItem('stash.queue'), durableBefore);
+  const payload = { ...expected.payload, title: 'smaller payload' };
+  assert.equal(await repository.checkpointCreatePayload!(expected, payload), true);
+  assert.deepEqual(await repository.listQueue(), [{ ...expected, payload }]);
 });

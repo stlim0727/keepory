@@ -72,6 +72,23 @@ async function capture(h: Awaited<ReturnType<typeof harness>>, input: Parameters
 
 beforeEach(() => { jest.restoreAllMocks(); jest.spyOn(console, 'warn').mockImplementation(() => {}); fake.__reset([]); });
 
+it('routes URL corrections through a new capture after orphan sync already confirmed the original create', async () => {
+  jest.spyOn(fake.repository, 'enqueue').mockRejectedValueOnce(new Error('queue failed'));
+  const h = await harness([], 'real-a');
+  const input = { capture_attempt_id: 'confirmed-create', url: 'https://example.com/original', title: 'Original subject' };
+  const first = await capture(h, input);
+  expect(first.persisted).toBe(false);
+  const confirmed = { ...fake.__bookmarks()[0], ever_synced: true, sync_status: 'synced' as const };
+  await fake.repository.updateBookmark(confirmed);
+  await act(async () => { h.result.current.setBookmarks([confirmed]); });
+  const corrected = await capture(h, { ...input, url: 'https://example.com/corrected', title: 'Corrected subject' });
+  expect(corrected.persisted).toBe(true);
+  expect(corrected.bookmark.id).not.toBe(first.bookmark.id);
+  expect(fake.__bookmarks().find((row) => row.id === first.bookmark.id)).toMatchObject({ url: input.url, title: input.title, ever_synced: true });
+  expect(fake.__bookmarks()).toHaveLength(2);
+  expect(fake.__queue().map((entry) => entry.payload.url).sort()).toEqual([input.url, 'https://example.com/corrected'].sort());
+});
+
 it('restores a missing optimistic create and queue with the same capture identity after failure', async () => {
   const insert = jest.spyOn(fake.repository, 'insertBookmark').mockRejectedValueOnce(new Error('disk full'));
   const h = await harness();

@@ -2,7 +2,7 @@ import * as SQLite from 'expo-sqlite';
 
 import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/domain/collection-rls-repair';
 
-import type { AIEnrichment, Bookmark, LocalPendingBookmark, SyncChange } from '@/domain/types';
+import type { AIEnrichment, Bookmark, CreateBookmarkInput, LocalPendingBookmark, SyncChange } from '@/domain/types';
 import { parseSyncChanges } from '@/domain/sync-changes';
 import { noteSqliteOpenFailure } from '@/storage/diagnostics';
 import { invalidateInboxStartupPreview } from '@/storage/inbox-startup-preview';
@@ -556,6 +556,21 @@ class SqliteBookmarkRepository implements BookmarkRepository {
         ),
       'enqueue',
     );
+  }
+
+  async checkpointCreatePayload(
+    expected: LocalPendingBookmark,
+    payload: CreateBookmarkInput,
+  ): Promise<boolean> {
+    if (expected.operation !== 'create') return false;
+    // Compare inside the actor's SQL statement: another command may replace
+    // this entry while our command waits for the connection.
+    const result = await this.connection.run((db) => db.runAsync(
+      `UPDATE local_pending_bookmarks SET payload = ?
+       WHERE local_id = ? AND operation = 'create' AND updated_at = ? AND payload = ?`,
+      [JSON.stringify(payload), expected.local_id, expected.updated_at, JSON.stringify(expected.payload)],
+    ), 'checkpointCreatePayload');
+    return result.changes === 1;
   }
 
   async updateQueueEntry(entry: LocalPendingBookmark): Promise<void> {

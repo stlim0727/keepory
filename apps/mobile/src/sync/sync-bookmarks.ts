@@ -363,6 +363,26 @@ function createUploadPayload(
   return payload;
 }
 
+async function checkpointCreatePayload(
+  repository: BookmarkRepository,
+  entry: LocalPendingBookmark,
+  payload: CreateBookmarkInput,
+): Promise<LocalPendingBookmark | null> {
+  if (repository.checkpointCreatePayload) {
+    if (!await repository.checkpointCreatePayload(entry, payload)) return null;
+  } else {
+    // Compatibility for older adapters. Production repositories perform this
+    // version/payload check atomically inside their storage actor.
+    const stored = (await repository.listQueue()).find((item) => item.local_id === entry.local_id);
+    if (stored) {
+      if (stored.operation !== 'create' || stored.updated_at !== entry.updated_at ||
+        JSON.stringify(stored.payload) !== JSON.stringify(entry.payload)) return null;
+      await repository.updateQueueEntry({ ...stored, payload });
+    }
+  }
+  return { ...entry, payload };
+}
+
 export async function syncCreateQueueEntryBatch(
   api: BookmarkApi,
   entries: LocalPendingBookmark[],
@@ -394,6 +414,7 @@ export async function syncCreateQueueEntryBatch(
    * completely is tracked as a known follow-up, not done here.
    */
   getLiveUserId?: () => string | null | undefined,
+  repository?: BookmarkRepository,
 ): Promise<EntrySyncResult[]> {
   if (entries.length === 0) {
     return [];
@@ -417,6 +438,18 @@ export async function syncCreateQueueEntryBatch(
 
   const now = new Date().toISOString();
   const uploadedPayloads = entries.map((entry) => createUploadPayload(entry, getBookmark));
+  if (repository) {
+    // Update the caller's chunk only after each durable checkpoint. Its failure
+    // path must retain what the server may have accepted, including field presence.
+    for (let index = 0; index < entries.length; index++) {
+      const checkpointed = await checkpointCreatePayload(repository, entries[index]!, uploadedPayloads[index]!);
+      if (!checkpointed) throw new Error('Create queue entry was superseded before bulk dispatch.');
+      entries[index] = checkpointed;
+    }
+    if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {
+      throw new Error('Signed-in identity changed before this bulk create could be dispatched.');
+    }
+  }
   const created = await api.createBookmarks(uploadedPayloads);
   if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {
     throw new Error('Signed-in identity changed before this bulk create could be confirmed.');
@@ -853,6 +886,15 @@ export async function syncQueueEntry(
   }
 
   try {
+    const checkpointed = await checkpointCreatePayload(repository, entry, payload);
+    if (!checkpointed) {
+      const latest = (await repository.listQueue()).find((item) => item.local_id === entry.local_id);
+      return { entry: latest ?? entry };
+    }
+    entry = checkpointed;
+    if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {
+      throw new Error('Signed-in identity changed before this create could be dispatched.');
+    }
     const result = await api.createBookmark(payload);
 
     // P1: the pre-dispatch check above narrows the race but can't close it

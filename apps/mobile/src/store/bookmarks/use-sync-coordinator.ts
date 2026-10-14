@@ -1419,6 +1419,7 @@ export function useSyncCoordinator({
                 // frozen at whatever it was then. Same reasoning as the
                 // single-entry syncQueueEntry call below.
                 () => authRef.current.session?.user.id ?? null,
+                repository,
               );
               await applyBulkCreateChunkResults(chunk, results);
               for (const entry of chunk) {

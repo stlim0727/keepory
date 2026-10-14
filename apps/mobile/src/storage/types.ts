@@ -3,6 +3,7 @@ import type {
   Bookmark,
   BookmarkTag,
   Collection,
+  CreateBookmarkInput,
   LocalPendingBookmark,
   SyncChange,
   Tag,
@@ -117,6 +118,9 @@ export interface BookmarkRepository {
   listQueue(): Promise<LocalPendingBookmark[]>;
   enqueue(entry: LocalPendingBookmark): Promise<void>;
   updateQueueEntry(entry: LocalPendingBookmark): Promise<void>;
+  /** Atomically retain the last attempted create payload without changing queue
+   * metadata/version. False when the expected create was removed or superseded. */
+  checkpointCreatePayload?(expected: LocalPendingBookmark, payload: CreateBookmarkInput): Promise<boolean>;
   /** Diagnostic-only update: never recreate a completed entry or overwrite retry state. */
   annotateQueueChanges?(localId: string, changes: SyncChange[]): Promise<void>;
   removeQueueEntry(localId: string): Promise<void>;

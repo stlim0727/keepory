@@ -73,6 +73,58 @@ beforeEach(() => {
   mockCheckYoutubeAvailability.mockResolvedValue("unknown");
 });
 
+test.each(['old-first', 'new-first', 'failed-new-write'] as const)('URL-edited capture retries reject old enrichment when responses finish %s', async (order) => {
+  fakeRepo.__reset([]);
+  const requests = new Map<string, (value: { patch: Partial<Bookmark>; metadata_status: MetadataStatus }) => void>();
+  mockEnrichBookmark.mockImplementation((bookmark) => new Promise((resolve) => { requests.set(bookmark.url!, resolve); }));
+  const insert = jest.spyOn(fakeRepo.repository, 'insertBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+  const store = await renderStore();
+  const oldUrl = 'https://example.com/old-capture';
+  const newUrl = 'https://example.com/new-capture';
+  let bookmarkId = '';
+  await act(async () => {
+    const saved = store.result.current.addBookmark({ capture_attempt_id: 'url-edit', url: oldUrl });
+    if (saved.status === 'invalid') throw new Error(saved.error);
+    bookmarkId = saved.bookmark.id;
+    expect(await saved.persisted).toBe(false);
+  });
+  await waitFor(() => expect(requests.has(oldUrl)).toBe(true));
+  if (order === 'failed-new-write') insert.mockRejectedValueOnce(new Error('Still unavailable'));
+  await act(async () => {
+    const retried = store.result.current.addBookmark({ capture_attempt_id: 'url-edit', url: newUrl });
+    if (retried.status === 'invalid') throw new Error(retried.error);
+    expect(retried.bookmark.id).toBe(bookmarkId);
+    expect(await retried.persisted).toBe(order !== 'failed-new-write');
+  });
+  const completeOld = () => requests.get(oldUrl)!({ patch: { title: 'Wrong old title', title_is_derived: false, site_name: 'Old site', preview_image_url: 'https://example.com/old.png' }, metadata_status: 'complete' });
+  const completeNew = () => requests.get(newUrl)!({ patch: { title: 'Correct new title', title_is_derived: false, site_name: 'New site', preview_image_url: 'https://example.com/new.png' }, metadata_status: 'complete' });
+  if (order === 'failed-new-write') {
+    await act(async () => completeOld());
+    await act(async () => {
+      const retried = store.result.current.addBookmark({ capture_attempt_id: 'url-edit', url: newUrl });
+      if (retried.status !== 'invalid') expect(await retried.persisted).toBe(true);
+    });
+  }
+  await waitFor(() => expect(requests.has(newUrl)).toBe(true));
+  if (order !== 'new-first') {
+    if (order === 'old-first') await act(async () => completeOld());
+    expect(store.result.current.getBookmark(bookmarkId)).toMatchObject({ url: newUrl, title: null, site_name: null, preview_image_url: null, metadata_status: 'pending' });
+    await act(async () => {
+      const duplicate = store.result.current.addBookmark({ url: newUrl });
+      if (duplicate.status !== 'invalid') await duplicate.persisted;
+    });
+    expect(mockEnrichBookmark).toHaveBeenCalledTimes(2);
+    await act(async () => completeNew());
+  } else {
+    await act(async () => completeNew());
+    await act(async () => completeOld());
+  }
+  await waitFor(() => expect(store.result.current.getBookmark(bookmarkId)).toMatchObject({ url: newUrl, title: 'Correct new title', site_name: 'New site', preview_image_url: 'https://example.com/new.png', metadata_status: 'complete' }));
+  expect(fakeRepo.__bookmarks().find((row) => row.id === bookmarkId)?.title).toBe('Correct new title');
+  insert.mockRestore();
+  store.unmount();
+});
+
 test("addBookmark shows the bookmark immediately and queues a create", async () => {
   const { result } = await renderStore();
 

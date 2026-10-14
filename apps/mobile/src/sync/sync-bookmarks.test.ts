@@ -1163,18 +1163,21 @@ test('create: signals landedUnderDepartedIdentity when the identity changes DURI
   const { repository } = fakeRepository();
   const bookmark = makeBookmark({ url: 'https://example.com/a' });
   let liveUserIdCalls = 0;
+  let requestDispatched = false;
   const getLiveUserId = () => {
     liveUserIdCalls += 1;
-    // Matches at dispatch time (1st call, pre-dispatch check) — diverges by
-    // the time the response comes back (2nd call, post-response check).
-    return liveUserIdCalls === 1 ? 'user-test' : 'a-different-now-live-user';
+    // Identity changes when the request is dispatched, after all local checks.
+    return requestDispatched ? 'a-different-now-live-user' : 'user-test';
   };
   const api = fakeApi({
-    createBookmark: async () => ({
-      bookmark_id: 'local-abc',
-      status: 'created' as const,
-      metadata_status: 'pending' as const,
-    }),
+    createBookmark: async () => {
+      requestDispatched = true;
+      return {
+        bookmark_id: 'local-abc',
+        status: 'created' as const,
+        metadata_status: 'pending' as const,
+      };
+    },
   });
 
   const result = await syncQueueEntry(
@@ -1186,7 +1189,7 @@ test('create: signals landedUnderDepartedIdentity when the identity changes DURI
     getLiveUserId,
   );
 
-  assert.equal(liveUserIdCalls, 2); // both checks actually ran
+  assert.equal(liveUserIdCalls, 3); // before checkpoint, dispatch, and response
   assert.equal(result.landedUnderDepartedIdentity, true);
   assert.equal(result.removeEntry, true);
   // Never confirmed as a normal synced row — that would durably misattribute
@@ -1214,17 +1217,21 @@ test('create: landedUnderDepartedIdentity for an IMAGE also carries uploadedImag
     local_image_uri: 'file:///stash-images/local-abc.jpg',
   });
   let liveUserIdCalls = 0;
+  let requestDispatched = false;
   const getLiveUserId = () => {
     liveUserIdCalls += 1;
-    return liveUserIdCalls === 1 ? 'user-test' : 'a-different-now-live-user';
+    return requestDispatched ? 'a-different-now-live-user' : 'user-test';
   };
   const uploadImage = async () => 'https://storage.example.com/bookmark-images/user-test/local-abc';
   const api = fakeApi({
-    createBookmark: async () => ({
-      bookmark_id: 'local-abc',
-      status: 'created' as const,
-      metadata_status: 'pending' as const,
-    }),
+    createBookmark: async () => {
+      requestDispatched = true;
+      return {
+        bookmark_id: 'local-abc',
+        status: 'created' as const,
+        metadata_status: 'pending' as const,
+      };
+    },
   });
 
   const result = await syncQueueEntry(

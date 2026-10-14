@@ -96,6 +96,12 @@ export function useAddBookmark({
     if (job.prerequisite) refreshCaptureIdentity(job.prerequisite);
     const id = resolveAliasedId(job.bookmark.id, idAliases.current);
     if (id === job.bookmark.id) {
+      const live = bookmarksRef.current?.find((row) => row.id === id);
+      if (live) job.bookmark = {
+        ...job.bookmark, sync_status: live.sync_status,
+        ever_synced: live.ever_synced ?? job.bookmark.ever_synced,
+        collection_id: live.collection_id, deleted_at: live.deleted_at,
+      };
       if (job.realOwnerId === null && realOwner.current !== null) job.realOwnerId = realOwner.current;
       return;
     }
@@ -212,7 +218,8 @@ export function useAddBookmark({
         : loadedBookmarks;
       // Changing the URL after a failed duplicate update starts a different
       // bookmark; it must never change the existing bookmark's address.
-      const changedDuplicateUrl = capture_attempt_id !== undefined && incomplete?.baseline &&
+      const changedDuplicateUrl = capture_attempt_id !== undefined && incomplete &&
+        (incomplete.baseline || isBookmarkSyncedOnce(captureBookmarks.find((row) => row.id === incomplete.bookmark.id) ?? incomplete.bookmark)) &&
         url !== undefined && normalizeUrl(url) !== incomplete.bookmark.url &&
         currentDedupeKey(incomplete.bookmark) !== canonicalizeUrl(normalizeUrl(url) ?? url);
       const replayedCapture = changedDuplicateUrl ? undefined : incomplete
@@ -239,7 +246,7 @@ export function useAddBookmark({
         // Canonical-equivalent duplicate input may update the draft details,
         // but must retain the existing bookmark's original address.
         const isCreateDraft = Boolean(job.entry && !job.baseline);
-        const normalizedRetry = isCreateDraft ? requestedRetry : replayedCapture.url;
+        const normalizedRetry = isCreateDraft && !isBookmarkSyncedOnce(replayedCapture) ? requestedRetry : replayedCapture.url;
         const hasDraft = capture_attempt_id !== undefined &&
           (image !== undefined || url !== undefined || shared_text !== undefined);
         const baseline = job.baseline ?? replayedCapture;
@@ -303,7 +310,7 @@ export function useAddBookmark({
           markEnrichmentStale(updated.id);
         }
         const persisted = startCaptureWrite(attemptKey, job.retry, job.bookmark, job.entry, job.image);
-        if (hasDraft && normalizedRetry !== replayedCapture.url) {
+        if (hasDraft && updated.url && updated.metadata_status === 'pending') {
           void persisted.then((saved) => { if (saved) enrichInBackground(updated); }).catch(() => {});
         }
         return { status: "duplicate", bookmark: updated, persisted };
