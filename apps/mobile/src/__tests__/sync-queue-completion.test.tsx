@@ -25,7 +25,8 @@ test('an update completion retains a newer edit in both live and durable queues'
     return undefined;
   });
   const store = renderStore();
-  await waitFor(() => expect(apiMock.__spies.updateBookmark).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(store.current?.isLoading).toBe(false), { timeout: 5000 });
+  await waitFor(() => expect(apiMock.__spies.updateBookmark).toHaveBeenCalledTimes(1), { timeout: 5000 });
   await act(async () => {
     store.current!.setSyncPaused(true);
     store.current!.updateBookmarkFields(id, { title: 'Edited during update' });
@@ -33,7 +34,9 @@ test('an update completion retains a newer edit in both live and durable queues'
   await waitFor(() => expect(fakeRepo.__queue()[0]?.updated_at).not.toBe(now));
   const newer = fakeRepo.__queue()[0]!;
   await act(async () => { release(); });
-  await waitFor(() => expect(store.current!.isSyncing).toBe(false));
+  // CircleCI runs suites concurrently; settling the provider can exceed the
+  // default one-second wait even after the controlled API response resolves.
+  await waitFor(() => expect(store.current!.isSyncing).toBe(false), { timeout: 5000 });
   expect(store.current!.queue).toEqual([newer]);
   expect(fakeRepo.__queue()).toEqual([newer]);
-});
+}, 15000);
