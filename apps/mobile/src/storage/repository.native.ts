@@ -600,6 +600,16 @@ class SqliteBookmarkRepository implements BookmarkRepository {
     ), 'annotateQueueChanges');
   }
 
+  async retireQueueEntry(expected: LocalPendingBookmark): Promise<boolean> {
+    // The comparison must run inside the actor, after any earlier queued edit.
+    const result = await this.connection.run((db) => db.runAsync(
+      `DELETE FROM local_pending_bookmarks
+       WHERE local_id = ? AND operation = ? AND updated_at = ? AND payload = ?`,
+      [expected.local_id, expected.operation, expected.updated_at, JSON.stringify(expected.payload)],
+    ), 'retireQueueEntry');
+    return result.changes === 1;
+  }
+
   async removeQueueEntry(localId: string): Promise<void> {
     await this.connection.run(
       (db) => db.runAsync('DELETE FROM local_pending_bookmarks WHERE local_id = ?', [localId]),

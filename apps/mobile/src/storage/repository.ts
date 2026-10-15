@@ -377,6 +377,17 @@ class WebBookmarkRepository implements BookmarkRepository {
     this.write(QUEUE_KEY, this.queue);
   }
 
+  async retireQueueEntry(expected: LocalPendingBookmark): Promise<boolean> {
+    const current = this.queue.find((entry) => entry.local_id === expected.local_id);
+    if (!current || current.operation !== expected.operation ||
+      current.updated_at !== expected.updated_at ||
+      JSON.stringify(current.payload) !== JSON.stringify(expected.payload)) return false;
+    const nextQueue = this.queue.filter((entry) => entry.local_id !== expected.local_id);
+    this.write(QUEUE_KEY, nextQueue);
+    this.queue = nextQueue;
+    return true;
+  }
+
   async removeQueueEntry(localId: string): Promise<void> {
     this.queue = this.queue.filter((existing) => existing.local_id !== localId);
     this.write(QUEUE_KEY, this.queue);
