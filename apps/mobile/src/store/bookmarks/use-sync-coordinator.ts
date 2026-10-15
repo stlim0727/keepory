@@ -1125,7 +1125,10 @@ export function useSyncCoordinator({
               pendingUserTitleEdits.current.delete(merged.id);
               pendingGeneratedTitleUpdates.current.delete(lookupId);
               pendingGeneratedTitleUpdates.current.delete(merged.id);
-              if (uploadedPayload.enrichment_policy !== "skip") {
+              if (
+                uploadedPayload.enrichment_policy !== "skip" &&
+                uploadedPayload.enrichment_policy !== "trickle"
+              ) {
                 pendingAiIds.push(merged.id);
               }
             }

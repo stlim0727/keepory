@@ -718,8 +718,12 @@ describe("Mass Import, Sync & Reset lifecycle", () => {
     });
   });
 
-  test("an external HTML/CSV import still fetches metadata but marks enrichment_policy skip (#671)", async () => {
+  test("an external HTML/CSV import still fetches metadata and marks enrichment_policy trickle (#940)", async () => {
     const { result } = await renderReadyStore();
+
+    await act(async () => {
+      result.current.setAiSuggestionsMode("confirm");
+    });
 
     await act(async () => {
       result.current.importBookmarks([
@@ -734,12 +738,41 @@ describe("Mass Import, Sync & Reset lifecycle", () => {
       ]);
     });
 
-    // Unchanged behavior: external imports still get the client metadata
-    // fetch (unlike a stash-backup restore above) — only automatic AI is
-    // suppressed, per the #671 policy table.
+    // External imports get the client metadata fetch, and are stamped with
+    // enrichment_policy: 'trickle' (#940) so the server can curate them gradually.
     await waitFor(() =>
       expect(enrichmentMock.enrichBookmark).toHaveBeenCalled(),
     );
+
+    await waitFor(() =>
+      expect(apiMock.__createBookmarkMock).toHaveBeenCalledTimes(1),
+    );
+    const uploaded = apiMock.__createBookmarkMock.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(uploaded).toMatchObject({ enrichment_policy: "trickle" });
+  });
+
+  test("an external HTML/CSV import marks enrichment_policy skip when AI suggestions mode is off (#940)", async () => {
+    const { result } = await renderReadyStore();
+
+    await act(async () => {
+      result.current.setAiSuggestionsMode("off");
+    });
+
+    await act(async () => {
+      result.current.importBookmarks([
+        {
+          source: "netscape-html",
+          url: "https://example.com/external-import-off",
+          title: "External Off",
+          notes: null,
+          tags: [],
+          collection: null,
+        },
+      ]);
+    });
 
     await waitFor(() =>
       expect(apiMock.__createBookmarkMock).toHaveBeenCalledTimes(1),

@@ -817,6 +817,7 @@ export const en = {
   'settings.import.duplicates': '{count} already in your library.',
   'settings.import.skipped': '{count} skipped (no web address).',
   'settings.import.completeTitle': 'Import complete',
+  'settings.import.trickleNote': 'Keepory will quietly organize and tag them in the background over time.',
   'settings.import.failedTitle': 'Import failed',
   'settings.import.failedBody': 'Could not import that file. Please try again.',
 

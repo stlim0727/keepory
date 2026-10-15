@@ -63,6 +63,9 @@ export function useImportActions({ importBookmarks, t }: Dependencies) {
       if (summary.skipped > 0) {
         parts.push(t("settings.import.skipped", { count: summary.skipped }));
       }
+      if (summary.imported > 0) {
+        parts.push("\n" + t("settings.import.trickleNote"));
+      }
       Alert.alert(t("settings.import.completeTitle"), parts.join("\n"));
     } catch (error) {
       Alert.alert(

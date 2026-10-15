@@ -1513,6 +1513,32 @@ test("bulk create completion skips pendingAiTrigger for enrichment_policy=skip b
   expect(result.current.processingStats.details.ai.trigger).toBe(0);
 });
 
+test("bulk create completion skips pendingAiTrigger for enrichment_policy=trickle bookmarks (#940)", async () => {
+  const { result } = await renderStore();
+
+  await act(async () => {
+    result.current.importBookmarks([
+      {
+        source: "netscape-html",
+        url: "https://example.com/trickle-import-test",
+        title: "Imported Trickle Bookmark",
+        notes: null,
+        tags: [],
+        collection: null,
+      },
+    ]);
+  });
+
+  await waitFor(() => expect(fakeRepo.__bookmarks()).toHaveLength(1));
+
+  const entry = fakeRepo.__queue()[0];
+  expect(entry).toBeDefined();
+  expect(entry?.payload).toMatchObject({ enrichment_policy: "trickle" });
+
+  // No client-side AI trigger should be set — trickle is managed server-side.
+  expect(result.current.processingStats.details.ai.trigger).toBe(0);
+});
+
 test("import while the initial load is still in flight is refused instead of durably duplicating rows (Sentry STASH-3K/3M repro)", async () => {
   // Reproduces the reported "561 -> 1122" doubling directly: importBookmarks
   // dedupes against bookmarksRef.current, which is empty until the initial

@@ -224,7 +224,7 @@ export async function fetchAiQueueSnapshot(this: FetchAiQueueSnapshotDependencie
   return this.fetchAllPages<AiServerQueueSnapshot>(
     '/rest/v1/pending_ai_enrichment',
     (query) => {
-      query.set('select', 'bookmark_id,status,attempts,created_at,updated_at');
+      query.set('select', 'bookmark_id,status,priority,attempts,created_at,updated_at');
       query.set('status', 'in.(pending,processing,failed)');
       query.set('order', 'created_at.asc,bookmark_id.asc');
     },

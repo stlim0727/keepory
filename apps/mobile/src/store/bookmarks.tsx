@@ -1362,6 +1362,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     syncPendingRef,
     syncPendingForceRef,
     syncNowRef,
+    aiSuggestionsModeRef,
   });
   const {
     markBookmarkAccessed,
