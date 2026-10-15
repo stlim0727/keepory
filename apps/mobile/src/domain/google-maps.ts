@@ -21,8 +21,13 @@ export function googleMapsPlaceName(rawUrl: string): string | null {
   try {
     const match = new URL(rawUrl).pathname.match(/^\/maps\/place\/([^/]+)/);
     if (!match) return null;
-    const name = decodeURIComponent(match[1].replace(/\+/g, ' ')).replace(/\s+/g, ' ').trim();
+    const decoded = decodeURIComponent(match[1]);
+    // Full and shortened Plus Codes identify a location, not a named place.
+    if (/^[23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,3}(?:[+,\s]|$)/i.test(decoded)) return null;
+    const name = decoded.replace(/\+/g, ' ').replace(/\s+/g, ' ').trim();
     if (!name || /^[@!]|^0x[\da-f]+:|^place_id:|^[+-]?\d+(?:\.\d+)?\s*,\s*[+-]?\d+(?:\.\d+)?$/i.test(name)) return null;
+    // Dropped pins also use degree/minute/second or hemisphere coordinate pairs.
+    if (/^[\d\s.°'′"″]+[NS]\s*[, ]?\s*[\d\s.°'′"″]+[EW]$/i.test(name)) return null;
     return name;
   } catch {
     return null;

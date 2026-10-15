@@ -33,6 +33,10 @@ test('Google Maps does not invent place details from coordinates, IDs, or short 
     'https://www.google.com/maps/place/0x3135:0xd5bb/',
     'https://www.google.com/maps/place/%E0%A4/',
     'https://www.google.com/maps/place/@22,114,8z/',
+    'https://www.google.com/maps/place/50%C2%B041\'06.7%22N+1%C2%B014\'44.0%22W/',
+    'https://www.google.com/maps/place/50.685N+1.245W/',
+    'https://www.google.com/maps/place/849VCWC8%2BR9/',
+    'https://www.google.com/maps/place/CWC8+R9+Mountain+View/',
     'https://www.google.com/maps/',
   ]) {
     assert.equal(googleMapsPlaceName(url), null);
@@ -98,8 +102,38 @@ test('a short Maps share uses the redirect destination for metadata recovery', a
     const metadata = await fetchPageMetadata('https://maps.app.goo.gl/7JkAdshyX3gR62qr6');
     assert.equal(metadata?.title, placeName);
     assert.equal(metadata?.preview_image_url, null);
-    assert.equal(urls.length, 2);
+    assert.equal(urls.length, 3);
+    assert.equal(urls[2], placeUrl);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('browser Maps metadata improves URL fallback, while empty or failed retries preserve it', async () => {
+  const originalFetch = globalThis.fetch;
+  for (const browserHtml of [
+    '<head><meta property="og:title" content="Restaurant details"><meta property="og:image" content="https://example.com/place.jpg"></head>',
+    '<head></head>',
+    '<title>Just a moment...</title>',
+    null,
+  ]) {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      if (calls > 1 && browserHtml === null) throw new Error('offline');
+      const response = new Response(calls === 1 ? shell : browserHtml, { headers: { 'content-type': 'text/html' } });
+      Object.defineProperty(response, 'url', { value: placeUrl });
+      return response;
+    }) as typeof fetch;
+    try {
+      const metadata = await fetchPageMetadata(placeUrl);
+      const realTitle = browserHtml?.includes('Restaurant details');
+      assert.equal(metadata?.title, realTitle ? 'Restaurant details' : placeName);
+      assert.equal(metadata?.preview_image_url, realTitle ? 'https://example.com/place.jpg' : null);
+      assert.equal(metadata?.title_is_derived, realTitle ? undefined : true);
+      assert.equal(calls, 2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   }
 });

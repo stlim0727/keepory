@@ -800,6 +800,7 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
   }
   if (
     bot.metadata?.title &&
+    !bot.metadata.title_is_derived &&
     !isGenericNaverMapTitle(bot.metadata.title, botTargetUrl) &&
     !isGenericGoogleSearchTitle(bot.metadata.title, botTargetUrl) &&
     !isGenericYouTubeTitle(bot.metadata.title, botTargetUrl) &&
@@ -810,7 +811,10 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
   // The honest request was refused or returned a title-less shell; try once as a
   // browser. Keep the bot result as a fallback so we never discard usable
   // partial metadata (e.g. a favicon) the browser retry can't improve on.
-  const browser = await fetchHtmlMetadata(target, BROWSER_USER_AGENT);
+  // Retry the expanded Maps destination: a browser UA on the short link may
+  // receive a Firebase trampoline instead of the place page.
+  const browserTarget = bot.metadata?.title_is_derived && bot.finalUrl ? bot.finalUrl : target;
+  const browser = await fetchHtmlMetadata(browserTarget, BROWSER_USER_AGENT);
   if (browser.discoveredOembedUrl && browser.discoveredOembedUrl !== bot.discoveredOembedUrl) {
     const discovered = await fetchOembed(browser.discoveredOembedUrl);
     if (discovered?.title) {
@@ -832,8 +836,10 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
         : `browser_redirect=${redirectedOembed.outcome}`;
     }
   }
-  let result = browser.metadata ?? bot.metadata;
-  const landedOn = browser.finalUrl ?? bot.finalUrl;
+  const keepMapsFallback = bot.metadata?.title_is_derived &&
+    (!browser.metadata?.title || isChallengeOrBoilerplateTitle(browser.metadata.title));
+  let result = keepMapsFallback ? bot.metadata : browser.metadata ?? bot.metadata;
+  const landedOn = keepMapsFallback ? bot.finalUrl : browser.finalUrl ?? bot.finalUrl;
   const landedUrl = landedOn || target;
 
   // SPA shell with no title: if we landed on a page that has a server-rendered
