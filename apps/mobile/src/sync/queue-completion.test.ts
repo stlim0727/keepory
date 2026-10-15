@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { BookmarkApi } from '@/api/bookmarks';
 import type { Bookmark, LocalPendingBookmark } from '@/domain/types';
 import { repository } from '@/storage/repository';
-import { syncQueueEntry } from './sync-bookmarks.ts';
+import { applyQueueEntrySyncResult, syncQueueEntry } from './sync-bookmarks.ts';
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -54,7 +54,9 @@ for (const operation of ['create', 'update', 'delete'] as const) {
       };
       await repository.enqueue(newer);
       release();
-      await syncing;
+      const result = await syncing;
+      // This is the same transformation used by the store's setQueue callback.
+      assert.deepEqual(applyQueueEntrySyncResult([newer], entry, result), [newer]);
       assert.deepEqual(await repository.listQueue(), [newer]);
       await repository.init([]);
       assert.deepEqual(await repository.listQueue(), [newer]);
@@ -77,4 +79,19 @@ test('retirement compares payload even when the timestamp is unchanged', async (
   assert.equal(await repository.retireQueueEntry!(entry), true);
   assert.equal(await repository.retireQueueEntry!(entry), false);
   assert.deepEqual(await repository.listQueue(), []);
+});
+
+test('live completion retires its own version and preserves same-clock edits and unrelated captures', () => {
+  const entry: LocalPendingBookmark = {
+    local_id: id, remote_id: id, operation: 'update', payload: { title: 'Before' },
+    sync_status: 'pending', retry_count: 0, last_error: null, created_at: now, updated_at: now,
+  };
+  const unrelated = { ...entry, local_id: 'another-capture' };
+  const newer = { ...entry, payload: { title: 'Same-clock edit' } };
+  const completed = { entry: { ...entry, sync_status: 'synced' as const }, removeEntry: true };
+  assert.deepEqual(applyQueueEntrySyncResult([entry, unrelated], entry, completed), [unrelated]);
+  assert.deepEqual(applyQueueEntrySyncResult([newer, unrelated], entry, completed), [newer, unrelated]);
+  const failed = { entry: { ...entry, sync_status: 'failed' as const } };
+  assert.deepEqual(applyQueueEntrySyncResult([entry], entry, failed), [failed.entry]);
+  assert.deepEqual(applyQueueEntrySyncResult([newer], entry, failed), [newer]);
 });

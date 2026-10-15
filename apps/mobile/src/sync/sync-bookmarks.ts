@@ -209,6 +209,22 @@ export function findStaleQueueEntries(
   return stale;
 }
 
+/** Apply a result only to the live version that initiated the request. */
+export function applyQueueEntrySyncResult(
+  queue: LocalPendingBookmark[],
+  attempted: LocalPendingBookmark,
+  result: EntrySyncResult,
+): LocalPendingBookmark[] {
+  const isAttemptedVersion = (queued: LocalPendingBookmark) =>
+    queued.local_id === attempted.local_id &&
+    queued.operation === attempted.operation &&
+    queued.updated_at === attempted.updated_at &&
+    JSON.stringify(queued.payload) === JSON.stringify(attempted.payload);
+  return result.removeEntry
+    ? queue.filter((queued) => !isAttemptedVersion(queued))
+    : queue.map((queued) => isAttemptedVersion(queued) ? result.entry : queued);
+}
+
 /**
  * Removes a finished entry's queue row — unless a newer mutation (e.g. a
  * durable delete enqueued while this entry was in flight) has replaced the

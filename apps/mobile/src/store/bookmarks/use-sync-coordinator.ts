@@ -66,6 +66,7 @@ import {
   recordReconcileNeeded,
 } from "@/sync/reconcile-diagnostics";
 import {
+  applyQueueEntrySyncResult,
   BULK_CREATE_SYNC_CHUNK_SIZE,
   BulkCreateSupersededError,
   IMAGE_TOO_LARGE_ERROR_TEXT,
@@ -631,18 +632,7 @@ export function useSyncCoordinator({
           }
 
           setQueue((current) => {
-            // Completion belongs to the attempted version, even if another
-            // command replaced this id while storage was awaiting its actor.
-            const isAttemptedVersion = (queued: LocalPendingBookmark) =>
-              queued.local_id === entry.local_id &&
-              queued.operation === entry.operation &&
-              queued.updated_at === entry.updated_at &&
-              JSON.stringify(queued.payload) === JSON.stringify(entry.payload);
-            const nextQueue = result.removeEntry
-              ? current.filter((queued) => !isAttemptedVersion(queued))
-              : current.map((queued) =>
-                isAttemptedVersion(queued) ? result.entry : queued,
-              );
+            const nextQueue = applyQueueEntrySyncResult(current, entry, result);
             queueRef.current = nextQueue;
             return nextQueue;
           });
