@@ -72,3 +72,33 @@ test('native recovery checks exact durable row and preserves newer queue operati
     assert.equal(recover(), 0);
   } finally { db.close(); }
 });
+
+const retirementSql = nativeSource.match(
+  /`(DELETE FROM local_pending_bookmarks\s+WHERE local_id = \? AND operation = \? AND updated_at = \? AND payload = \?)`/,
+)?.[1];
+assert.ok(retirementSql, 'native repository must retire the expected version atomically');
+
+test('native retirement preserves newer work committed ahead of it on the actor', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(`CREATE TABLE local_pending_bookmarks (
+      local_id TEXT PRIMARY KEY, operation TEXT, updated_at TEXT, payload TEXT
+    )`);
+    const insert = db.prepare('INSERT OR REPLACE INTO local_pending_bookmarks VALUES (?, ?, ?, ?)');
+    const retire = db.prepare(retirementSql);
+    for (const operation of ['create', 'update', 'delete']) {
+      for (const replacement of ['create', 'update', 'delete']) {
+        insert.run('id', replacement, 'version-2', 'new payload');
+        assert.equal(retire.run('id', operation, 'version-1', 'old payload').changes, 0);
+        assert.equal(db.prepare('SELECT operation FROM local_pending_bookmarks').get()?.operation, replacement);
+      }
+      insert.run('id', operation, 'version-1', 'same-clock edit');
+      assert.equal(retire.run('id', operation, 'version-1', 'old payload').changes, 0);
+      insert.run('id', operation, 'version-1', 'old payload');
+      assert.equal(retire.run('id', operation, 'version-1', 'old payload').changes, 1);
+      assert.equal(retire.run('id', operation, 'version-1', 'old payload').changes, 0);
+    }
+  } finally {
+    db.close();
+  }
+});

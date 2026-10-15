@@ -129,6 +129,8 @@ export interface BookmarkRepository {
   checkpointCreatePayloadBatch?(attempts: { expected: LocalPendingBookmark; payload: CreateBookmarkInput }[]): Promise<boolean>;
   /** Diagnostic-only update: never recreate a completed entry or overwrite retry state. */
   annotateQueueChanges?(localId: string, changes: SyncChange[]): Promise<void>;
+  /** Atomically retire only the attempted version. False means newer work won. */
+  retireQueueEntry?(expected: LocalPendingBookmark): Promise<boolean>;
   removeQueueEntry(localId: string): Promise<void>;
   /** Small durable key/value store (e.g. the pull watermark). */
   getMeta(key: string): Promise<string | null>;

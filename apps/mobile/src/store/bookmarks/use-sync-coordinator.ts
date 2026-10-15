@@ -66,6 +66,7 @@ import {
   recordReconcileNeeded,
 } from "@/sync/reconcile-diagnostics";
 import {
+  applyQueueEntrySyncResult,
   BULK_CREATE_SYNC_CHUNK_SIZE,
   BulkCreateSupersededError,
   IMAGE_TOO_LARGE_ERROR_TEXT,
@@ -631,11 +632,7 @@ export function useSyncCoordinator({
           }
 
           setQueue((current) => {
-            const nextQueue = result.removeEntry
-              ? current.filter((queued) => queued.local_id !== entry.local_id)
-              : current.map((queued) =>
-                queued.local_id === entry.local_id ? result.entry : queued,
-              );
+            const nextQueue = applyQueueEntrySyncResult(current, entry, result);
             queueRef.current = nextQueue;
             return nextQueue;
           });
