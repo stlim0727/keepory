@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
 import { parsePageMetadata, fetchPageMetadata } from './page-metadata.ts';
-import { enrichBookmark, isRepairableSourceTitle } from './enrichment.ts';
+import { deriveMetadata, enrichBookmark, isRepairableSourceTitle } from './enrichment.ts';
 import type { Bookmark } from './types.ts';
 
 const placeUrl = 'https://www.google.com/maps/place/Nem+N%C6%B0%E1%BB%9Bng+Nha+Trang+Qu%E1%BA%BF+Hoa,+23+P.+H%E1%BB%93+Ho%C3%A0n+Ki%E1%BA%BFm/data=!4m2!3m1!1s0x3135:0xd5bb';
@@ -16,6 +16,22 @@ test('Google Maps recovers the reported restaurant and address from the expanded
   assert.equal(metadata.title_is_derived, true);
   assert.equal(metadata.site_name, 'Google Maps');
   assert.equal(metadata.preview_image_url, null);
+});
+
+test('Maps recovery works offline and short links retain a human fallback', async () => {
+  for (const [url, expected] of [[placeUrl, placeName], ['https://maps.app.goo.gl/7JkAdshyX3gR62qr6', 'Google Maps']]) {
+    assert.equal(deriveMetadata(url).title, expected);
+    const result = await enrichBookmark({ url, title: null } as Bookmark, async () => null);
+    assert.equal(result.patch.title, expected);
+    assert.equal(result.patch.title_is_derived, true);
+  }
+});
+
+test('Maps place names preserve encoded plus signs and decode raw separators as spaces', () => {
+  const url = 'https://www.google.com/maps/place/C%2B%2B+Coffee/';
+  assert.equal(googleMapsPlaceName(url), 'C++ Coffee');
+  assert.equal(deriveMetadata(url).title, 'C++ Coffee');
+  assert.equal(parsePageMetadata(shell, url).title, 'C++ Coffee');
 });
 
 test('Google Maps preserves real place metadata and prefers specific Twitter titles to generic OG', () => {
@@ -115,6 +131,9 @@ test('browser Maps metadata improves URL fallback, while empty or failed retries
     '<head><meta property="og:title" content="Restaurant details"><meta property="og:image" content="https://example.com/place.jpg"></head>',
     '<head></head>',
     '<title>Just a moment...</title>',
+    '<title>Before you continue to Google</title>',
+    '<title>Google</title>',
+    '<title>Localized consent</title>',
     null,
   ]) {
     let calls = 0;
@@ -122,7 +141,9 @@ test('browser Maps metadata improves URL fallback, while empty or failed retries
       calls += 1;
       if (calls > 1 && browserHtml === null) throw new Error('offline');
       const response = new Response(calls === 1 ? shell : browserHtml, { headers: { 'content-type': 'text/html' } });
-      Object.defineProperty(response, 'url', { value: placeUrl });
+      const finalUrl = calls > 1 && browserHtml?.includes('Localized consent')
+        ? 'https://consent.google.com/m?continue=maps' : placeUrl;
+      Object.defineProperty(response, 'url', { value: finalUrl });
       return response;
     }) as typeof fetch;
     try {

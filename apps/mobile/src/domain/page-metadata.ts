@@ -167,6 +167,7 @@ export function isChallengeOrBoilerplateTitle(title: string | undefined): boolea
     lower === 'checking your browser...' ||
     lower.startsWith('checking your browser before accessing') ||
     lower === 'before you continue to youtube' ||
+    lower === 'before you continue to google' ||
     lower === 'before you continue'
   );
 }
@@ -837,7 +838,9 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
     }
   }
   const keepMapsFallback = bot.metadata?.title_is_derived &&
-    (!browser.metadata?.title || isChallengeOrBoilerplateTitle(browser.metadata.title));
+    (!browser.metadata?.title || isChallengeOrBoilerplateTitle(browser.metadata.title) ||
+      isGenericGoogleSearchTitle(browser.metadata.title) ||
+      /^https:\/\/consent\.google\./i.test(browser.finalUrl ?? ''));
   let result = keepMapsFallback ? bot.metadata : browser.metadata ?? bot.metadata;
   const landedOn = keepMapsFallback ? bot.finalUrl : browser.finalUrl ?? bot.finalUrl;
   const landedUrl = landedOn || target;
