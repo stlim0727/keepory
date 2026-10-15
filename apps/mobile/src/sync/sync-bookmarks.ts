@@ -310,8 +310,10 @@ function createUploadPayload(
   }
   const payload: CreateBookmarkInput = {
     ...entry.payload,
-    title: latestAtUpload.title ?? undefined,
-    notes: latestAtUpload.notes ?? undefined,
+    // A cleared known title is explicit; an untouched missing title must not
+    // erase generated cloud metadata on a device-owned idempotent retry.
+    title: latestAtUpload.title ?? (entry.payload.title !== undefined ? null : undefined),
+    notes: latestAtUpload.notes ?? (entry.payload.notes !== undefined ? '' : undefined),
     ...(latestAtUpload.description_format !== undefined ? { description_format: latestAtUpload.description_format } : {}),
     ...(latestAtUpload.notes_format !== undefined ? { notes_format: latestAtUpload.notes_format } : {}),
     ...(latestAtUpload.deleted_at ? { deleted_at: latestAtUpload.deleted_at } : {}),
@@ -361,6 +363,34 @@ function createUploadPayload(
   return payload;
 }
 
+async function checkpointCreatePayload(
+  repository: BookmarkRepository,
+  entry: LocalPendingBookmark,
+  payload: CreateBookmarkInput,
+): Promise<LocalPendingBookmark | null> {
+  if (repository.checkpointCreatePayload) {
+    if (!await repository.checkpointCreatePayload(entry, payload)) return null;
+  } else {
+    // Compatibility for older adapters. Production repositories perform this
+    // version/payload check atomically inside their storage actor.
+    const stored = (await repository.listQueue()).find((item) => item.local_id === entry.local_id);
+    if (stored) {
+      if (stored.operation !== 'create' || stored.updated_at !== entry.updated_at ||
+        JSON.stringify(stored.payload) !== JSON.stringify(entry.payload)) return null;
+      await repository.updateQueueEntry({ ...stored, payload });
+    }
+  }
+  return { ...entry, payload };
+}
+
+/** No network attempt occurred; the coordinator must reload superseded work. */
+export class BulkCreateSupersededError extends Error {
+  constructor() {
+    super('Create queue entry was superseded before bulk dispatch.');
+    this.name = 'BulkCreateSupersededError';
+  }
+}
+
 export async function syncCreateQueueEntryBatch(
   api: BookmarkApi,
   entries: LocalPendingBookmark[],
@@ -392,6 +422,7 @@ export async function syncCreateQueueEntryBatch(
    * completely is tracked as a known follow-up, not done here.
    */
   getLiveUserId?: () => string | null | undefined,
+  repository?: BookmarkRepository,
 ): Promise<EntrySyncResult[]> {
   if (entries.length === 0) {
     return [];
@@ -415,6 +446,25 @@ export async function syncCreateQueueEntryBatch(
 
   const now = new Date().toISOString();
   const uploadedPayloads = entries.map((entry) => createUploadPayload(entry, getBookmark));
+  if (repository) {
+    if (repository.checkpointCreatePayloadBatch) {
+      const attempts = entries.map((expected, index) => ({ expected, payload: uploadedPayloads[index]! }));
+      if (!await repository.checkpointCreatePayloadBatch(attempts)) throw new BulkCreateSupersededError();
+      // Preserve object identity: the coordinator's fallback shares these entries.
+      for (const { expected, payload } of attempts) Object.assign(expected, { payload });
+    } else {
+      // Native and older adapters retain their actor-safe sequential checkpoints.
+      // All attempted fields are durable before any network dispatch.
+      for (let index = 0; index < entries.length; index++) {
+        const checkpointed = await checkpointCreatePayload(repository, entries[index]!, uploadedPayloads[index]!);
+        if (!checkpointed) throw new BulkCreateSupersededError();
+        Object.assign(entries[index]!, checkpointed);
+      }
+    }
+    if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {
+      throw new Error('Signed-in identity changed before this bulk create could be dispatched.');
+    }
+  }
   const created = await api.createBookmarks(uploadedPayloads);
   if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {
     throw new Error('Signed-in identity changed before this bulk create could be confirmed.');
@@ -851,6 +901,15 @@ export async function syncQueueEntry(
   }
 
   try {
+    const checkpointed = await checkpointCreatePayload(repository, entry, payload);
+    if (!checkpointed) {
+      const latest = (await repository.listQueue()).find((item) => item.local_id === entry.local_id);
+      return { entry: latest ?? entry, uploadedImageUrl };
+    }
+    entry = checkpointed;
+    if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {
+      throw new Error('Signed-in identity changed before this create could be dispatched.');
+    }
     const result = await api.createBookmark(payload);
 
     // P1: the pre-dispatch check above narrows the race but can't close it

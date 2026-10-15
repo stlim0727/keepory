@@ -299,6 +299,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
   // Bookmark IDs currently being enriched, so concurrent passes (startup +
   // a fresh save) never double-process the same item.
   const enriching = useRef(new Set<string>());
+  const backgroundEnrichmentRequests = useRef(new Map<string, { url: string | null }>());
   // Caps how many enrichment fetches run at once (Sentry STASH-3B): a 500+
   // bookmark import — or the startup backfill re-firing those still-pending
   // rows after a relaunch — used to launch one fetch per bookmark
@@ -643,11 +644,13 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
         ...queueRef.current.filter((queued) => queued.local_id !== bookmarkId),
         entry,
       ];
-      ensureRepositoryReady()
+      return ensureRepositoryReady()
         .then(() => repository.enqueue(entry))
-        .catch((error) =>
-          logStorageError(`${operation} mutation enqueue`, error),
-        );
+        .then(() => true)
+        .catch((error) => {
+          logStorageError(`${operation} mutation enqueue`, error);
+          return false;
+        });
     },
     [],
   );
@@ -971,20 +974,23 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
   // failed status — it never affects bookmark creation.
   const enrichInBackground = useCallback(
     (bookmark: Bookmark) => {
+      const activeRequest = backgroundEnrichmentRequests.current.get(bookmark.id);
       if (
         bookmark.metadata_status !== "pending" ||
-        enriching.current.has(bookmark.id)
+        (enriching.current.has(bookmark.id) && (!activeRequest || activeRequest.url === bookmark.url))
       ) {
         return;
       }
       const epochAtStart = resetEpoch.current;
+      const request = { url: bookmark.url };
+      backgroundEnrichmentRequests.current.set(bookmark.id, request);
       enriching.current.add(bookmark.id);
       // `enriching` (the dedupe guard) is set synchronously above; the fetch
       // itself waits for a limiter slot so bulk passes stay bounded.
       void enrichmentSlots.current(async () => {
         try {
           const { patch, metadata_status } = await enrichBookmark(bookmark);
-          if (resetEpoch.current !== epochAtStart) {
+          if (resetEpoch.current !== epochAtStart || backgroundEnrichmentRequests.current.get(bookmark.id) !== request) {
             return; // library was reset while fetch was in flight
           }
           // A `create` that synced while the fetch was in flight re-keys the row
@@ -1024,6 +1030,9 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
             rows?.find((item) => item.id === currentId) ??
             rows?.find((item) => item.id === bookmark.id) ??
             bookmark;
+          // A failed capture can retain its UUID while its draft URL changes.
+          // Metadata belongs to the requested address, never just that UUID.
+          if (source.url !== bookmark.url) return;
           // Reconstruct the row under `currentId` when we only found it under its
           // pre-swap id (the bookmarks ref lagging the alias). Reaching this branch
           // means an alias re-keyed the row — which happens only once its `create`
@@ -1096,11 +1105,12 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
             : bookmarksRef.current;
           try {
             await ensureRepositoryReady();
+            if (resetEpoch.current !== epochAtStart || backgroundEnrichmentRequests.current.get(bookmark.id) !== request) return;
             await repository.updateBookmark(updated);
           } catch (error) {
             logStorageError("metadata enrichment", error);
           }
-          if (resetEpoch.current !== epochAtStart) {
+          if (resetEpoch.current !== epochAtStart || backgroundEnrichmentRequests.current.get(bookmark.id) !== request) {
             // A reset can land behind this write on native, where storage work
             // is serialized on a single actor tail — the write above may have
             // already landed against freshly-cleared storage. Don't compound
@@ -1120,7 +1130,10 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
             noteQueuedChange(updated.id, "metadata_fetch", changedSyncFields(latest, { ...safePatch, metadata_status }));
           }
         } finally {
-          enriching.current.delete(bookmark.id);
+          if (backgroundEnrichmentRequests.current.get(bookmark.id) === request) {
+            backgroundEnrichmentRequests.current.delete(bookmark.id);
+            enriching.current.delete(bookmark.id);
+          }
         }
       });
     },
@@ -1322,7 +1335,14 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       .then(() => repository.upsertEnrichments([stale]))
       .catch((error) => logStorageError("enrichment staleness", error));
   }, []);
-  const { addBookmark } = useAddBookmark({
+  const cancelCaptureEnrichment = useCallback((ids: ReadonlySet<string>) => {
+    for (const id of backgroundEnrichmentRequests.current.keys()) {
+      if (!ids.has(resolveAliasedId(id, idAliases.current))) continue;
+      backgroundEnrichmentRequests.current.delete(id);
+      enriching.current.delete(id);
+    }
+  }, []);
+  const { addBookmark, abandonCapture } = useAddBookmark({
     hideAccountCache,
     loadedBookmarks,
     setBookmarks,
@@ -1332,8 +1352,13 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     syncPendingForceRef,
     syncNowRef,
     enrichInBackground,
+    cancelCaptureEnrichment,
     hasSyncedOnce,
     bookmarksRef,
+    queueRef,
+    idAliases,
+    resetEpoch,
+    realOwnerId: auth.session && auth.session.user.is_anonymous !== true ? auth.userId : null,
     pendingUserTitleEdits,
     markEnrichmentStale,
     enqueueMutation,
@@ -2856,6 +2881,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       getEnrichment,
       getBookmarkProcessing,
       addBookmark,
+      abandonCapture,
       importBookmarks,
       trashBookmark,
       restoreBookmark,
@@ -2927,6 +2953,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       getEnrichment,
       getBookmarkProcessing,
       addBookmark,
+      abandonCapture,
       importBookmarks,
       trashBookmark,
       restoreBookmark,

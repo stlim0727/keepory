@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePreventRemove, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +14,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { parseSmartInput } from '@/domain/smart-parse';
+import { insertedText } from '@/domain/inserted-text';
+import { MAX_ADD_MEMO_LENGTH } from '@/domain/add-draft';
+import { useAddDraft, type AddMode } from '@/features/add/use-add-draft';
+import { useImagePaste } from '@/features/add/use-image-paste';
+import { makeClientId } from '@/store/bookmarks/helpers';
 import { parseCaptureParams } from '@/domain/web-capture';
 import { normalizeUrl, canonicalizeUrl, isUrlTooLong } from '@/domain/urls';
 import type { TextFormat } from '@/domain/types';
@@ -29,7 +36,6 @@ import { useBookmarks } from '@/store/bookmarks';
 // dimmed Inbox (mirrors Report's right-docked sheet); this caps the panel
 // width. No effect on phones (their width is already below the breakpoint).
 const SHEET_PANEL_MAX_WIDTH = 480;
-const MAX_MEMO_LENGTH = 10_000;
 
 export default function AddBookmarkScreen() {
   const palette = usePalette();
@@ -38,19 +44,28 @@ export default function AddBookmarkScreen() {
   const insets = useSafeAreaInsets();
   // Wide viewports present Add as a right-side sheet over a dimmed Inbox;
   // phones keep the full-screen layout (mirrors Report's sheet).
-  const { width, height } = useWindowDimensions();
+  const { width, height, fontScale } = useWindowDimensions();
   const asSheet = width >= 760;
-  const { addBookmark, isLoading } = useBookmarks();
+  const { addBookmark, abandonCapture, isLoading } = useBookmarks();
   const { show } = useCaptureToast();
-  const [url, setUrl] = useState('');
-  const [title, setTitle] = useState('');
-  const [memo, setMemo] = useState('');
-  const [format, setFormat] = useState<TextFormat>('plain');
+  const [failedMode, setFailedMode] = useState<AddMode | null>(null);
+  const smart = useAddDraft(failedMode);
+  const { mode, draft: { url, title, memo, format, image } } = smart;
+  const setUrl = (value: string) => smart.update({ url: value });
+  const setTitle = (value: string) => smart.update({ title: value, titleEdited: true });
   const [error, setError] = useState<string | null>(null);
   const titleInputRef = useRef<React.ComponentRef<typeof TextInput> | null>(null);
-  const [mode, setMode] = useState<'link' | 'note'>('link');
+  const urlSelection = useRef<{ start: number; end: number } | null>(null);
+  const pasteRoot = useRef<React.ComponentRef<typeof View> | null>(null);
+  useImagePaste(pasteRoot, (read, text) => { if (!savingRef.current) void smart.receiveImage(read, text); }, (text) => {
+    if (!savingRef.current) { smart.offer(text); setDetailsOpen(true); }
+  });
+  const captureIds = useRef<Partial<Record<AddMode, string>>>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
   const focusTitleAfterExpand = useRef(false);
+  useEffect(() => {
+    if (smart.status === 'ready' && mode === 'link' && (title || memo)) setDetailsOpen(true);
+  }, [smart.status, mode, title, memo]);
   useEffect(() => {
     if (mode === 'link' && detailsOpen && focusTitleAfterExpand.current) {
       focusTitleAfterExpand.current = false;
@@ -58,10 +73,25 @@ export default function AddBookmarkScreen() {
     }
   }, [mode, detailsOpen]);
   const [saving, setSaving] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const resumeRemoval = useRef<(() => void) | null>(null);
+  // Protect the draft from system Back, modal dismissal, and browser navigation
+  // until the local row, image, and outbox have acknowledged persistence.
+  const allowRemoval = usePreventRemove(saving || failedMode !== null, ({ repeat }) => {
+    if (!savingRef.current && failedMode) {
+      resumeRemoval.current = repeat;
+      setConfirmDiscard(true);
+    }
+  });
   const savingRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const normalizedUrl = normalizeUrl(url);
   const validUrl = normalizedUrl && !isUrlTooLong(canonicalizeUrl(normalizedUrl));
-  const canSave = !isLoading && (mode === 'link' ? Boolean(validUrl) : Boolean(memo.trim()));
+  const canSave = !isLoading && (mode === 'link' ? Boolean(validUrl) : mode === 'image' ? Boolean(image) : Boolean(memo.trim()));
 
   // A capture intent passed via query params — the web counterpart of the
   // native share handler. The desktop bookmarklet, the PWA Web Share Target,
@@ -124,72 +154,165 @@ export default function AddBookmarkScreen() {
     );
   }
 
-  function handleSave() {
-    if (!canSave || savingRef.current) return;
+  function dismissManual() {
+    if (router.canGoBack?.() === false) router.replace('/');
+    else router.back();
+  }
+
+  function requestDismiss() {
+    if (savingRef.current) return;
+    if (failedMode) { setConfirmDiscard(true); return; }
+    smart.cancel();
+    dismissManual();
+  }
+
+  async function discardFailedDraft() {
+    if (savingRef.current || !failedMode) return;
+    savingRef.current = true;
+    setSaving(true);
+    const attemptKey = captureIds.current[failedMode];
+    let reconciled = false;
+    try { reconciled = !attemptKey || await abandonCapture(attemptKey); }
+    catch { reconciled = false; }
+    finally { savingRef.current = false; if (mountedRef.current) setSaving(false); }
+    if (!mountedRef.current) return;
+    if (!reconciled) { setError(t('add.saveFailed')); return; }
+    const repeat = resumeRemoval.current;
+    resumeRemoval.current = null;
+    setConfirmDiscard(false);
+    setFailedMode(null);
+    smart.cancel();
+    if (repeat) repeat();
+    else { allowRemoval(); dismissManual(); }
+  }
+
+  async function handleSave() {
+    if (!canSave || savingRef.current || smart.pending || smart.status === 'reading') return;
     savingRef.current = true;
     setSaving(true);
     const trimmedUrl = url.trim();
     const trimmedTitle = title.trim();
+    const submittedTitle = trimmedTitle || (smart.draft.titleEdited ? '' : undefined);
 
-    const result = mode === 'link'
-      ? addBookmark({
-          url: trimmedUrl,
-          title: trimmedTitle || undefined,
-          notes: memo,
-          replace_existing_notes: true,
-          notes_format: format,
-        })
-      : addBookmark({
-          title: trimmedTitle || undefined,
-          shared_text: memo,
-          description_format: format,
-        });
+    smart.cancel();
+    const clientId = captureIds.current[mode] ?? makeClientId();
+    captureIds.current[mode] = clientId;
+    const releaseImage = smart.retainImage(mode === 'image' ? image : undefined);
+    try {
+      const result = mode === 'link'
+        ? addBookmark({
+            capture_attempt_id: clientId,
+            url: trimmedUrl,
+            title: submittedTitle,
+            notes: memo,
+            replace_existing_notes: true,
+            notes_format: format,
+          })
+        : addBookmark({
+            capture_attempt_id: clientId,
+            image: mode === 'image' ? image : undefined,
+            notes: mode === 'image' ? memo : undefined,
+            notes_format: format,
+            title: submittedTitle,
+            shared_text: memo,
+            description_format: format,
+          });
 
-    if (result.status === 'invalid') {
-      savingRef.current = false;
+      if (result.status === 'invalid') {
+        savingRef.current = false;
+        setSaving(false);
+        setError(result.error);
+        return;
+      }
+      const persisted = await result.persisted;
+      if (!mountedRef.current) return;
+      if (persisted !== true) {
+        setFailedMode(mode);
+        setError(t('add.saveFailed'));
+        return;
+      }
+      // Confirm with the same capture toast the share flow uses, so adding a URL
+      // that's already saved reads identically however it was captured. The
+      // bookmark is already visible in Inbox, so capture stays fast and
+      // non-blocking.
+      show(result.status === 'duplicate' ? t('toast.duplicate') : t('toast.saved'));
+      setFailedMode(null);
       setSaving(false);
-      setError(result.error);
-      return;
-    }
-    // Confirm with the same capture toast the share flow uses, so adding a URL
-    // that's already saved reads identically however it was captured. The
-    // bookmark is already visible in Inbox, so capture stays fast and
-    // non-blocking.
-    show(result.status === 'duplicate' ? t('toast.duplicate') : t('toast.saved'));
-    router.back();
+      smart.releaseImages();
+      allowRemoval();
+      dismissManual();
+    } catch { if (mountedRef.current) { setFailedMode(mode); setError(t('add.saveFailed')); } }
+    finally { releaseImage(); savingRef.current = false; if (mountedRef.current) setSaving(false); }
   }
 
   const titleField = <>
     <Text style={[styles.label, { color: palette.textSecondary }]}>{t('add.memoTitleLabel')}</Text>
     <TextInput ref={titleInputRef} accessibilityLabel={t('add.memoTitleLabel')}
-      style={[styles.input, { backgroundColor: palette.card, color: palette.text, borderColor: palette.controlBorder }]}
+      editable={!saving} style={[styles.input, { backgroundColor: palette.card, color: palette.text, borderColor: palette.controlBorder }]}
       placeholder={t('add.memoTitlePlaceholder')} placeholderTextColor={palette.textSecondary}
       value={title} onChangeText={(value) => { setTitle(value); setError(null); }} />
   </>;
   const noteField = <MemoEditor label={t('add.memoBodyLabel')} accessibilityLabel={t('add.memoBodyLabel')}
-    placeholder={t('add.memoBodyPlaceholder')} alwaysEditing maxLength={MAX_MEMO_LENGTH}
+    placeholder={t('add.memoBodyPlaceholder')} alwaysEditing maxLength={MAX_ADD_MEMO_LENGTH}
     value={memo} format={format} onChange={({ value, format: nextFormat }) => {
-      setMemo(value); setFormat(nextFormat); setError(null);
+      if (!savingRef.current) { smart.update({ memo: value, format: nextFormat }); setError(null); }
     }} />;
   const content = <>
+    {confirmDiscard ? <Card elevated={false} style={styles.captureCard}>
+      <Text accessibilityRole="alert" style={{ color: palette.text }}>{t('add.discardPrompt')}</Text>
+      <Button variant="secondary" disabled={saving} onPress={() => { resumeRemoval.current = null; setConfirmDiscard(false); }}>{t('add.keepEditing')}</Button>
+      <Button variant="danger" disabled={saving} onPress={discardFailedDraft}>{t('add.discardDraft')}</Button>
+    </Card> : null}
     <ScrollView testID="add-scroll" style={[styles.scroll, { backgroundColor: palette.background }]}
       contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.modeRow}>
-        {(['link', 'note'] as const).map((value) => <Button key={value}
+      <Button testID="add-paste" variant="secondary" disabled={saving || smart.status === 'reading'} onPress={smart.paste}>
+        {t(mode === 'image' ? 'add.pasteImage' : 'add.paste')}
+      </Button>
+      {smart.status ? <Text accessibilityRole={smart.status === 'denied' || smart.status === 'empty' || smart.status === 'imageMissing' || smart.status === 'textTooLong' ? 'alert' : 'text'} accessibilityLiveRegion="polite" style={{ color: palette.textSecondary }}>{t(`add.clipboard.${smart.status}`)}</Text> : null}
+      {smart.pending ? <Card elevated={false} style={styles.captureCard}>
+        <Text style={{ color: palette.text }}>{t('add.replacePrompt')}</Text>
+        {smart.pending.draft.image ? <Image source={{ uri: smart.pending.draft.image.uri }} accessibilityLabel={t('add.imagePreview')} style={{ width: '100%', height: 160, resizeMode: 'contain' }} /> : null}
+        <Text numberOfLines={5} style={{ color: palette.textSecondary }}>{[smart.pending.draft.url, smart.pending.draft.title, smart.pending.draft.memo].filter(Boolean).join('\n')}</Text>
+        <Button variant="secondary" onPress={() => { smart.replace(); setError(null); setDetailsOpen(true); }}>{t('add.replaceDraft')}</Button>
+        <Button variant="ghost" onPress={smart.keep}>{t('add.keepEditing')}</Button>
+      </Card> : null}
+      <View style={[styles.modeRow, fontScale >= 1.5 && { flexDirection: 'column' }]}>
+
+        {(['link', 'note', 'image'] as const).map((value) => <Button key={value}
           testID={`add-mode-${value}`} variant={mode === value ? 'primary' : 'ghost'}
-          accessibilityState={{ selected: mode === value }} style={{ flex: 1 }}
-          onPress={() => { setMode(value); setError(null); }}>
-          {t(value === 'link' ? 'add.modeLink' : 'add.modeMemo')}
+          accessibilityState={{ selected: mode === value, disabled: saving || failedMode !== null }} accessibilityLabel={t(value === 'link' ? 'add.modeLinkA11y' : value === 'note' ? 'add.modeMemoA11y' : 'add.modeImageA11y')} style={fontScale >= 1.5 ? undefined : { flex: 1 }} disabled={saving || failedMode !== null}
+          onPress={() => { smart.changeMode(value); setError(null); }}>
+          {t(value === 'link' ? 'add.modeLink' : value === 'note' ? 'add.modeMemo' : 'add.modeImage')}
         </Button>)}
       </View>
+      {failedMode && smart.status !== 'savePending' ? <Text accessibilityLiveRegion="polite" style={{ color: palette.textSecondary }}>{t('add.clipboard.savePending')}</Text> : null}
       <Card elevated={false} style={styles.captureCard}>
+        {/* Keep a native parent while input blocking changes; flattening this
+            wrapper on save completion can reparent Fabric children. */}
+        <View collapsable={false} pointerEvents={saving ? 'none' : 'auto'} style={{ gap: 10 }}>
         {mode === 'link' ? <>
           <Text style={[styles.label, { color: palette.textSecondary }]}>{t('add.urlLabel')}</Text>
-          <TextInput accessibilityLabel={t('add.urlLabel')}
+          <TextInput testID="add-url" accessibilityLabel={t('add.urlLabel')}
             style={[styles.input, { backgroundColor: palette.card, color: palette.text, borderColor: palette.controlBorder }]}
             placeholder={t('add.urlPlaceholder')} placeholderTextColor={palette.textSecondary}
             autoCapitalize="none" autoCorrect={false} autoFocus keyboardType="url" returnKeyType="next"
-            value={url} onChangeText={(value) => { setUrl(value); setError(null); }}
+            onSelectionChange={(event) => { urlSelection.current = event.nativeEvent.selection; }}
+            value={url} editable={!saving} onChangeText={(value) => {
+              const inserted = insertedText(url, value, urlSelection.current);
+              const pasted = inserted.length > 8 || inserted.includes('\n');
+              const parsed = pasted ? parseSmartInput(inserted) : null;
+              // A whole-field replacement can share its URL prefix with the
+              // previous value. Only then may the full value be the candidate.
+              const candidate = parsed?.mode === 'link' ? inserted : pasted && !value.includes(url) ? value : null;
+              const candidateParsed = candidate ? parseSmartInput(candidate) : null;
+              if (candidate && candidateParsed?.mode === 'link' && (candidateParsed.title || candidateParsed.notes || (url && value.includes(url)))) {
+                smart.offer(candidate);
+                setDetailsOpen(true);
+              } else {
+                setUrl(value);
+              }
+              setError(null);
+            }}
             onSubmitEditing={() => {
               if (detailsOpen) {
                 titleInputRef.current?.focus();
@@ -201,14 +324,21 @@ export default function AddBookmarkScreen() {
           <Button variant="ghost" accessibilityState={{ expanded: detailsOpen }}
             onPress={() => setDetailsOpen((value) => !value)}>{t('add.details')}</Button>
           {detailsOpen ? <>{titleField}{noteField}</> : null}
-        </> : <>{noteField}{titleField}</>}
+        </> : <>
+          {mode === 'image' ? image ? <>
+            <Image source={{ uri: image.uri }} accessibilityLabel={t('add.imagePreview')} style={{ width: '100%', height: 220, resizeMode: 'contain' }} />
+            <Button testID="add-remove-image" variant="ghost" disabled={saving} onPress={() => smart.update({ image: undefined })}>{t('add.removeImage')}</Button>
+          </> : <Text style={{ color: palette.textSecondary }}>{t('add.imageEmpty')}</Text> : null}
+          {noteField}{titleField}
+        </>}
+        </View>
         {error ? <Text accessibilityRole="alert" style={[styles.error, { color: palette.danger }]}>{error}</Text> : null}
       </Card>
       <Text style={[styles.hint, { color: palette.textSecondary }]}>{t(mode === 'note' ? 'add.memoHint' : 'add.hint')}</Text>
     </ScrollView>
     <View style={[styles.saveFooter, { backgroundColor: palette.background, paddingBottom: Math.max(16, insets.bottom) }]}>
-      <Button testID="add-save" size="lg" disabled={!canSave || saving} onPress={handleSave}>
-        {t(saving ? 'add.saving' : mode === 'note' ? 'add.saveMemo' : 'add.save')}
+      <Button testID="add-save" size="lg" disabled={!canSave || saving || Boolean(smart.pending) || smart.status === 'reading'} onPress={handleSave}>
+        {t(saving ? 'add.saving' : mode === 'note' ? 'add.saveMemo' : mode === 'image' ? 'add.saveImage' : 'add.save')}
       </Button>
     </View>
   </>;
@@ -221,7 +351,8 @@ export default function AddBookmarkScreen() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('common.close')}
-        onPress={() => router.back()}
+        disabled={saving} accessibilityState={{ disabled: saving }}
+        onPress={requestDismiss}
         hitSlop={8}
         style={({ pressed }) => [styles.headerClose, pressed && { opacity: 0.6 }]}
       >
@@ -243,15 +374,16 @@ export default function AddBookmarkScreen() {
         style={styles.sheetBackdrop}
         accessibilityRole="button"
         accessibilityLabel={t('common.close')}
-        onPress={() => router.back()}
+        disabled={saving} accessibilityState={{ disabled: saving }}
+        onPress={requestDismiss}
       />
-      <View style={[styles.sheetPanel, { backgroundColor: palette.background }]}>
+      <View ref={pasteRoot} style={[styles.sheetPanel, { backgroundColor: palette.background }]}>
         {header}
         <KeyboardAvoidingScreen>{content}</KeyboardAvoidingScreen>
       </View>
     </View>
   ) : (
-    <View testID="add-fullscreen" style={[styles.fullScreen, { backgroundColor: palette.background, height }]}>
+    <View ref={pasteRoot} testID="add-fullscreen" style={[styles.fullScreen, { backgroundColor: palette.background, height }]}>
       {header}
       <KeyboardAvoidingScreen>{content}</KeyboardAvoidingScreen>
     </View>

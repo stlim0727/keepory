@@ -12,6 +12,7 @@ class MemoryStorage {
   private store = new Map<string, string>();
   failNextWriteTo: string | null = null;
   setItemCallCount = 0;
+  capacityBytes = Infinity;
   getItem(key: string): string | null {
     return this.store.has(key) ? (this.store.get(key) as string) : null;
   }
@@ -19,6 +20,13 @@ class MemoryStorage {
     if (this.failNextWriteTo === key) {
       this.failNextWriteTo = null;
       throw new Error(`injected write failure: ${key}`);
+    }
+    const next = new Map(this.store);
+    next.set(key, String(value));
+    const bytes = [...next].reduce((total, [storedKey, storedValue]) =>
+      total + 2 * (storedKey.length + storedValue.length), 0);
+    if (bytes > this.capacityBytes) {
+      throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
     }
     this.setItemCallCount += 1;
     this.store.set(key, String(value));
@@ -440,3 +448,247 @@ test('immediate retry after an interrupted collection repair commits the durable
   assert.equal(durableEntry.payload.collection_id, undefined);
   assert.equal(memoryStorage.getItem('stash.collectionRepairPending'), null);
 });
+
+
+test('an image exceeding browser capacity leaves memory unchanged and a smaller capture succeeds without reload', async () => {
+  await repository.init([]);
+  const original = makeBookmark('already-saved');
+  await repository.insertBookmark(original);
+  const durableBefore = memoryStorage.getItem('stash.bookmarks');
+  memoryStorage.capacityBytes = 10_000;
+  const image: Bookmark = {
+    ...makeBookmark('too-large-image'),
+    content_type: 'image',
+    url: null,
+    local_image_uri: `data:image/png;base64,${'A'.repeat(10_000)}`,
+  };
+  await assert.rejects(repository.insertBookmark(image), { name: 'QuotaExceededError' });
+  assert.deepEqual(await repository.listBookmarks(), [original]);
+  assert.equal(memoryStorage.getItem('stash.bookmarks'), durableBefore);
+
+  const small = makeBookmark('small-capture');
+  await repository.insertBookmark(small);
+  const expected = [original, small].sort((a, b) => a.id.localeCompare(b.id));
+  assert.deepEqual((await repository.listBookmarks()).sort((a, b) => a.id.localeCompare(b.id)), expected);
+  assert.deepEqual(JSON.parse(memoryStorage.getItem('stash.bookmarks')!).sort(
+    (a: Bookmark, b: Bookmark) => a.id.localeCompare(b.id),
+  ), expected);
+});
+
+test('rejected bookmark edits and batch upserts preserve the last durable rows in memory', async () => {
+  await repository.init([]);
+  const original = makeBookmark('saved');
+  await repository.insertBookmark(original);
+  const durableBefore = memoryStorage.getItem('stash.bookmarks');
+  memoryStorage.capacityBytes = 10_000;
+  const oversized = { ...original, notes: 'large edit'.repeat(2_000) };
+  await assert.rejects(repository.updateBookmark(oversized), { name: 'QuotaExceededError' });
+  await assert.rejects(repository.replaceBookmark(original.id, { ...oversized, id: 'replacement' }), {
+    name: 'QuotaExceededError',
+  });
+  await assert.rejects(repository.upsertBookmarks!([oversized, makeBookmark('new')]), {
+    name: 'QuotaExceededError',
+  });
+  await assert.rejects(repository.insertImportBatch!([{
+    ...oversized, id: 'imported',
+  }], []), { name: 'QuotaExceededError' });
+  assert.deepEqual(await repository.listBookmarks(), [original]);
+  assert.equal(memoryStorage.getItem('stash.bookmarks'), durableBefore);
+  await repository.updateBookmark({ ...original, title: 'small edit' });
+  assert.equal((await repository.getBookmark(original.id))?.title, 'small edit');
+});
+
+test('failed bookmark deletions and reset preserve memory until durable storage accepts them', async () => {
+  await repository.init([]);
+  const original = makeBookmark('saved');
+  await repository.insertBookmark(original);
+  for (const remove of [
+    () => repository.deleteBookmark(original.id),
+    () => repository.deleteBookmarks!([original.id]),
+    () => repository.clearAllData(),
+  ]) {
+    memoryStorage.failNextWriteTo = 'stash.bookmarks';
+    await assert.rejects(remove(), /injected write failure/);
+    assert.deepEqual(await repository.listBookmarks(), [original]);
+    assert.deepEqual(JSON.parse(memoryStorage.getItem('stash.bookmarks')!), [original]);
+  }
+  await repository.deleteBookmark(original.id);
+  assert.deepEqual(await repository.listBookmarks(), []);
+});
+
+
+test('create payload checkpoint preserves retry metadata and rejects stale or superseded work', async () => {
+  await repository.init([]);
+  const expected = rehomeFailure('checkpoint');
+  await repository.enqueue(expected);
+  const payload = { ...expected.payload, title: 'upload attempt title' };
+  assert.equal(await repository.checkpointCreatePayload!(expected, payload), true);
+  assert.deepEqual(await repository.listQueue(), [{ ...expected, payload }]);
+  assert.equal(await repository.checkpointCreatePayload!(expected, { title: 'stale attempt' }), false);
+  const latest = { ...expected, payload, updated_at: '2026-10-02T10:00:00Z' };
+  await repository.enqueue(latest);
+  assert.equal(await repository.checkpointCreatePayload!({ ...expected, payload }, {}), false);
+  for (const operation of ['update', 'delete'] as const) {
+    const mutation = { ...latest, operation };
+    await repository.enqueue(mutation);
+    assert.equal(await repository.checkpointCreatePayload!(latest, {}), false);
+    assert.deepEqual(await repository.listQueue(), [mutation]);
+  }
+  await repository.removeQueueEntry(latest.local_id);
+  assert.equal(await repository.checkpointCreatePayload!(latest, {}), false);
+});
+
+test('create payload checkpoint quota failure leaves memory and durable retry payload unchanged', async () => {
+  await repository.init([]);
+  const expected = rehomeFailure('quota-checkpoint');
+  await repository.enqueue(expected);
+  const durableBefore = memoryStorage.getItem('stash.queue');
+  memoryStorage.capacityBytes = 5_000;
+  await assert.rejects(repository.checkpointCreatePayload!(expected, {
+    ...expected.payload, notes: 'A'.repeat(5_000),
+  }), { name: 'QuotaExceededError' });
+  assert.deepEqual(await repository.listQueue(), [expected]);
+  assert.equal(memoryStorage.getItem('stash.queue'), durableBefore);
+  const payload = { ...expected.payload, title: 'smaller payload' };
+  assert.equal(await repository.checkpointCreatePayload!(expected, payload), true);
+  assert.deepEqual(await repository.listQueue(), [{ ...expected, payload }]);
+});
+
+test('orphan recovery requires unchanged durable row and absent queue', async () => {
+  await repository.init([]);
+  const bookmark = makeBookmark('orphan');
+  const entry = rehomeFailure(bookmark.id);
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+  await repository.insertBookmark(bookmark);
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), true);
+  await repository.init([]);
+  assert.deepEqual(await repository.listQueue(), [entry]);
+  for (const operation of ['create', 'update', 'delete'] as const) {
+    const newer = { ...entry, operation, updated_at: 'newer' };
+    await repository.enqueue(newer);
+    assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+    assert.deepEqual(await repository.listQueue(), [newer]);
+  }
+  await repository.removeQueueEntry(bookmark.id);
+  await repository.updateBookmark({ ...bookmark, title: 'edited' });
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+  await repository.deleteBookmark(bookmark.id);
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+  await repository.insertBookmark(bookmark);
+  await repository.clearAllData();
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), false);
+  assert.deepEqual(await repository.listQueue(), []);
+});
+
+test('orphan recovery quota failure does not publish undurable queue', async () => {
+  await repository.init([]);
+  const bookmark = makeBookmark('quota-orphan');
+  await repository.insertBookmark(bookmark);
+  memoryStorage.capacityBytes = 0;
+  await assert.rejects(repository.recoverQueueEntry!(bookmark, rehomeFailure(bookmark.id)), /quota/i);
+  assert.deepEqual(await repository.listQueue(), []);
+  await repository.init([]);
+  assert.deepEqual(await repository.listQueue(), []);
+  assert.deepEqual(await repository.getBookmark(bookmark.id), bookmark);
+});
+
+test('failed enqueue leaves the durable orphan discoverable for immediate recovery without reload', async () => {
+  await repository.init([]);
+  const bookmark = makeBookmark('failed-enqueue-orphan');
+  const entry = rehomeFailure(bookmark.id);
+  await repository.insertBookmark(bookmark);
+  const durableBefore = memoryStorage.getItem('stash.queue');
+  memoryStorage.failNextWriteTo = 'stash.queue';
+  await assert.rejects(repository.enqueue(entry), /injected write failure/);
+  assert.deepEqual(await repository.listQueue(), []);
+  assert.equal(memoryStorage.getItem('stash.queue'), durableBefore);
+  assert.equal(await repository.recoverQueueEntry!(bookmark, entry), true);
+  assert.deepEqual(await repository.listQueue(), [entry]);
+  assert.deepEqual(JSON.parse(memoryStorage.getItem('stash.queue')!), [entry]);
+});
+
+test('800 create attempts checkpoint once per chunk before dispatch and survive restart', async () => {
+  const { syncCreateQueueEntryBatch } = await import('../sync/sync-bookmarks.ts');
+  await repository.init([]);
+  const entries = Array.from({ length: 800 }, (_, index) => ({
+    ...rehomeFailure(`import-${index}`), payload: { client_id: `import-${index}`, title: 'Captured' },
+  }));
+  for (const entry of entries) await repository.enqueue(entry);
+  const before = memoryStorage.setItemCallCount;
+  let calls = 0;
+  const api = {
+    createBookmarks: async (payloads: { client_id?: string; title?: string | null }[]) => {
+      calls++;
+      const durable = JSON.parse(memoryStorage.getItem('stash.queue')!) as typeof entries;
+      for (const payload of payloads) {
+        assert.equal(durable.find((entry) => entry.payload.client_id === payload.client_id)?.payload.title, 'Latest');
+      }
+      throw new Error('lost response');
+    },
+  } as unknown as import('@/api/bookmarks').BookmarkApi;
+  for (let start = 0; start < entries.length; start += 50) {
+    const chunk = entries.slice(start, start + 50);
+    await assert.rejects(syncCreateQueueEntryBatch(api, chunk,
+      (id) => ({ ...makeBookmark(id), title: 'Latest' }), undefined, repository), /lost response/);
+    assert.equal(chunk[0], entries[start]);
+    assert.equal(entries[start]!.payload.title, 'Latest');
+  }
+  assert.equal(calls, 16);
+  assert.equal(memoryStorage.setItemCallCount - before, 16);
+  await repository.init([]);
+  const restarted = await repository.listQueue();
+  assert.equal(restarted.length, 800);
+  assert.ok(restarted.every((entry) => entry.payload.title === 'Latest'));
+  const afterRestart = memoryStorage.setItemCallCount;
+  assert.equal(await repository.checkpointCreatePayloadBatch!(restarted.map((expected) => ({ expected, payload: expected.payload }))), true);
+  assert.equal(memoryStorage.setItemCallCount, afterRestart);
+});
+
+test('batch checkpoint rejects a superseding operation without partially changing other attempts', async () => {
+  await repository.init([]);
+  const first = rehomeFailure('batch-first');
+  const second = rehomeFailure('batch-second');
+  await repository.enqueue(first);
+  await repository.enqueue(second);
+  const replacement = { ...second, operation: 'delete' as const, payload: {} };
+  await repository.enqueue(replacement);
+  const before = memoryStorage.setItemCallCount;
+  assert.equal(await repository.checkpointCreatePayloadBatch!([first, second].map((expected) => ({
+    expected, payload: { ...expected.payload, title: 'Attempt' },
+  }))), false);
+  assert.equal(memoryStorage.setItemCallCount, before);
+  assert.deepEqual(await repository.listQueue(), [first, replacement]);
+});
+
+test('batch checkpoint persistence failure retains every prior durable payload', async () => {
+  await repository.init([]);
+  const entries = [rehomeFailure('batch-a'), rehomeFailure('batch-b')];
+  for (const entry of entries) await repository.enqueue(entry);
+  const durableBefore = memoryStorage.getItem('stash.queue');
+  memoryStorage.failNextWriteTo = 'stash.queue';
+  await assert.rejects(repository.checkpointCreatePayloadBatch!(entries.map((expected) => ({
+    expected, payload: { ...expected.payload, title: 'Attempt' },
+  }))), /injected write failure/);
+  assert.deepEqual(await repository.listQueue(), entries);
+  assert.equal(memoryStorage.getItem('stash.queue'), durableBefore);
+});
+
+for (const operation of ['create', 'update', 'delete'] as const) {
+  test(`bulk web checkpoint cancels dispatch when another operation supersedes a chunk member: ${operation}`, async () => {
+    const { BulkCreateSupersededError, syncCreateQueueEntryBatch } = await import('../sync/sync-bookmarks.ts');
+    await repository.init([]);
+    const entries = ['first', 'second'].map((id) => ({
+      ...rehomeFailure(id), payload: { client_id: id, title: 'Captured' },
+    }));
+    for (const entry of entries) await repository.enqueue(entry);
+    const newer = { ...entries[1]!, operation, payload: { title: 'New intent' } };
+    await repository.enqueue(newer);
+    let calls = 0;
+    const api = { createBookmarks: async () => { calls++; throw new Error('unexpected dispatch'); } } as unknown as import('@/api/bookmarks').BookmarkApi;
+    await assert.rejects(syncCreateQueueEntryBatch(api, entries,
+      (id) => ({ ...makeBookmark(id), title: 'Latest' }), undefined, repository), BulkCreateSupersededError);
+    assert.equal(calls, 0);
+    assert.deepEqual(await repository.listQueue(), [entries[0], newer]);
+    assert.equal(entries[0]!.payload.title, 'Captured');
+  });
+}

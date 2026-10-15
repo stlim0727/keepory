@@ -259,7 +259,8 @@ export interface CreateBookmarkInput {
   id?: string;
   url?: string;
   canonical_url?: string | null;
-  title?: string;
+  /** Null explicitly clears a title on an idempotent retry; omission preserves it. */
+  title?: string | null;
   description?: string;
   notes?: string;
   description_format?: TextFormat | null;

@@ -73,6 +73,104 @@ beforeEach(() => {
   mockCheckYoutubeAvailability.mockResolvedValue("unknown");
 });
 
+test('abandoning an undurable link invalidates its late enrichment before native upsert can resurrect it', async () => {
+  fakeRepo.__reset([]);
+  let complete!: (value: { patch: Partial<Bookmark>; metadata_status: MetadataStatus }) => void;
+  mockEnrichBookmark.mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
+  const insert = jest.spyOn(fakeRepo.repository, 'insertBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+  // Native updateBookmark is an upsert: a plain map-only fake hides this race.
+  const update = jest.spyOn(fakeRepo.repository, 'updateBookmark').mockImplementation(async (row) => fakeRepo.repository.insertBookmark(row));
+  const store = await renderStore();
+  await act(async () => {
+    const saved = store.result.current.addBookmark({ capture_attempt_id: 'late-abandon', url: 'https://example.com/abandoned' });
+    if (saved.status === 'invalid') throw new Error(saved.error);
+    expect(await saved.persisted).toBe(false);
+  });
+  await waitFor(() => expect(complete).toBeDefined());
+  await act(async () => { expect(await store.result.current.abandonCapture('late-abandon')).toBe(true); });
+  await act(async () => { complete({ patch: { title: 'Late metadata' }, metadata_status: 'complete' }); });
+  expect(store.result.current.inbox).toEqual([]);
+  expect(fakeRepo.__bookmarks()).toEqual([]);
+  expect(fakeRepo.__queue()).toEqual([]);
+  expect(update).not.toHaveBeenCalled();
+  insert.mockRestore(); update.mockRestore(); store.unmount();
+});
+
+test('abandoning a partially durable link repairs its queue and resumes metadata from its durable row', async () => {
+  fakeRepo.__reset([]);
+  const requests: ((value: { patch: Partial<Bookmark>; metadata_status: MetadataStatus }) => void)[] = [];
+  mockEnrichBookmark.mockImplementation(() => new Promise((resolve) => { requests.push(resolve); }));
+  const enqueue = jest.spyOn(fakeRepo.repository, 'enqueue').mockRejectedValueOnce(new Error('Queue unavailable'));
+  const store = await renderStore();
+  await act(async () => {
+    const saved = store.result.current.addBookmark({ capture_attempt_id: 'partial-link', url: 'https://example.com/partial' });
+    if (saved.status === 'invalid') throw new Error(saved.error);
+    expect(await saved.persisted).toBe(false);
+  });
+  await waitFor(() => expect(requests).toHaveLength(1));
+  await act(async () => { expect(await store.result.current.abandonCapture('partial-link')).toBe(true); });
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(fakeRepo.__queue()).toHaveLength(1);
+  expect(store.result.current.queue[0]).toMatchObject({ operation: 'create', payload: { url: 'https://example.com/partial' } });
+  await act(async () => { requests[0]({ patch: { title: 'Canceled title' }, metadata_status: 'complete' }); });
+  expect(fakeRepo.__bookmarks()[0].title).toBeNull();
+  await act(async () => { requests[1]({ patch: { title: 'Resumed title' }, metadata_status: 'complete' }); });
+  await waitFor(() => expect(fakeRepo.__bookmarks()[0]).toMatchObject({ title: 'Resumed title', metadata_status: 'complete' }));
+  enqueue.mockRestore(); store.unmount();
+});
+
+test.each(['old-first', 'new-first', 'failed-new-write'] as const)('URL-edited capture retries reject old enrichment when responses finish %s', async (order) => {
+  fakeRepo.__reset([]);
+  const requests = new Map<string, (value: { patch: Partial<Bookmark>; metadata_status: MetadataStatus }) => void>();
+  mockEnrichBookmark.mockImplementation((bookmark) => new Promise((resolve) => { requests.set(bookmark.url!, resolve); }));
+  const insert = jest.spyOn(fakeRepo.repository, 'insertBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
+  const store = await renderStore();
+  const oldUrl = 'https://example.com/old-capture';
+  const newUrl = 'https://example.com/new-capture';
+  let bookmarkId = '';
+  await act(async () => {
+    const saved = store.result.current.addBookmark({ capture_attempt_id: 'url-edit', url: oldUrl });
+    if (saved.status === 'invalid') throw new Error(saved.error);
+    bookmarkId = saved.bookmark.id;
+    expect(await saved.persisted).toBe(false);
+  });
+  await waitFor(() => expect(requests.has(oldUrl)).toBe(true));
+  if (order === 'failed-new-write') insert.mockRejectedValueOnce(new Error('Still unavailable'));
+  await act(async () => {
+    const retried = store.result.current.addBookmark({ capture_attempt_id: 'url-edit', url: newUrl });
+    if (retried.status === 'invalid') throw new Error(retried.error);
+    expect(retried.bookmark.id).toBe(bookmarkId);
+    expect(await retried.persisted).toBe(order !== 'failed-new-write');
+  });
+  const completeOld = () => requests.get(oldUrl)!({ patch: { title: 'Wrong old title', title_is_derived: false, site_name: 'Old site', preview_image_url: 'https://example.com/old.png' }, metadata_status: 'complete' });
+  const completeNew = () => requests.get(newUrl)!({ patch: { title: 'Correct new title', title_is_derived: false, site_name: 'New site', preview_image_url: 'https://example.com/new.png' }, metadata_status: 'complete' });
+  if (order === 'failed-new-write') {
+    await act(async () => completeOld());
+    await act(async () => {
+      const retried = store.result.current.addBookmark({ capture_attempt_id: 'url-edit', url: newUrl });
+      if (retried.status !== 'invalid') expect(await retried.persisted).toBe(true);
+    });
+  }
+  await waitFor(() => expect(requests.has(newUrl)).toBe(true));
+  if (order !== 'new-first') {
+    if (order === 'old-first') await act(async () => completeOld());
+    expect(store.result.current.getBookmark(bookmarkId)).toMatchObject({ url: newUrl, title: null, site_name: null, preview_image_url: null, metadata_status: 'pending' });
+    await act(async () => {
+      const duplicate = store.result.current.addBookmark({ url: newUrl });
+      if (duplicate.status !== 'invalid') await duplicate.persisted;
+    });
+    expect(mockEnrichBookmark).toHaveBeenCalledTimes(2);
+    await act(async () => completeNew());
+  } else {
+    await act(async () => completeNew());
+    await act(async () => completeOld());
+  }
+  await waitFor(() => expect(store.result.current.getBookmark(bookmarkId)).toMatchObject({ url: newUrl, title: 'Correct new title', site_name: 'New site', preview_image_url: 'https://example.com/new.png', metadata_status: 'complete' }));
+  expect(fakeRepo.__bookmarks().find((row) => row.id === bookmarkId)?.title).toBe('Correct new title');
+  insert.mockRestore();
+  store.unmount();
+});
+
 test("addBookmark shows the bookmark immediately and queues a create", async () => {
   const { result } = await renderStore();
 

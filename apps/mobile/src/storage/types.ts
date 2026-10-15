@@ -3,6 +3,7 @@ import type {
   Bookmark,
   BookmarkTag,
   Collection,
+  CreateBookmarkInput,
   LocalPendingBookmark,
   SyncChange,
   Tag,
@@ -116,7 +117,16 @@ export interface BookmarkRepository {
   repairStalledCollectionRlsEntries(): Promise<number>;
   listQueue(): Promise<LocalPendingBookmark[]>;
   enqueue(entry: LocalPendingBookmark): Promise<void>;
+  /** Recover a missing outbox only while the exact durable bookmark remains unchanged.
+   * False if the row or queue has been superseded; rejects on persistence failure. */
+  recoverQueueEntry?(expectedBookmark: Bookmark, entry: LocalPendingBookmark): Promise<boolean>;
   updateQueueEntry(entry: LocalPendingBookmark): Promise<void>;
+  /** Atomically retain the last attempted create payload without changing queue
+   * metadata/version. False when the expected create was removed or superseded. */
+  checkpointCreatePayload?(expected: LocalPendingBookmark, payload: CreateBookmarkInput): Promise<boolean>;
+  /** Atomically checkpoint a whole create chunk, or change nothing if any expected
+   * entry was superseded. Adapters without this port use sequential checkpoints. */
+  checkpointCreatePayloadBatch?(attempts: { expected: LocalPendingBookmark; payload: CreateBookmarkInput }[]): Promise<boolean>;
   /** Diagnostic-only update: never recreate a completed entry or overwrite retry state. */
   annotateQueueChanges?(localId: string, changes: SyncChange[]): Promise<void>;
   removeQueueEntry(localId: string): Promise<void>;

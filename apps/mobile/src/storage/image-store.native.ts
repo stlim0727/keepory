@@ -15,6 +15,14 @@ import { SupabaseRequestError } from '@/supabase/client';
 /** Subdirectory under the document directory that holds captured images. */
 const IMAGE_DIR = 'stash-images';
 
+/** Remove only a capture-owned library file, never a source/share URI. */
+export async function deleteLibraryImage(uri: string): Promise<void> {
+  const dir = new Directory(Paths.document, IMAGE_DIR);
+  if (!uri.startsWith(`${dir.uri.replace(/\/$/, '')}/`)) return;
+  const file = new File(uri);
+  if (file.exists) file.delete();
+}
+
 /**
  * Copy `sourceUri` into `documentDirectory/stash-images/<fileName>` and return
  * the durable URI. Overwrites any existing file with the same name (the name is

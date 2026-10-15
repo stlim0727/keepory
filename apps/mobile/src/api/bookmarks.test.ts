@@ -23,6 +23,50 @@ const SESSION: SupabaseAuthSession = {
   },
 };
 
+test('single and bulk own-image retries persist replacement metadata and explicit title clears', async () => {
+  for (const bulk of [false, true]) {
+    for (const title of ['Replacement title', null, undefined]) {
+      const existing = remoteBookmark({ url: null, content_type: 'image', client_id: 'image-own', title: 'Original title', notes: 'Old caption', preview_image_url: 'https://images.test/old.jpg' });
+      const patches: Record<string, unknown>[] = [];
+      const client = { request: async (_path: string, options: Record<string, unknown> = {}) => {
+        if (options.method === 'PATCH') {
+          patches.push(options.body as Record<string, unknown>);
+          return [{ ...existing, ...(options.body as Record<string, unknown>) }];
+        }
+        return [existing];
+      } };
+      const api = new BookmarkApi(SESSION, client as never);
+      const input = { content_type: 'image' as const, client_id: 'image-own', title, notes: '', preview_image_url: 'https://images.test/new.png' };
+      if (bulk) await api.createBookmarks([input]); else await api.createBookmark(input);
+      assert.equal(patches.length, 1);
+      assert.equal(patches[0].preview_image_url, input.preview_image_url);
+      assert.equal(patches[0].notes, null);
+      if (title === undefined) assert.equal('title' in patches[0], false);
+      else assert.equal(patches[0].title, title);
+    }
+  }
+});
+
+test('single and bulk URL duplicates from another device retain their title and image', async () => {
+  for (const bulk of [false, true]) {
+    const existing = remoteBookmark({ client_id: 'another-device', title: 'Other title', preview_image_url: 'https://images.test/other.jpg' });
+    const patches: Record<string, unknown>[] = [];
+    const client = { request: async (_path: string, options: Record<string, unknown> = {}) => {
+      if (options.method === 'PATCH') {
+        patches.push(options.body as Record<string, unknown>);
+        return [{ ...existing, ...(options.body as Record<string, unknown>) }];
+      }
+      return [existing];
+    } };
+    const api = new BookmarkApi(SESSION, client as never);
+    const input = { url: existing.url!, client_id: 'this-device', title: 'Local title', preview_image_url: 'https://images.test/local.png' };
+    if (bulk) await api.createBookmarks([input]); else await api.createBookmark(input);
+    assert.equal(patches.length, 1);
+    assert.equal('title' in patches[0], false);
+    assert.equal('preview_image_url' in patches[0], false);
+  }
+});
+
 function remoteBookmark(overrides: Partial<RemoteBookmark>): RemoteBookmark {
   const now = '2026-06-12T00:00:00.000Z';
   return {

@@ -2,7 +2,7 @@ import * as SQLite from 'expo-sqlite';
 
 import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/domain/collection-rls-repair';
 
-import type { AIEnrichment, Bookmark, LocalPendingBookmark, SyncChange } from '@/domain/types';
+import type { AIEnrichment, Bookmark, CreateBookmarkInput, LocalPendingBookmark, SyncChange } from '@/domain/types';
 import { parseSyncChanges } from '@/domain/sync-changes';
 import { noteSqliteOpenFailure } from '@/storage/diagnostics';
 import { invalidateInboxStartupPreview } from '@/storage/inbox-startup-preview';
@@ -556,6 +556,37 @@ class SqliteBookmarkRepository implements BookmarkRepository {
         ),
       'enqueue',
     );
+  }
+
+  async recoverQueueEntry(expectedBookmark: Bookmark, entry: LocalPendingBookmark): Promise<boolean> {
+    if (expectedBookmark.id !== entry.local_id) return false;
+    const result = await this.connection.run((db) => db.runAsync(
+      `INSERT OR IGNORE INTO local_pending_bookmarks
+       (local_id, remote_id, operation, payload, sync_status, retry_count, last_error, last_error_kind, health_escalated_at, created_at, updated_at, last_attempt_at, changes)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (SELECT 1 FROM bookmarks WHERE id = ? AND data = ?)`,
+      [entry.local_id, entry.remote_id, entry.operation, JSON.stringify(entry.payload),
+        entry.sync_status, entry.retry_count, entry.last_error, entry.last_error_kind ?? null,
+        entry.health_escalated_at ?? null, entry.created_at, entry.updated_at,
+        entry.last_attempt_at ?? null, entry.changes ? JSON.stringify(entry.changes) : null,
+        expectedBookmark.id, JSON.stringify(expectedBookmark)],
+    ), 'recoverQueueEntry');
+    return result.changes === 1;
+  }
+
+  async checkpointCreatePayload(
+    expected: LocalPendingBookmark,
+    payload: CreateBookmarkInput,
+  ): Promise<boolean> {
+    if (expected.operation !== 'create') return false;
+    // Compare inside the actor's SQL statement: another command may replace
+    // this entry while our command waits for the connection.
+    const result = await this.connection.run((db) => db.runAsync(
+      `UPDATE local_pending_bookmarks SET payload = ?
+       WHERE local_id = ? AND operation = 'create' AND updated_at = ? AND payload = ?`,
+      [JSON.stringify(payload), expected.local_id, expected.updated_at, JSON.stringify(expected.payload)],
+    ), 'checkpointCreatePayload');
+    return result.changes === 1;
   }
 
   async updateQueueEntry(entry: LocalPendingBookmark): Promise<void> {

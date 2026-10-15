@@ -1,6 +1,6 @@
 import { repairStalledCollectionRlsEntries as planCollectionRlsRepair } from '@/domain/collection-rls-repair';
 import { invalidateInboxStartupPreview } from '@/storage/inbox-startup-preview';
-import type { AIEnrichment, Bookmark, LocalPendingBookmark, SyncChange } from '@/domain/types';
+import type { AIEnrichment, Bookmark, CreateBookmarkInput, LocalPendingBookmark, SyncChange } from '@/domain/types';
 import type {
   BookmarkRepository,
   CreateSyncCompletion,
@@ -59,6 +59,13 @@ class WebBookmarkRepository implements BookmarkRepository {
     }
   }
 
+  private commitBookmarks(bookmarks: Bookmark[]): void {
+    // A quota/storage failure must leave the working set at its last durable
+    // value, so a rejected image cannot poison subsequent smaller captures.
+    this.write(BOOKMARKS_KEY, bookmarks);
+    this.bookmarks = bookmarks;
+  }
+
   async init(
     seed: Bookmark[],
     seedTagData?: TagData,
@@ -100,8 +107,7 @@ class WebBookmarkRepository implements BookmarkRepository {
       await this.repairStalledCollectionRlsEntries();
     }
     if (!seeded) {
-      this.bookmarks = [...seed];
-      this.write(BOOKMARKS_KEY, this.bookmarks);
+      this.commitBookmarks([...seed]);
       if (seedTagData) {
         this.tagData = seedTagData;
         this.write(TAG_DATA_KEY, this.tagData);
@@ -123,18 +129,16 @@ class WebBookmarkRepository implements BookmarkRepository {
   }
 
   async insertBookmark(bookmark: Bookmark): Promise<void> {
-    this.bookmarks = [
+    this.commitBookmarks([
       bookmark,
       ...this.bookmarks.filter((existing) => existing.id !== bookmark.id),
-    ];
-    this.write(BOOKMARKS_KEY, this.bookmarks);
+    ]);
   }
 
   async updateBookmark(bookmark: Bookmark): Promise<void> {
-    this.bookmarks = this.bookmarks.map((existing) =>
+    this.commitBookmarks(this.bookmarks.map((existing) =>
       existing.id === bookmark.id ? bookmark : existing,
-    );
-    this.write(BOOKMARKS_KEY, this.bookmarks);
+    ));
   }
 
   async replaceBookmark(previousId: string, bookmark: Bookmark): Promise<void> {
@@ -142,10 +146,9 @@ class WebBookmarkRepository implements BookmarkRepository {
     // destination id (a remote twin a pull inserted) so an id swap can never
     // leave two rows sharing one id that resurface on the next load. Mirrors the
     // native store's `DELETE previousId` + `INSERT OR REPLACE` (PK) semantics.
-    this.bookmarks = this.bookmarks
+    this.commitBookmarks(this.bookmarks
       .filter((existing) => existing.id === previousId || existing.id !== bookmark.id)
-      .map((existing) => (existing.id === previousId ? bookmark : existing));
-    this.write(BOOKMARKS_KEY, this.bookmarks);
+      .map((existing) => (existing.id === previousId ? bookmark : existing)));
   }
 
   async replaceBookmarkIdentities(
@@ -204,6 +207,7 @@ class WebBookmarkRepository implements BookmarkRepository {
     if (applied.length === 0) {
       return;
     }
+    let nextBookmarks = this.bookmarks;
     for (const { bookmark, originalLocalId } of applied) {
       // Drop the phantom row under the original id (a create resolved as a
       // duplicate of an existing different row never actually created one —
@@ -211,7 +215,7 @@ class WebBookmarkRepository implements BookmarkRepository {
       // collapsing onto an existing row already at the destination id (e.g.
       // one a pull already inserted) instead of leaving a duplicate.
       let replaced = false;
-      this.bookmarks = this.bookmarks
+      nextBookmarks = nextBookmarks
         .filter((existing) => existing.id !== originalLocalId)
         .map((existing) => {
           if (existing.id === bookmark.id) {
@@ -221,13 +225,14 @@ class WebBookmarkRepository implements BookmarkRepository {
           return existing;
         });
       if (!replaced) {
-        this.bookmarks = [bookmark, ...this.bookmarks];
+        nextBookmarks = [bookmark, ...nextBookmarks];
       }
     }
     const completedIds = new Set(applied.map((completion) => completion.entry.local_id));
-    this.queue = this.queue.filter((entry) => !completedIds.has(entry.local_id));
-    this.write(BOOKMARKS_KEY, this.bookmarks);
-    this.write(QUEUE_KEY, this.queue);
+    const nextQueue = this.queue.filter((entry) => !completedIds.has(entry.local_id));
+    this.commitBookmarks(nextBookmarks);
+    this.write(QUEUE_KEY, nextQueue);
+    this.queue = nextQueue;
   }
 
   async insertImportBatch(
@@ -244,17 +249,17 @@ class WebBookmarkRepository implements BookmarkRepository {
     }
     const existingIds = new Set(this.bookmarks.map((b) => b.id));
     const newBookmarks = bookmarks.filter((b) => !existingIds.has(b.id));
-    this.bookmarks = [...newBookmarks, ...this.bookmarks];
+    const nextBookmarks = [...newBookmarks, ...this.bookmarks];
     const existingQueueIds = new Set(this.queue.map((q) => q.local_id));
     const newQueueEntries = entries.filter((e) => !existingQueueIds.has(e.local_id));
-    this.queue = [...this.queue, ...newQueueEntries];
-    this.write(BOOKMARKS_KEY, this.bookmarks);
-    this.write(QUEUE_KEY, this.queue);
+    const nextQueue = [...this.queue, ...newQueueEntries];
+    this.commitBookmarks(nextBookmarks);
+    this.write(QUEUE_KEY, nextQueue);
+    this.queue = nextQueue;
   }
 
   async deleteBookmark(id: string): Promise<void> {
-    this.bookmarks = this.bookmarks.filter((existing) => existing.id !== id);
-    this.write(BOOKMARKS_KEY, this.bookmarks);
+    this.commitBookmarks(this.bookmarks.filter((existing) => existing.id !== id));
   }
 
   // listBookmarks() always re-sorts by created_at, so the stored array's
@@ -275,8 +280,7 @@ class WebBookmarkRepository implements BookmarkRepository {
     // but the dedup is free.
     const brandNew = [...byId.values()].filter((bookmark) => !existingIds.has(bookmark.id));
     const merged = this.bookmarks.map((existing) => byId.get(existing.id) ?? existing);
-    this.bookmarks = [...brandNew, ...merged];
-    this.write(BOOKMARKS_KEY, this.bookmarks);
+    this.commitBookmarks([...brandNew, ...merged]);
   }
 
   async deleteBookmarks(ids: string[]): Promise<void> {
@@ -284,8 +288,7 @@ class WebBookmarkRepository implements BookmarkRepository {
       return;
     }
     const idSet = new Set(ids);
-    this.bookmarks = this.bookmarks.filter((existing) => !idSet.has(existing.id));
-    this.write(BOOKMARKS_KEY, this.bookmarks);
+    this.commitBookmarks(this.bookmarks.filter((existing) => !idSet.has(existing.id)));
   }
 
   async repairStalledCollectionRlsEntries(): Promise<number> {
@@ -318,8 +321,51 @@ class WebBookmarkRepository implements BookmarkRepository {
   }
 
   async enqueue(entry: LocalPendingBookmark): Promise<void> {
-    this.queue = [...this.queue.filter((existing) => existing.local_id !== entry.local_id), entry];
-    this.write(QUEUE_KEY, this.queue);
+    const nextQueue = [...this.queue.filter((existing) => existing.local_id !== entry.local_id), entry];
+    this.write(QUEUE_KEY, nextQueue);
+    this.queue = nextQueue;
+  }
+
+  async recoverQueueEntry(expectedBookmark: Bookmark, entry: LocalPendingBookmark): Promise<boolean> {
+    const current = this.bookmarks.find((bookmark) => bookmark.id === expectedBookmark.id);
+    if (expectedBookmark.id !== entry.local_id || !current ||
+      JSON.stringify(current) !== JSON.stringify(expectedBookmark) ||
+      this.queue.some((queued) => queued.local_id === entry.local_id)) return false;
+    const nextQueue = [...this.queue, entry];
+    this.write(QUEUE_KEY, nextQueue);
+    this.queue = nextQueue;
+    return true;
+  }
+
+  async checkpointCreatePayload(
+    expected: LocalPendingBookmark,
+    payload: CreateBookmarkInput,
+  ): Promise<boolean> {
+    return this.checkpointCreatePayloadBatch([{ expected, payload }]);
+  }
+
+  async checkpointCreatePayloadBatch(
+    attempts: { expected: LocalPendingBookmark; payload: CreateBookmarkInput }[],
+  ): Promise<boolean> {
+    const currentById = new Map(this.queue.map((entry) => [entry.local_id, entry]));
+    const payloadById = new Map<string, CreateBookmarkInput>();
+    for (const { expected, payload } of attempts) {
+      const current = currentById.get(expected.local_id);
+      if (expected.operation !== 'create' || current?.operation !== 'create' ||
+        current.updated_at !== expected.updated_at ||
+        JSON.stringify(current.payload) !== JSON.stringify(expected.payload)) return false;
+      if (JSON.stringify(current.payload) !== JSON.stringify(payload)) {
+        payloadById.set(expected.local_id, payload);
+      }
+    }
+    if (payloadById.size === 0) return true;
+    // Validate every entry before one durable write. No await can admit a newer
+    // queue operation between comparison and commit; quota failure keeps memory.
+    const nextQueue = this.queue.map((entry) => payloadById.has(entry.local_id)
+      ? { ...entry, payload: payloadById.get(entry.local_id)! } : entry);
+    this.write(QUEUE_KEY, nextQueue);
+    this.queue = nextQueue;
+    return true;
   }
 
   async updateQueueEntry(entry: LocalPendingBookmark): Promise<void> {
@@ -377,11 +423,10 @@ class WebBookmarkRepository implements BookmarkRepository {
   }
 
   async clearAllData(): Promise<void> {
-    this.bookmarks = [];
+    this.commitBookmarks([]);
     this.queue = [];
     this.enrichments = [];
     this.tagData = EMPTY_TAG_DATA;
-    this.write(BOOKMARKS_KEY, this.bookmarks);
     this.write(QUEUE_KEY, this.queue);
     this.write(ENRICHMENTS_KEY, this.enrichments);
     this.write(TAG_DATA_KEY, this.tagData);
