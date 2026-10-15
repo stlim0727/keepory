@@ -124,7 +124,7 @@ export async function enrichBookmark(
       // Record provenance: true when the title came from the URL fallback (no
       // fetched title), false when it's a real fetched page title. Lets the
       // backfill/UI trust a recorded fact instead of string-matching.
-      patch.title_is_derived = !fetched.title;
+      patch.title_is_derived = !fetched.title || fetched.title_is_derived === true;
       // Diagnostic: the page fetch gave no title, so we're labelling the
       // bookmark with a value derived from its URL (a path slug or host). This
       // is the "the preview is just the URL / a random-looking string" moment —

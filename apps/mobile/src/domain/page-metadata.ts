@@ -92,6 +92,8 @@ const OEMBED_HEADERS: Record<string, string> = {
 
 export interface FetchedMetadata {
   title?: string;
+  /** True when a provider shell's title was recovered from its URL. */
+  title_is_derived?: boolean;
   site_name?: string;
   favicon_url?: string;
   /** null explicitly rejects an unrelated shell image; undefined means unavailable. */
@@ -268,7 +270,8 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
   );
 
   const mapsShell = isGoogleMapsUrl(baseUrl) && !candidateTitle;
-  if (mapsShell) candidateTitle = googleMapsPlaceName(baseUrl) ?? undefined;
+  const mapsPlaceName = mapsShell ? googleMapsPlaceName(baseUrl) : null;
+  if (mapsPlaceName) candidateTitle = mapsPlaceName;
 
   if (isGoogleSearchUrl(baseUrl) && isGenericGoogleSearchTitle(candidateTitle, baseUrl)) {
     const query = extractGoogleSearchQuery(baseUrl);
@@ -283,6 +286,7 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
 
   return {
     title: candidateTitle,
+    ...(mapsPlaceName ? { title_is_derived: true } : {}),
     site_name: candidateSiteName,
     favicon_url: candidateFavicon,
     // A generic Maps shell's static map can be centered on the viewer's location.

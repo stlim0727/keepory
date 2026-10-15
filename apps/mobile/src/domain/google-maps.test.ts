@@ -13,6 +13,7 @@ test('Google Maps recovers the reported restaurant and address from the expanded
   assert.equal(googleMapsPlaceName(placeUrl), placeName);
   const metadata = parsePageMetadata(shell, placeUrl);
   assert.equal(metadata.title, placeName);
+  assert.equal(metadata.title_is_derived, true);
   assert.equal(metadata.site_name, 'Google Maps');
   assert.equal(metadata.preview_image_url, null);
 });
@@ -21,6 +22,7 @@ test('Google Maps preserves real place metadata and prefers specific Twitter tit
   const html = shell.replace('</head>', '<meta name="twitter:title" content="Restaurant details"></head>');
   const metadata = parsePageMetadata(html, placeUrl);
   assert.equal(metadata.title, 'Restaurant details');
+  assert.notEqual(metadata.title_is_derived, true);
   assert.match(metadata.preview_image_url!, /staticmap/);
 });
 
@@ -47,6 +49,13 @@ test('Google Maps handling stays scoped to recognized map hosts and paths', () =
   }
   assert.equal(isGoogleMapsUrl('https://goo.gl/maps/abc'), true);
   assert.equal(isGoogleMapsUrl('https://maps.google.com/'), true);
+  for (const host of ['www.google.co.uk', 'www.google.co.kr', 'google.de']) {
+    const url = placeUrl.replace('www.google.com', host);
+    assert.equal(isGoogleMapsUrl(url), true);
+    assert.equal(googleMapsPlaceName(url), placeName);
+    assert.equal(parsePageMetadata(shell, url).preview_image_url, null);
+    assert.equal(isRepairableSourceTitle({ url, title: 'Google Maps' }), true);
+  }
 });
 
 test('Maps preview refresh can repair a generic title while protecting manual edits', async () => {
@@ -58,10 +67,18 @@ test('Maps preview refresh can repair a generic title while protecting manual ed
     const result = await enrichBookmark({ url, title, title_is_derived: false } as Bookmark,
       async () => parsePageMetadata(shell, placeUrl));
     assert.equal(result.patch.title, title === 'Google Maps' ? placeName : undefined);
+    assert.equal(result.patch.title_is_derived, title === 'Google Maps' ? true : undefined);
     // Preview refresh clears its generated image before enrichment; explicitly
     // returning null lets it remove a previously saved, unrelated shell map.
     assert.equal(result.patch.preview_image_url, null);
   }
+});
+
+test('real page metadata can improve a previously URL-recovered Maps title', async () => {
+  const result = await enrichBookmark({ url: placeUrl, title: placeName, title_is_derived: true } as Bookmark,
+    async () => ({ title: 'Restaurant details' }));
+  assert.equal(result.patch.title, 'Restaurant details');
+  assert.equal(result.patch.title_is_derived, false);
 });
 
 test('a short Maps share uses the redirect destination for metadata recovery', async () => {

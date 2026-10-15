@@ -3,8 +3,9 @@ export function isGoogleMapsUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl);
     const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const googleHost = /^google\.[a-z]{2,3}(\.[a-z]{2})?$/.test(host);
     return host === 'maps.app.goo.gl' || host === 'goo.gl' && url.pathname.startsWith('/maps/') ||
-      host === 'maps.google.com' || host === 'google.com' && /^\/maps(?:\/|$)/.test(url.pathname);
+      host === 'maps.google.com' || googleHost && /^\/maps(?:\/|$)/.test(url.pathname);
   } catch {
     return false;
   }
