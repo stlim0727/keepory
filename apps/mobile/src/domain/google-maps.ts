@@ -12,7 +12,7 @@ export function isGoogleMapsUrl(rawUrl: string): boolean {
 }
 
 export function isGenericGoogleMapsTitle(title: string | undefined, url: string): boolean {
-  return isGoogleMapsUrl(url) && /^(?:google maps|google 지도|구글 지도)$/i.test(title?.trim() ?? '');
+  return isGoogleMapsUrl(url) && /^(?:google\s*(?:maps|지도|マップ|地图|地圖|карты|haritalar|แผนที่)|구글 지도|(?:خرائط|מפות|Χάρτες)\s+google)$/i.test(title?.trim() ?? '');
 }
 
 /** Only named place paths carry enough evidence; coordinates and IDs are not names. */
@@ -25,7 +25,7 @@ export function googleMapsPlaceName(rawUrl: string): string | null {
     // Full and shortened Plus Codes identify a location, not a named place.
     if (/^[23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,3}(?:[+,\s]|$)/i.test(decoded)) return null;
     const name = decodeURIComponent(match[1].replace(/\+/g, ' ')).replace(/\s+/g, ' ').trim();
-    if (!name || /^[@!]|^0x[\da-f]+:|^place_id:|^[+-]?\d+(?:\.\d+)?\s*,\s*[+-]?\d+(?:\.\d+)?$/i.test(name)) return null;
+    if (!name || /^[@!]|^0x[\da-f]+:|^place_id:|^[+-]?\d+(?:\.\d+)?(?:\s*,\s*|\s+)[+-]?\d+(?:\.\d+)?$/i.test(name)) return null;
     // Dropped pins also use degree/minute/second or hemisphere coordinate pairs.
     if (/^[\d\s.°'′"″]+[NS]\s*[, ]?\s*[\d\s.°'′"″]+[EW]$/i.test(name)) return null;
     return name;

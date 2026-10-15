@@ -46,6 +46,8 @@ test('Google Maps does not invent place details from coordinates, IDs, or short 
   for (const url of [
     'https://maps.app.goo.gl/7JkAdshyX3gR62qr6',
     'https://www.google.com/maps/place/22.3527,114.1394/',
+    'https://www.google.com/maps/place/40.7128+-74.0060/',
+    'https://www.google.com/maps/place/40.7128%20-74.0060/',
     'https://www.google.com/maps/place/0x3135:0xd5bb/',
     'https://www.google.com/maps/place/%E0%A4/',
     'https://www.google.com/maps/place/@22,114,8z/',
@@ -59,6 +61,19 @@ test('Google Maps does not invent place details from coordinates, IDs, or short 
     assert.equal(parsePageMetadata(shell, url).title, undefined);
     assert.equal(parsePageMetadata(shell, url).preview_image_url, null);
   }
+});
+
+test('localized Maps product titles remain repairable shells across online and offline recovery', () => {
+  for (const title of ['Google マップ', 'Google 地图', 'Google 地圖', 'Google Карты', 'خرائط Google']) {
+    assert.equal(isGenericGoogleMapsTitle(title, placeUrl), true);
+    assert.equal(isRepairableSourceTitle({ url: placeUrl, title }), true);
+    const metadata = parsePageMetadata(shell.replace('Google Maps', title), placeUrl);
+    assert.equal(metadata.title, placeName);
+    assert.equal(metadata.title_is_derived, true);
+    assert.equal(metadata.preview_image_url, null);
+  }
+  assert.equal(isGenericGoogleMapsTitle('Google Maps Coffee', placeUrl), false);
+  assert.equal(deriveMetadata('https://www.google.com/maps/place/40.7128+-74.0060/').title, 'Google Maps');
 });
 
 test('Google Maps handling stays scoped to recognized map hosts and paths', () => {
