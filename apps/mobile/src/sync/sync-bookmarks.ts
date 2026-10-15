@@ -447,14 +447,19 @@ export async function syncCreateQueueEntryBatch(
   const now = new Date().toISOString();
   const uploadedPayloads = entries.map((entry) => createUploadPayload(entry, getBookmark));
   if (repository) {
-    // Update the caller's chunk only after each durable checkpoint. Its failure
-    // path must retain what the server may have accepted, including field presence.
-    for (let index = 0; index < entries.length; index++) {
-      const checkpointed = await checkpointCreatePayload(repository, entries[index]!, uploadedPayloads[index]!);
-      if (!checkpointed) throw new BulkCreateSupersededError();
-      // The coordinator's per-entry fallback shares these entry objects with
-      // its upload queue. Retain their identity so it also sees the checkpoint.
-      Object.assign(entries[index]!, checkpointed);
+    if (repository.checkpointCreatePayloadBatch) {
+      const attempts = entries.map((expected, index) => ({ expected, payload: uploadedPayloads[index]! }));
+      if (!await repository.checkpointCreatePayloadBatch(attempts)) throw new BulkCreateSupersededError();
+      // Preserve object identity: the coordinator's fallback shares these entries.
+      for (const { expected, payload } of attempts) Object.assign(expected, { payload });
+    } else {
+      // Native and older adapters retain their actor-safe sequential checkpoints.
+      // All attempted fields are durable before any network dispatch.
+      for (let index = 0; index < entries.length; index++) {
+        const checkpointed = await checkpointCreatePayload(repository, entries[index]!, uploadedPayloads[index]!);
+        if (!checkpointed) throw new BulkCreateSupersededError();
+        Object.assign(entries[index]!, checkpointed);
+      }
     }
     if (getLiveUserId && api.userId && getLiveUserId() !== api.userId) {
       throw new Error('Signed-in identity changed before this bulk create could be dispatched.');

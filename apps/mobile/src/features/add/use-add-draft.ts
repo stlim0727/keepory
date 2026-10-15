@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { MAX_ADD_MEMO_LENGTH } from '@/domain/add-draft';
 import type { SharedImage } from '@/domain/image-share';
 import { parseSmartInput } from '@/domain/smart-parse';
 import type { TextFormat } from '@/domain/types';
@@ -11,7 +12,7 @@ export function useAddDraft(lockedMode: AddMode | null = null) {
   const [mode, setMode] = useState<AddMode>('link');
   const [drafts, setDrafts] = useState<Record<AddMode, AddDraft>>({ link: empty(), note: empty(), image: empty() });
   const [pending, setPending] = useState<{ mode: AddMode; draft: AddDraft } | null>(null);
-  const [status, setStatus] = useState<'reading' | 'empty' | 'denied' | 'imageMissing' | 'savePending' | 'ready' | null>(null);
+  const [status, setStatus] = useState<'reading' | 'empty' | 'denied' | 'imageMissing' | 'savePending' | 'textTooLong' | 'ready' | null>(null);
   const epoch = useRef(0);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; epoch.current++; }; }, []);
@@ -32,6 +33,7 @@ export function useAddDraft(lockedMode: AddMode | null = null) {
     const candidate = image
       ? { mode: 'image' as const, draft: { ...empty(), image, memo: text } }
       : { mode: parsed.mode, draft: { ...empty(), url: parsed.url, title: parsed.title, memo: parsed.notes } };
+    if (candidate.draft.memo.length > MAX_ADD_MEMO_LENGTH) { setStatus('textTooLong'); return; }
     if (lockedMode && candidate.mode !== lockedMode) { setStatus('savePending'); return; }
     const occupied = (value: AddDraft) => Boolean(value.url || value.title || value.memo || value.image);
     if (occupied(draft) || occupied(drafts[candidate.mode])) { setPending(candidate); setStatus(null); }

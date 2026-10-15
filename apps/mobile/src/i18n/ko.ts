@@ -317,6 +317,7 @@ export const ko: Catalog = {
   'add.clipboard.empty': '클립보드가 비어 있어요. 링크, 텍스트 또는 이미지를 먼저 복사하세요.',
   'add.clipboard.denied': '클립보드를 읽지 못했어요. 입력란에 직접 붙여넣어 보세요.',
   'add.clipboard.imageMissing': '클립보드에 이미지가 없어요. 이미지를 복사하고 다시 시도하세요.',
+  'add.clipboard.textTooLong': '붙여넣기를 적용하지 않았어요. 메모와 이미지 설명은 10,000자 이하여야 해요. 텍스트를 줄이고 다시 시도하세요.',
   'add.clipboard.savePending': '종류를 바꾸기 전에 이 내용을 다시 저장해 주세요.',
   'add.clipboard.ready': '클립보드 내용을 저장할 준비가 되었어요.',
   'add.urlLabel': 'URL',

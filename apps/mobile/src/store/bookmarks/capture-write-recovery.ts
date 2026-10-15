@@ -12,6 +12,7 @@ export interface CaptureWrite {
   retry: (job?: CaptureWrite) => Promise<boolean>;
   pending: Promise<boolean> | null;
   bookmark: Bookmark;
+  committedBookmark?: Bookmark;
   entry?: LocalPendingBookmark;
   image?: SharedImage;
   copiedImage?: { source: string; durable: string };
@@ -21,6 +22,14 @@ export interface CaptureWrite {
   mutationFields?: string[];
   realOwnerId: string | null;
   prerequisite?: CaptureWrite;
+}
+
+/** Generated suggestions become stale only after their source edit commits. */
+export function recordCaptureCommit(job: CaptureWrite | undefined, bookmark: Bookmark,
+  markStale: (id: string) => void, baseline?: Bookmark) {
+  const previous = job?.committedBookmark ?? baseline;
+  if (previous && (previous.title !== bookmark.title || previous.notes !== bookmark.notes)) markStale(bookmark.id);
+  if (job) job.committedBookmark = bookmark;
 }
 
 export async function cleanObsoleteImages(job: CaptureWrite) {

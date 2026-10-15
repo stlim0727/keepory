@@ -18,7 +18,7 @@ import {
 } from "@/storage/image-store";
 import { repository } from "@/storage/repository";
 import { currentDedupeKey, isActiveBookmark, isBookmarkSyncedOnce, logStorageError, makeBookmarkId, makeClientId } from '@/store/bookmarks/helpers';
-import { abandonCaptureWrite, cleanObsoleteImages, type CaptureWrite } from '@/store/bookmarks/capture-write-recovery';
+import { abandonCaptureWrite, cleanObsoleteImages, recordCaptureCommit, type CaptureWrite } from '@/store/bookmarks/capture-write-recovery';
 import { ensureRepositoryReady } from '@/store/bookmarks/repository-ready';
 import { type AddBookmarkResult } from '@/store/bookmarks/types';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
@@ -140,6 +140,7 @@ export function useAddBookmark({
       mutationFields: mutationFields ?? previous?.mutationFields,
       realOwnerId: previous ? previous.realOwnerId : realOwner.current,
       copiedImage: sameRow ? previous?.copiedImage : undefined,
+      committedBookmark: sameRow ? previous?.committedBookmark : baseline,
       obsoleteImageUris: sameRow ? previous?.obsoleteImageUris : undefined,
       imageReplaced: sameRow ? previous?.imageReplaced : undefined,
       prerequisite: sameRow ? previous?.prerequisite : previous,
@@ -276,6 +277,9 @@ export function useAddBookmark({
           updated_at: new Date().toISOString(),
         } : replayedCapture;
         const retryFields = changedSyncFields(replayedCapture, updated);
+        if (updated.title !== replayedCapture.title && !title_is_derived && !hasSyncedOnce(updated.id)) {
+          pendingUserTitleEdits.current.add(updated.id);
+        }
         job.mutationFields = [...new Set([...(job.mutationFields ?? []), ...retryFields])];
         if (!job.entry && retryFields.length && hasSyncedOnce(updated.id)) {
           updated.sync_status = "pending";
@@ -302,9 +306,6 @@ export function useAddBookmark({
         }
         setBookmarks((current) => [updated, ...(current ?? []).filter((row) => row.id !== updated.id)]);
         bookmarksRef.current = [updated, ...(bookmarksRef.current ?? []).filter((row) => row.id !== updated.id)];
-        if (updated.title !== replayedCapture.title || updated.notes !== replayedCapture.notes) {
-          markEnrichmentStale(updated.id);
-        }
         const persisted = startCaptureWrite(attemptKey, job.retry, job.bookmark, job.entry, job.image);
         if (hasDraft && updated.url && updated.metadata_status === 'pending') {
           void persisted.then((saved) => { if (saved) enrichInBackground(updated); }).catch(() => {});
@@ -461,6 +462,7 @@ export function useAddBookmark({
               .insertBookmark(stored)
               .then(async () => {
                 assertOwnership(job);
+                recordCaptureCommit(job, stored, markEnrichmentStale);
                 if (job) await cleanObsoleteImages(job).catch((error) => logStorageError('superseded image staging', error));
                 assertOwnership(job);
                 return repository.enqueue(job?.entry ?? imageEntry);
@@ -579,7 +581,7 @@ export function useAddBookmark({
         queueRef.current = [...queueRef.current, noteEntry];
         const persisted = startCaptureWrite(attemptKey, (job) => ensureRepositoryReady()
           .then(() => { assertOwnership(job); return repository.insertBookmark(job?.bookmark ?? note); })
-          .then(() => { assertOwnership(job); return repository.enqueue(job?.entry ?? noteEntry); })
+          .then(() => { assertOwnership(job); recordCaptureCommit(job, job?.bookmark ?? note, markEnrichmentStale); return repository.enqueue(job?.entry ?? noteEntry); })
           .then(() => { assertOwnership(job); return true; })
           .catch((error) => {
             logStorageError("new text note", error);
@@ -682,6 +684,7 @@ export function useAddBookmark({
           .then(() => { assertOwnership(job); return repository.updateBookmark(job?.bookmark ?? updated); })
           .then(async () => {
             assertOwnership(job);
+            recordCaptureCommit(job, job?.bookmark ?? updated, markEnrichmentStale, existing);
             const fields = job?.mutationFields ?? (syncsRemotely ? changedSyncFields(existing, updated) : []);
             if (job?.entry) {
               return repository.enqueue(job.entry).then(() => true);
@@ -700,9 +703,6 @@ export function useAddBookmark({
 
         if (titleChanged && !title_is_derived && !hasSyncedOnce(existing.id)) {
           pendingUserTitleEdits.current.add(existing.id);
-        }
-        if (titleChanged || notesChanged) {
-          markEnrichmentStale(existing.id);
         }
 
         if (needsMetadataRefresh) {
@@ -780,7 +780,7 @@ export function useAddBookmark({
       queueRef.current = [...queueRef.current, queueEntry];
       const persisted = startCaptureWrite(attemptKey, (job) => ensureRepositoryReady()
         .then(() => { assertOwnership(job); return repository.insertBookmark(job?.bookmark ?? bookmark); })
-        .then(() => { assertOwnership(job); return repository.enqueue(job?.entry ?? queueEntry); })
+        .then(() => { assertOwnership(job); recordCaptureCommit(job, job?.bookmark ?? bookmark, markEnrichmentStale); return repository.enqueue(job?.entry ?? queueEntry); })
         .then(() => { assertOwnership(job); return true; })
         .catch((error) => {
           logStorageError("new bookmark", error);

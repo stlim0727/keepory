@@ -606,3 +606,89 @@ test('failed enqueue leaves the durable orphan discoverable for immediate recove
   assert.deepEqual(await repository.listQueue(), [entry]);
   assert.deepEqual(JSON.parse(memoryStorage.getItem('stash.queue')!), [entry]);
 });
+
+test('800 create attempts checkpoint once per chunk before dispatch and survive restart', async () => {
+  const { syncCreateQueueEntryBatch } = await import('../sync/sync-bookmarks.ts');
+  await repository.init([]);
+  const entries = Array.from({ length: 800 }, (_, index) => ({
+    ...rehomeFailure(`import-${index}`), payload: { client_id: `import-${index}`, title: 'Captured' },
+  }));
+  for (const entry of entries) await repository.enqueue(entry);
+  const before = memoryStorage.setItemCallCount;
+  let calls = 0;
+  const api = {
+    createBookmarks: async (payloads: { client_id?: string; title?: string | null }[]) => {
+      calls++;
+      const durable = JSON.parse(memoryStorage.getItem('stash.queue')!) as typeof entries;
+      for (const payload of payloads) {
+        assert.equal(durable.find((entry) => entry.payload.client_id === payload.client_id)?.payload.title, 'Latest');
+      }
+      throw new Error('lost response');
+    },
+  } as unknown as import('@/api/bookmarks').BookmarkApi;
+  for (let start = 0; start < entries.length; start += 50) {
+    const chunk = entries.slice(start, start + 50);
+    await assert.rejects(syncCreateQueueEntryBatch(api, chunk,
+      (id) => ({ ...makeBookmark(id), title: 'Latest' }), undefined, repository), /lost response/);
+    assert.equal(chunk[0], entries[start]);
+    assert.equal(entries[start]!.payload.title, 'Latest');
+  }
+  assert.equal(calls, 16);
+  assert.equal(memoryStorage.setItemCallCount - before, 16);
+  await repository.init([]);
+  const restarted = await repository.listQueue();
+  assert.equal(restarted.length, 800);
+  assert.ok(restarted.every((entry) => entry.payload.title === 'Latest'));
+  const afterRestart = memoryStorage.setItemCallCount;
+  assert.equal(await repository.checkpointCreatePayloadBatch!(restarted.map((expected) => ({ expected, payload: expected.payload }))), true);
+  assert.equal(memoryStorage.setItemCallCount, afterRestart);
+});
+
+test('batch checkpoint rejects a superseding operation without partially changing other attempts', async () => {
+  await repository.init([]);
+  const first = rehomeFailure('batch-first');
+  const second = rehomeFailure('batch-second');
+  await repository.enqueue(first);
+  await repository.enqueue(second);
+  const replacement = { ...second, operation: 'delete' as const, payload: {} };
+  await repository.enqueue(replacement);
+  const before = memoryStorage.setItemCallCount;
+  assert.equal(await repository.checkpointCreatePayloadBatch!([first, second].map((expected) => ({
+    expected, payload: { ...expected.payload, title: 'Attempt' },
+  }))), false);
+  assert.equal(memoryStorage.setItemCallCount, before);
+  assert.deepEqual(await repository.listQueue(), [first, replacement]);
+});
+
+test('batch checkpoint persistence failure retains every prior durable payload', async () => {
+  await repository.init([]);
+  const entries = [rehomeFailure('batch-a'), rehomeFailure('batch-b')];
+  for (const entry of entries) await repository.enqueue(entry);
+  const durableBefore = memoryStorage.getItem('stash.queue');
+  memoryStorage.failNextWriteTo = 'stash.queue';
+  await assert.rejects(repository.checkpointCreatePayloadBatch!(entries.map((expected) => ({
+    expected, payload: { ...expected.payload, title: 'Attempt' },
+  }))), /injected write failure/);
+  assert.deepEqual(await repository.listQueue(), entries);
+  assert.equal(memoryStorage.getItem('stash.queue'), durableBefore);
+});
+
+for (const operation of ['create', 'update', 'delete'] as const) {
+  test(`bulk web checkpoint cancels dispatch when another operation supersedes a chunk member: ${operation}`, async () => {
+    const { BulkCreateSupersededError, syncCreateQueueEntryBatch } = await import('../sync/sync-bookmarks.ts');
+    await repository.init([]);
+    const entries = ['first', 'second'].map((id) => ({
+      ...rehomeFailure(id), payload: { client_id: id, title: 'Captured' },
+    }));
+    for (const entry of entries) await repository.enqueue(entry);
+    const newer = { ...entries[1]!, operation, payload: { title: 'New intent' } };
+    await repository.enqueue(newer);
+    let calls = 0;
+    const api = { createBookmarks: async () => { calls++; throw new Error('unexpected dispatch'); } } as unknown as import('@/api/bookmarks').BookmarkApi;
+    await assert.rejects(syncCreateQueueEntryBatch(api, entries,
+      (id) => ({ ...makeBookmark(id), title: 'Latest' }), undefined, repository), BulkCreateSupersededError);
+    assert.equal(calls, 0);
+    assert.deepEqual(await repository.listQueue(), [entries[0], newer]);
+    assert.equal(entries[0]!.payload.title, 'Captured');
+  });
+}

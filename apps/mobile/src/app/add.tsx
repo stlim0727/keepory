@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { parseSmartInput } from '@/domain/smart-parse';
+import { MAX_ADD_MEMO_LENGTH } from '@/domain/add-draft';
 import { useAddDraft, type AddMode } from '@/features/add/use-add-draft';
 import { useImagePaste } from '@/features/add/use-image-paste';
 import { makeClientId } from '@/store/bookmarks/helpers';
@@ -34,7 +35,6 @@ import { useBookmarks } from '@/store/bookmarks';
 // dimmed Inbox (mirrors Report's right-docked sheet); this caps the panel
 // width. No effect on phones (their width is already below the breakpoint).
 const SHEET_PANEL_MAX_WIDTH = 480;
-const MAX_MEMO_LENGTH = 10_000;
 
 export default function AddBookmarkScreen() {
   const palette = usePalette();
@@ -249,7 +249,7 @@ export default function AddBookmarkScreen() {
       value={title} onChangeText={(value) => { setTitle(value); setError(null); }} />
   </>;
   const noteField = <MemoEditor label={t('add.memoBodyLabel')} accessibilityLabel={t('add.memoBodyLabel')}
-    placeholder={t('add.memoBodyPlaceholder')} alwaysEditing maxLength={MAX_MEMO_LENGTH}
+    placeholder={t('add.memoBodyPlaceholder')} alwaysEditing maxLength={MAX_ADD_MEMO_LENGTH}
     value={memo} format={format} onChange={({ value, format: nextFormat }) => {
       if (!savingRef.current) { smart.update({ memo: value, format: nextFormat }); setError(null); }
     }} />;
@@ -264,7 +264,7 @@ export default function AddBookmarkScreen() {
       <Button testID="add-paste" variant="secondary" disabled={saving || smart.status === 'reading'} onPress={smart.paste}>
         {t(mode === 'image' ? 'add.pasteImage' : 'add.paste')}
       </Button>
-      {smart.status ? <Text accessibilityRole={smart.status === 'denied' || smart.status === 'empty' || smart.status === 'imageMissing' ? 'alert' : 'text'} accessibilityLiveRegion="polite" style={{ color: palette.textSecondary }}>{t(`add.clipboard.${smart.status}`)}</Text> : null}
+      {smart.status ? <Text accessibilityRole={smart.status === 'denied' || smart.status === 'empty' || smart.status === 'imageMissing' || smart.status === 'textTooLong' ? 'alert' : 'text'} accessibilityLiveRegion="polite" style={{ color: palette.textSecondary }}>{t(`add.clipboard.${smart.status}`)}</Text> : null}
       {smart.pending ? <Card elevated={false} style={styles.captureCard}>
         <Text style={{ color: palette.text }}>{t('add.replacePrompt')}</Text>
         {smart.pending.draft.image ? <Image source={{ uri: smart.pending.draft.image.uri }} accessibilityLabel={t('add.imagePreview')} style={{ width: '100%', height: 160, resizeMode: 'contain' }} /> : null}

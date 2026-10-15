@@ -434,6 +434,7 @@ export const en = {
   'add.clipboard.empty': 'Clipboard is empty. Copy a link, text, or an image first.',
   'add.clipboard.denied': 'Clipboard could not be read. Try pasting directly into the form.',
   'add.clipboard.imageMissing': 'No image on the clipboard. Copy an image and try again.',
+  'add.clipboard.textTooLong': 'Paste was not applied. Notes and image captions must be 10,000 characters or fewer. Shorten the text and try again.',
   'add.clipboard.savePending': 'Retry saving this draft before changing its type.',
   'add.clipboard.ready': 'Clipboard content is ready to save.',
   'add.urlLabel': 'URL',

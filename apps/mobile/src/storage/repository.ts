@@ -341,15 +341,28 @@ class WebBookmarkRepository implements BookmarkRepository {
     expected: LocalPendingBookmark,
     payload: CreateBookmarkInput,
   ): Promise<boolean> {
-    const current = this.queue.find((entry) => entry.local_id === expected.local_id);
-    if (
-      expected.operation !== 'create' || current?.operation !== 'create' ||
-      current.updated_at !== expected.updated_at ||
-      JSON.stringify(current.payload) !== JSON.stringify(expected.payload)
-    ) return false;
-    // No await between comparing and committing. Publish only after durable
-    // storage succeeds; a quota failure leaves the original retry intact.
-    const nextQueue = this.queue.map((entry) => entry === current ? { ...entry, payload } : entry);
+    return this.checkpointCreatePayloadBatch([{ expected, payload }]);
+  }
+
+  async checkpointCreatePayloadBatch(
+    attempts: { expected: LocalPendingBookmark; payload: CreateBookmarkInput }[],
+  ): Promise<boolean> {
+    const currentById = new Map(this.queue.map((entry) => [entry.local_id, entry]));
+    const payloadById = new Map<string, CreateBookmarkInput>();
+    for (const { expected, payload } of attempts) {
+      const current = currentById.get(expected.local_id);
+      if (expected.operation !== 'create' || current?.operation !== 'create' ||
+        current.updated_at !== expected.updated_at ||
+        JSON.stringify(current.payload) !== JSON.stringify(expected.payload)) return false;
+      if (JSON.stringify(current.payload) !== JSON.stringify(payload)) {
+        payloadById.set(expected.local_id, payload);
+      }
+    }
+    if (payloadById.size === 0) return true;
+    // Validate every entry before one durable write. No await can admit a newer
+    // queue operation between comparison and commit; quota failure keeps memory.
+    const nextQueue = this.queue.map((entry) => payloadById.has(entry.local_id)
+      ? { ...entry, payload: payloadById.get(entry.local_id)! } : entry);
     this.write(QUEUE_KEY, nextQueue);
     this.queue = nextQueue;
     return true;

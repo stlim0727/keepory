@@ -38,6 +38,8 @@ async function harness(rows: Bookmark[] = [], owner: string | null = null) {
   const resetEpoch = { current: 0 };
   const idAliases = { current: new Map<string, string>() };
   const enqueueMutation = jest.fn<Promise<boolean>, [string, 'update' | 'delete', SyncChangeSource?, string[]?]>(async () => true);
+  const pendingUserTitleEdits = { current: new Set<string>() };
+  const markEnrichmentStale = jest.fn();
   let hidden = false;
   const hook = await renderHook(() => {
     const [bookmarks, setBookmarks] = useState<Bookmark[] | null>(rows);
@@ -50,15 +52,15 @@ async function harness(rows: Bookmark[] = [], owner: string | null = null) {
       hideAccountCache: hidden, loadedBookmarks: bookmarks ?? [], setBookmarks, setQueue,
       bookmarksRef, queueRef, idAliases, resetEpoch, realOwnerId: owner,
       localCreateFlushesInFlight: useRef(0), syncPendingRef: useRef(false), syncPendingForceRef: useRef(false),
-      syncNowRef: useRef(null), pendingUserTitleEdits: useRef(new Set<string>()),
-      enrichInBackground: () => {}, markEnrichmentStale: () => {},
+      syncNowRef: useRef(null), pendingUserTitleEdits,
+      enrichInBackground: () => {}, markEnrichmentStale,
       cancelCaptureEnrichment: () => {},
       hasSyncedOnce: (id) => bookmarksRef.current?.some((row) => row.id === id && row.ever_synced === true) ?? false,
       enqueueMutation,
     });
     return { ...capture, bookmarks, queue, bookmarksRef, queueRef, setBookmarks, setQueue };
   });
-  return { ...hook, resetEpoch, idAliases, enqueueMutation, switchOwner: async (next: string | null) => { owner = next; await hook.rerender({}); }, hide: async () => { hidden = true; await hook.rerender({}); } };
+  return { ...hook, resetEpoch, idAliases, enqueueMutation, pendingUserTitleEdits, markEnrichmentStale, switchOwner: async (next: string | null) => { owner = next; await hook.rerender({}); }, hide: async () => { hidden = true; await hook.rerender({}); } };
 }
 
 async function capture(h: Awaited<ReturnType<typeof harness>>, input: Parameters<ReturnType<typeof useAddBookmark>['addBookmark']>[0]) {
@@ -188,6 +190,43 @@ it('restores a missing optimistic create and queue with the same capture identit
   expect(h.result.current.queueRef.current[0].local_id).toBe(first.bookmark.id);
   expect(fake.__queue()[0].payload.shared_text).toBe('Edited note');
   expect(insert).toHaveBeenCalledTimes(2);
+});
+
+it('marks a retried manual title as user-authored while the original create remains in flight', async () => {
+  const original = makeStoredBookmark({ ever_synced: false, sync_status: 'pending', metadata_status: 'complete' });
+  fake.__reset([original]);
+  const h = await harness([original]);
+  jest.spyOn(fake.repository, 'updateBookmark').mockRejectedValueOnce(new Error('timestamp failed'));
+  const input = { capture_attempt_id: 'title-intent', url: original.url! };
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect((await capture(h, { ...input, title: 'New authored title' })).persisted).toBe(true);
+  expect(h.pendingUserTitleEdits.current.has(original.id)).toBe(true);
+  expect(fake.__bookmarks()[0].title).toBe('New authored title');
+});
+
+it('does not stale existing suggestions when both duplicate writes fail and the user leaves', async () => {
+  const original = makeStoredBookmark({ ever_synced: true, title: 'Original title', notes: 'Original notes' });
+  fake.__reset([original]);
+  const h = await harness([original]);
+  jest.spyOn(fake.repository, 'updateBookmark').mockRejectedValueOnce(new Error('timestamp failed')).mockRejectedValueOnce(new Error('edited row failed'));
+  const input = { capture_attempt_id: 'stale-retry', url: original.url! };
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect((await capture(h, { ...input, title: 'Failed title', notes: 'Failed notes', replace_existing_notes: true })).persisted).toBe(false);
+  await act(async () => { expect(await h.result.current.abandonCapture(input.capture_attempt_id)).toBe(true); });
+  expect(h.markEnrichmentStale).not.toHaveBeenCalled();
+  expect(fake.__bookmarks()).toEqual([original]);
+});
+
+it('stales suggestions when the changed row commits even if the subsequent queue fails', async () => {
+  const original = makeStoredBookmark({ ever_synced: true, title: 'Original title' });
+  fake.__reset([original]);
+  const h = await harness([original]);
+  h.enqueueMutation.mockResolvedValueOnce(false);
+  const input = { capture_attempt_id: 'stale-committed', url: original.url!, title: 'Committed title' };
+  expect((await capture(h, input)).persisted).toBe(false);
+  expect(h.markEnrichmentStale).toHaveBeenCalledTimes(1);
+  expect((await capture(h, input)).persisted).toBe(true);
+  expect(h.markEnrichmentStale).toHaveBeenCalledTimes(1);
 });
 
 it('retains existing Markdown notes and title provenance when failed replacement is cleared', async () => {
