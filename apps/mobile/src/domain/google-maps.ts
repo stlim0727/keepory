@@ -12,7 +12,7 @@ export function isGoogleMapsUrl(rawUrl: string): boolean {
 }
 
 export function isGenericGoogleMapsTitle(title: string | undefined, url: string): boolean {
-  return isGoogleMapsUrl(url) && /^(?:google\s*(?:maps|지도|マップ|地图|地圖|карты|haritalar|แผนที่)|구글 지도|(?:خرائط|מפות|Χάρτες)\s+google)$/i.test(title?.trim() ?? '');
+  return isGoogleMapsUrl(url) && /^(?:google(?:\s*(?:maps|지도|マップ|地图|地圖|карты|haritalar|แผนที่))?|구글 지도|(?:خرائط|מפות|Χάρτες)\s+google)$/i.test(title?.trim() ?? '');
 }
 
 /** Named place paths and standard search terms; coordinates and IDs are not names. */
@@ -20,7 +20,7 @@ export function googleMapsPlaceName(rawUrl: string): string | null {
   if (!isGoogleMapsUrl(rawUrl)) return null;
   try {
     const url = new URL(rawUrl);
-    const match = url.pathname.match(/^\/maps\/place\/([^/]+)/);
+    const match = url.pathname.match(/^\/maps\/(?:place|search)\/([^/]+)/);
     const query = /^\/maps\/search\/?$/.test(url.pathname) && url.searchParams.get('api') === '1'
       ? url.searchParams.get('query') : null;
     if (!match && !query) return null;

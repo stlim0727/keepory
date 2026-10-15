@@ -34,6 +34,8 @@ test('standard Maps search terms recover without inventing names for coordinates
     assert.equal(deriveMetadata(url).title, expected ?? 'Google Maps');
   }
   assert.equal(googleMapsPlaceName('https://www.google.com/maps/search/?query=Lumen+Field'), null);
+  assert.equal(googleMapsPlaceName('https://www.google.com/maps/search/Lumen+Field/'), 'Lumen Field');
+  assert.equal(googleMapsPlaceName('https://www.google.com/maps/search/40.71+-74.00/'), null);
 });
 
 test('legacy Google consent titles can be explicitly repaired on Maps URLs', async () => {
@@ -106,7 +108,7 @@ test('Google Maps does not invent place details from coordinates, IDs, or short 
 });
 
 test('localized Maps product titles remain repairable shells across online and offline recovery', () => {
-  for (const title of ['Google マップ', 'Google 地图', 'Google 地圖', 'Google Карты', 'خرائط Google']) {
+  for (const title of ['Google', 'Google マップ', 'Google 地图', 'Google 地圖', 'Google Карты', 'خرائط Google']) {
     assert.equal(isGenericGoogleMapsTitle(title, placeUrl), true);
     assert.equal(isRepairableSourceTitle({ url: placeUrl, title }), true);
     const metadata = parsePageMetadata(shell.replace('Google Maps', title), placeUrl);
