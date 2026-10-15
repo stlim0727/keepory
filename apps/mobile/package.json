@@ -54,7 +54,7 @@
   "devDependencies": {
     "@jest/globals": "^30.5.2",
     "@react-native/jest-preset": "0.88.0-rc.3",
-    "@react-native/metro-config": "0.88.0-rc.3",
+    "@react-native/metro-config": "0.88.0-rc.4",
     "@testing-library/react-native": "^14.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.19.21",
