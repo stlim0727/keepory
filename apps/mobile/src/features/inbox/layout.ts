@@ -226,6 +226,7 @@ export const styles = StyleSheet.create({
     opacity: 0.7,
   },
   emptyTitle: {
+    textAlign: 'center',
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 20,
@@ -265,14 +266,16 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 280,
   },
-  emptyPlatformPill: {
-    marginTop: 14,
+  emptySaveButton: {
+    width: '100%',
+    maxWidth: 320,
+    marginBottom: 24,
   },
   emptyAccount: {
     alignItems: 'center',
     width: '100%',
     maxWidth: 320,
-    marginTop: -4,
+    marginTop: 24,
     marginBottom: 24,
   },
   emptyAccountBenefit: {

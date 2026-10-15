@@ -191,7 +191,8 @@ export const en = {
   'inbox.scopeClearA11y': 'Clear filter and show all bookmarks',
   'inbox.scopeClearSearchA11y': 'Clear the search',
   'inbox.emptyView': 'Nothing in this view yet.',
-  'inbox.emptyTitle': 'Nothing saved yet',
+  'inbox.emptyTitle': 'Keep what you want to come back to',
+  'inbox.emptySave': 'Save your first link',
   'inbox.emptySignInBenefit': 'Sign in to access your saved links across devices.',
   'inbox.emptySignInOptional': 'You can save links without signing in.',
   // Native first-run teach: a numbered 2-step share-capture walkthrough, plus a

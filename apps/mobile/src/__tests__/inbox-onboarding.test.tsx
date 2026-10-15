@@ -108,7 +108,8 @@ test.each(['anonymous', 'signed_out'] as const)('empty inbox offers %s users sig
   await waitFor(() => expect(screen.getByTestId('inbox-empty-sign-in')).toBeTruthy());
   expect(screen.getByText('Sign in to access your saved links across devices.')).toBeTruthy();
   expect(screen.getByText('You can save links without signing in.')).toBeTruthy();
-  await fireEvent.press(screen.getByLabelText('Add bookmark'));
+  await fireEvent.press(screen.getByRole('button', { name: 'Save your first link' }));
+  expect(mockPush).toHaveBeenCalledTimes(1);
   expect(mockPush).toHaveBeenCalledWith('/add');
   mockPush.mockClear();
   await fireEvent.press(screen.getByTestId('inbox-empty-sign-in'));
@@ -136,7 +137,9 @@ test('web empty state points at paste-a-link instead of the (unavailable) share 
   expect(
     screen.getByText('Sharing from other apps works in the Keepory Android app, not on the web yet.'),
   ).toBeTruthy();
-  expect(screen.getByText('Get the Android app')).toBeTruthy();
+  expect(screen.queryByText('Get the Android app')).toBeNull();
+  await fireEvent.press(screen.getByRole('button', { name: 'Save your first link' }));
+  expect(mockPush).toHaveBeenCalledWith('/add');
   // The native-only teach — including its reciprocal web-link pill — never renders on web.
   expect(screen.queryByText('Open any app, tap Share')).toBeNull();
   expect(screen.queryByText('Choose Keepory — saved instantly')).toBeNull();
