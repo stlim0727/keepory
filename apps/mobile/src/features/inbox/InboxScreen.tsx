@@ -2076,24 +2076,14 @@ export default function InboxScreen() {
               <Text style={[styles.emptyTitle, { color: palette.text }]}>
                 {t('inbox.emptyTitle')}
               </Text>
-              {auth.status === 'anonymous' || auth.status === 'signed_out' ? (
-                <View style={styles.emptyAccount} testID="inbox-empty-account">
-                  <Text style={[styles.emptyAccountBenefit, { color: palette.textSecondary }]}>
-                    {t('inbox.emptySignInBenefit')}
-                  </Text>
-                  <Button
-                    size="md"
-                    style={styles.emptySignInButton}
-                    onPress={() => router.push({ pathname: '/settings', params: { focus: 'account' } })}
-                    testID="inbox-empty-sign-in"
-                  >
-                    {t('settings.account.signIn')}
-                  </Button>
-                  <Text style={[styles.emptyAccountReassurance, { color: palette.textSecondary }]}>
-                    {t('inbox.emptySignInOptional')}
-                  </Text>
-                </View>
-              ) : null}
+              <Button
+                size="lg"
+                style={styles.emptySaveButton}
+                onPress={() => router.push('/add')}
+                testID="inbox-empty-save"
+              >
+                {t('inbox.emptySave')}
+              </Button>
               {isWeb ? (
                 <>
                   <View style={styles.emptyHintRow} testID="inbox-empty-web-step">
@@ -2111,11 +2101,6 @@ export default function InboxScreen() {
                   <Text style={[styles.emptyHintFallback, { color: palette.textSecondary }]}>
                     {t('inbox.emptyHintWebNote')}
                   </Text>
-                  {/* No live Play Store listing yet (see docs/development/play-store.md),
-                      so this is a soft, disabled pill rather than a link to nowhere. */}
-                  <Button variant="ghost" size="sm" disabled style={styles.emptyPlatformPill}>
-                    {t('inbox.emptyHintWebGetAndroid')}
-                  </Button>
                 </>
               ) : (
                 <>
@@ -2160,6 +2145,25 @@ export default function InboxScreen() {
                   {t('inbox.emptyTutorialButton')}
                 </Text>
               </Pressable>
+              {auth.status === 'anonymous' || auth.status === 'signed_out' ? (
+                <View style={styles.emptyAccount} testID="inbox-empty-account">
+                  <Text style={[styles.emptyAccountBenefit, { color: palette.textSecondary }]}>
+                    {t('inbox.emptySignInBenefit')}
+                  </Text>
+                  <Button
+                    variant="ghost"
+                    size="md"
+                    style={styles.emptySignInButton}
+                    onPress={() => router.push({ pathname: '/settings', params: { focus: 'account' } })}
+                    testID="inbox-empty-sign-in"
+                  >
+                    {t('settings.account.signIn')}
+                  </Button>
+                  <Text style={[styles.emptyAccountReassurance, { color: palette.textSecondary }]}>
+                    {t('inbox.emptySignInOptional')}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           )
         }
