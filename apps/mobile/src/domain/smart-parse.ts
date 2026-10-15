@@ -7,20 +7,27 @@ export interface SmartInput {
   notes: string;
 }
 
+/** Peel prose punctuation and unmatched wrappers without changing balanced URL paths. */
+function cleanUrlToken(input: string): string {
+  let raw = input;
+  // Peel sentence punctuation and unmatched wrappers, retaining balanced URL paths.
+  while (raw) {
+    const last = raw.at(-1)!;
+    const opener = last === ')' ? '(' : last === ']' ? '[' : last === '}' ? '{' : null;
+    if (/[.,;:!?"'<>]/.test(last) || (opener &&
+      raw.split(last).length > raw.split(opener).length)) raw = raw.slice(0, -1);
+    else break;
+  }
+  return raw;
+}
+
 /** Deterministic capture parsing. Match original spans before URL normalization. */
 export function parseSmartInput(text: string): SmartInput {
-  const direct = normalizeUrl(text);
+  const trimmed = text.trim();
+  const direct = /\s/.test(trimmed) ? null : normalizeUrl(cleanUrlToken(trimmed));
   if (direct) return { mode: 'link', url: direct, title: '', notes: '' };
   for (const match of text.matchAll(/https?:\/\/[^\s]+/gi)) {
-    let raw = match[0];
-    // Peel sentence punctuation and unmatched wrappers, retaining balanced URL paths.
-    while (raw) {
-      const last = raw.at(-1)!;
-      const opener = last === ')' ? '(' : last === ']' ? '[' : last === '}' ? '{' : null;
-      if (/[.,;:!?"'<>]/.test(last) || (opener &&
-        raw.split(last).length > raw.split(opener).length)) raw = raw.slice(0, -1);
-      else break;
-    }
+    const raw = cleanUrlToken(match[0]);
     const url = normalizeUrl(raw);
     if (!url) continue;
     let start = match.index!;

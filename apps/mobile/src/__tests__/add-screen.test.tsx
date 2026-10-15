@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 const mockReadClipboard = jest.fn();
 const mockCopyImage = jest.fn(async (..._args: unknown[]) => 'file:///durable/image.png');
-jest.mock('@/share/smart-clipboard', () => ({ readSmartClipboard: () => mockReadClipboard() }));
+jest.mock('@/share/smart-clipboard', () => ({ readSmartClipboard: () => mockReadClipboard(), releaseOwnedClipboardImage: jest.fn() }));
 jest.mock('@/storage/image-store', () => ({
   copyImageToLibrary: (...args: unknown[]) => mockCopyImage(...args),
   deleteLibraryImage: jest.fn(async () => {}),
@@ -478,6 +478,22 @@ describe('smart Add capture', () => {
     await fireEvent.changeText(screen.getByTestId('add-url'), 'https://example.com/originalx');
     expect(screen.getByTestId('add-url').props.value).toBe('https://example.com/originalx');
     expect(screen.queryByText('Replace draft')).toBeNull();
+  });
+  it.each(['append', 'selection'] as const)('offers only the native pasted candidate after %s into an existing URL', async (kind) => {
+    const screen = await renderAddScreen();
+    const previous = 'https://old.example/path';
+    const pasted = 'Title https://new.example/path\nNotes';
+    await fireEvent.changeText(screen.getByTestId('add-url'), previous);
+    const start = kind === 'append' ? previous.length : 8;
+    const end = kind === 'append' ? start : previous.length;
+    await fireEvent(screen.getByTestId('add-url'), 'selectionChange', { nativeEvent: { selection: { start, end } } });
+    await fireEvent.changeText(screen.getByTestId('add-url'), previous.slice(0, start) + pasted + previous.slice(end));
+    await screen.findByText('Replace draft');
+    expect(screen.getByTestId('add-url').props.value).toBe(previous);
+    await fireEvent.press(screen.getByText('Replace draft'));
+    expect(screen.getByTestId('add-url').props.value).toBe('https://new.example/path');
+    expect(screen.getByLabelText('Title (optional)').props.value).toBe('Title');
+    expect(screen.getByLabelText('Note').props.value).toBe('Notes');
   });
   it('ignores clipboard reads that finish after a mode change', async () => {
     let resolve!: (value: {text:string}) => void;

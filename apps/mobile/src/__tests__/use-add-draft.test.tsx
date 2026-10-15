@@ -4,7 +4,7 @@ import type { SharedImage } from '@/domain/image-share';
 import { useAddDraft } from '@/features/add/use-add-draft';
 
 const mockReadClipboard = jest.fn();
-jest.mock('@/share/smart-clipboard', () => ({ readSmartClipboard: () => mockReadClipboard() }));
+jest.mock('@/share/smart-clipboard', () => ({ readSmartClipboard: () => mockReadClipboard(), releaseOwnedClipboardImage: jest.fn() }));
 const image: SharedImage = { uri: 'file:///clipboard.png', mimeType: 'image/png', fileName: null };
 const text = 'x'.repeat(MAX_ADD_MEMO_LENGTH);
 

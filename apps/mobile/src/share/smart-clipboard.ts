@@ -19,3 +19,6 @@ export async function readSmartClipboard(): Promise<{ text: string; image?: Shar
   }
   return { text, image };
 }
+
+/** Browser clipboard images are inline data, with no owned cache file. */
+export function releaseOwnedClipboardImage(_image: SharedImage | undefined): void {}

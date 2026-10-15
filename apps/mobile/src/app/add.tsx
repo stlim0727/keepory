@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { parseSmartInput } from '@/domain/smart-parse';
+import { insertedText } from '@/domain/inserted-text';
 import { MAX_ADD_MEMO_LENGTH } from '@/domain/add-draft';
 import { useAddDraft, type AddMode } from '@/features/add/use-add-draft';
 import { useImagePaste } from '@/features/add/use-image-paste';
@@ -54,6 +55,7 @@ export default function AddBookmarkScreen() {
   const setTitle = (value: string) => smart.update({ title: value, titleEdited: true });
   const [error, setError] = useState<string | null>(null);
   const titleInputRef = useRef<React.ComponentRef<typeof TextInput> | null>(null);
+  const urlSelection = useRef<{ start: number; end: number } | null>(null);
   const pasteRoot = useRef<React.ComponentRef<typeof View> | null>(null);
   useImagePaste(pasteRoot, (read, text) => { if (!savingRef.current) void smart.receiveImage(read, text); }, (text) => {
     if (!savingRef.current) { smart.offer(text); setDetailsOpen(true); }
@@ -195,6 +197,7 @@ export default function AddBookmarkScreen() {
     smart.cancel();
     const clientId = captureIds.current[mode] ?? makeClientId();
     captureIds.current[mode] = clientId;
+    const releaseImage = smart.retainImage(mode === 'image' ? image : undefined);
     try {
       const result = mode === 'link'
         ? addBookmark({
@@ -235,10 +238,11 @@ export default function AddBookmarkScreen() {
       show(result.status === 'duplicate' ? t('toast.duplicate') : t('toast.saved'));
       setFailedMode(null);
       setSaving(false);
+      smart.releaseImages();
       allowRemoval();
       dismissManual();
     } catch { if (mountedRef.current) { setFailedMode(mode); setError(t('add.saveFailed')); } }
-    finally { savingRef.current = false; if (mountedRef.current) setSaving(false); }
+    finally { releaseImage(); savingRef.current = false; if (mountedRef.current) setSaving(false); }
   }
 
   const titleField = <>
@@ -292,12 +296,17 @@ export default function AddBookmarkScreen() {
             style={[styles.input, { backgroundColor: palette.card, color: palette.text, borderColor: palette.controlBorder }]}
             placeholder={t('add.urlPlaceholder')} placeholderTextColor={palette.textSecondary}
             autoCapitalize="none" autoCorrect={false} autoFocus keyboardType="url" returnKeyType="next"
+            onSelectionChange={(event) => { urlSelection.current = event.nativeEvent.selection; }}
             value={url} editable={!saving} onChangeText={(value) => {
-              const lengthChange = Math.abs(value.length - url.length);
-              const pasted = lengthChange > 8 || (value.includes('\n') && lengthChange > 1);
-              const parsed = pasted ? parseSmartInput(value) : null;
-              if (parsed?.mode === 'link' && (parsed.title || parsed.notes)) {
-                smart.offer(value);
+              const inserted = insertedText(url, value, urlSelection.current);
+              const pasted = inserted.length > 8 || inserted.includes('\n');
+              const parsed = pasted ? parseSmartInput(inserted) : null;
+              // A whole-field replacement can share its URL prefix with the
+              // previous value. Only then may the full value be the candidate.
+              const candidate = parsed?.mode === 'link' ? inserted : pasted && !value.includes(url) ? value : null;
+              const candidateParsed = candidate ? parseSmartInput(candidate) : null;
+              if (candidate && candidateParsed?.mode === 'link' && (candidateParsed.title || candidateParsed.notes || (url && value.includes(url)))) {
+                smart.offer(candidate);
                 setDetailsOpen(true);
               } else {
                 setUrl(value);

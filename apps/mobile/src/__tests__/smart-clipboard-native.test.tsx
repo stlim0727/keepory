@@ -2,9 +2,10 @@ const mockHasImage = jest.fn();
 const mockGetImage = jest.fn();
 const mockGetText = jest.fn();
 const mockWrite = jest.fn();
+const mockDelete = jest.fn();
 jest.mock('expo-clipboard',()=>({hasImageAsync:()=>mockHasImage(),getImageAsync:(options:unknown)=>mockGetImage(options),getStringAsync:()=>mockGetText()}));
-jest.mock('expo-file-system',()=>({Paths:{cache:'file:///cache'},File:jest.fn().mockImplementation(()=>({uri:'file:///cache/clipboard.png',write:(bytes:Uint8Array)=>mockWrite(bytes)}))}));
-import {readSmartClipboard} from '@/share/smart-clipboard.native';
+jest.mock('expo-file-system',()=>({Paths:{cache:{uri:'file:///cache'}},File:jest.fn().mockImplementation(()=>({uri:'file:///cache/clipboard.png',write:(bytes:Uint8Array)=>mockWrite(bytes),delete:()=>mockDelete()}))}));
+import {readSmartClipboard, releaseOwnedClipboardImage} from '@/share/smart-clipboard.native';
 beforeEach(()=>{jest.clearAllMocks();mockGetText.mockResolvedValue('caption');});
 it('waits for cache bytes before handing an image to the capture flow',async()=>{
  let resolve!:()=>void;
@@ -48,4 +49,17 @@ it('reads native image bytes without browser base64 globals', async () => {
   globalThis.atob = originalAtob;
   globalThis.btoa = originalBtoa;
  }
+});
+
+it('releases only the exact image owned by the clipboard reader, once', async () => {
+ mockHasImage.mockResolvedValue(true);
+ mockGetImage.mockResolvedValue({data:'data:image/png;base64,AP8='});
+ mockWrite.mockResolvedValue(undefined);
+ const { image } = await readSmartClipboard();
+ releaseOwnedClipboardImage({ ...image!, uri: 'file:///library/image.png' });
+ releaseOwnedClipboardImage({ ...image! });
+ expect(mockDelete).not.toHaveBeenCalled();
+ releaseOwnedClipboardImage(image);
+ releaseOwnedClipboardImage(image);
+ expect(mockDelete).toHaveBeenCalledTimes(1);
 });

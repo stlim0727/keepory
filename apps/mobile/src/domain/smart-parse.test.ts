@@ -41,3 +41,30 @@ test('mixed clipboard notes preserve indentation, paragraphs, and hard-break spa
   assert.equal(parseSmartInput('https://example.com\r\nTitle\r\n\r\n  Nested list\r\n\r\nAnother paragraph').notes,
     '  Nested list\n\nAnother paragraph');
 });
+
+test('URL-only and embedded tokens share punctuation and unmatched-wrapper cleanup', () => {
+  for (const [token, expected] of [
+    ['https://example.com,', 'https://example.com/'],
+    ['https://example.com/article).', 'https://example.com/article'],
+    ['example.com,', 'https://example.com/'],
+    ['example.com/article).', 'https://example.com/article'],
+    ['https://example.com/Bird_(disambiguation)', 'https://example.com/Bird_(disambiguation)'],
+    ['https://example.com/article?q=(one)&other=two%20words', 'https://example.com/article?q=(one)&other=two%20words'],
+    ['https://example.com/article?q=(one)', 'https://example.com/article?q=(one)'],
+  ]) {
+    assert.deepEqual(parseSmartInput(`  ${token}  `), { mode: 'link', url: expected, title: '', notes: '' });
+    if (token.startsWith('https://')) assert.equal(parseSmartInput(`Title ${token}`).url, expected);
+  }
+});
+
+test('direct-token cleanup never consumes punctuation or whitespace from accompanying notes', () => {
+  assert.deepEqual(parseSmartInput('https://example.com\nTitle\n  Body  \n.'), {
+    mode: 'link', url: 'https://example.com/', title: 'Title', notes: '  Body  \n.',
+  });
+  assert.deepEqual(parseSmartInput('https://example.com\n.'), {
+    mode: 'link', url: 'https://example.com/', title: '.', notes: '',
+  });
+  assert.deepEqual(parseSmartInput('  plain notes\n  text!?  \n'), {
+    mode: 'note', url: '', title: '', notes: '  plain notes\n  text!?  \n',
+  });
+});
