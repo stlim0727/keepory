@@ -26,7 +26,9 @@ export function parseSmartInput(text: string): SmartInput {
   const trimmed = text.trim();
   const direct = /\s/.test(trimmed) ? null : normalizeUrl(cleanUrlToken(trimmed));
   if (direct) return { mode: 'link', url: direct, title: '', notes: '' };
-  for (const match of text.matchAll(/https?:\/\/[^\s]+/gi)) {
+  for (const match of text.matchAll(
+    /https?:\/\/[^\s]+|(?<=^|[^\w@/.])(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?::\d+)?(?:[/?#][^\s]*)?/gi,
+  )) {
     const raw = cleanUrlToken(match[0]);
     const url = normalizeUrl(raw);
     if (!url) continue;

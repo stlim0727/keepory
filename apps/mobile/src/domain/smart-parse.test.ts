@@ -53,8 +53,35 @@ test('URL-only and embedded tokens share punctuation and unmatched-wrapper clean
     ['https://example.com/article?q=(one)', 'https://example.com/article?q=(one)'],
   ]) {
     assert.deepEqual(parseSmartInput(`  ${token}  `), { mode: 'link', url: expected, title: '', notes: '' });
-    if (token.startsWith('https://')) assert.equal(parseSmartInput(`Title ${token}`).url, expected);
+    assert.equal(parseSmartInput(`Title ${token}`).url, expected);
   }
+});
+
+test('scheme-less URLs inside mixed clipboard text are recognized and separated', () => {
+  assert.deepEqual(parseSmartInput('Product\nexample.com/item\nDetails'), {
+    mode: 'link',
+    url: 'https://example.com/item',
+    title: 'Product',
+    notes: 'Details',
+  });
+  assert.deepEqual(parseSmartInput('Title\nexample.com\nNotes'), {
+    mode: 'link',
+    url: 'https://example.com/',
+    title: 'Title',
+    notes: 'Notes',
+  });
+  assert.deepEqual(parseSmartInput('Title (example.com/article). More'), {
+    mode: 'link',
+    url: 'https://example.com/article',
+    title: 'Title . More',
+    notes: '',
+  });
+  assert.deepEqual(parseSmartInput('[특가] 하루낫또 46% 할인 6,990원 item.gmarket.co.kr/item?goodscode=123&utm_source=share'), {
+    mode: 'link',
+    url: 'https://item.gmarket.co.kr/item?goodscode=123&utm_source=share',
+    title: '[특가] 하루낫또 46% 할인 6,990원',
+    notes: '',
+  });
 });
 
 test('direct-token cleanup never consumes punctuation or whitespace from accompanying notes', () => {
