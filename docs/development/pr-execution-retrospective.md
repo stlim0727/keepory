@@ -7,6 +7,7 @@ Own the coherent change through completion; reviewers provide an independent che
 
 Follow the authoritative [PR workflow](agent-reference.md#collaboration-and-pr-workflow).
 For asynchronous changes, consult the [boundary review guide](../design/sync-change-review.md).
+See the [PR #936 retrospective](pr-936-retrospective.md) for native acceptance and final handoff lessons.
 Scale these checks to the change's risk; trivial edits do not need a state-machine audit.
 
 ## Before publishing
@@ -17,6 +18,9 @@ Scale these checks to the change's risk; trivial edits do not need a state-machi
 - Map important requirements to assertions about requests, durable state,
   cancellation, or visible behavior. Cover representative success, recovery,
   and overlap sequences. Test totals alone do not establish coverage.
+- For native acceptance, verify process continuity and inspect crash logs alongside
+  screenshots and durable content. A foreground helper or screenshot alone cannot
+  establish successful navigation. Record the tested SHA with each evidence set.
 - Mock dependencies, not production semantics. Investigate hangs and failures;
   never bypass the behavior under review to make tests pass. Confirm a failure
   on the base before calling it pre-existing. Follow the CI-first testing policy.
@@ -56,6 +60,10 @@ Next action and authorization limits, including merge permission:
 - Retain ownership through required checks, feedback resolution, conflict checks,
   and the repository review window. Report concrete blockers; a pending review
   or quota failure is not approval. A status question is not cancellation.
+- Before final handoff, reconcile the PR body and linked issue state with actual
+  results. Identify evidence from earlier heads explicitly; do not relabel it as
+  verification of the final head. If review is unavailable, record that gap and
+  obtain an explicit alternative review decision before merging.
 - Merge only within authorization and repository rules.
 - Optimize for fewer avoidable review rounds and preserved regression evidence,
   not fewer commits. Squashing improves history, not correctness. Coordinate
