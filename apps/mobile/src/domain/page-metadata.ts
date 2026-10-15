@@ -439,22 +439,28 @@ async function readCappedBody(
 async function fetchHtmlMetadata(url: string, userAgent: string): Promise<HtmlFetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  let finalUrl = url;
+  const failed = (outcome: string): HtmlFetchResult => ({
+    metadata: googleMapsPlaceName(finalUrl) ? parsePageMetadata('', finalUrl) : null,
+    outcome,
+    finalUrl,
+  });
   try {
     const response = await fetchPublicPreview(url, {
       signal: controller.signal,
       headers: htmlHeaders(userAgent, url),
     });
+    finalUrl = response.url || url;
     if (!response.ok) {
-      return { metadata: null, outcome: `http_${response.status}` };
+      return failed(`http_${response.status}`);
     }
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('html')) {
-      return { metadata: null, outcome: `non_html:${contentType.split(';')[0] || 'unknown'}` };
+      return failed(`non_html:${contentType.split(';')[0] || 'unknown'}`);
     }
     // Read raw bytes and decode with the page's real charset. Many Korean/CJK
     // sites serve legacy encodings (EUC-KR, Shift_JIS, …), often declared only
     // in a <meta> tag, so decoding as UTF-8 produces mojibake.
-    const finalUrl = response.url || url;
     const byteLimit = htmlByteLimit(finalUrl);
     const needsMore = byteLimit > MAX_HTML_BYTES
       ? async (prefix: Uint8Array) => {
@@ -467,7 +473,7 @@ async function fetchHtmlMetadata(url: string, userAgent: string): Promise<HtmlFe
     const body = await readCappedBody(response, byteLimit, needsMore);
     if (!body) {
       const declared = response.headers.get('content-length') ?? 'unknown';
-      return { metadata: null, outcome: `too_large:${declared}` };
+      return failed(`too_large:${declared}`);
     }
     const charset = detectCharset(contentType, body.bytes);
     const html = await decodeHtml(body.bytes, charset);
@@ -498,7 +504,7 @@ async function fetchHtmlMetadata(url: string, userAgent: string): Promise<HtmlFe
     }
     return { metadata, outcome: 'ok', finalUrl, discoveredOembedUrl };
   } catch (err) {
-    return { metadata: null, outcome: `error:${err instanceof Error ? err.name : 'unknown'}` };
+    return failed(`error:${err instanceof Error ? err.name : 'unknown'}`);
   } finally {
     clearTimeout(timer);
   }

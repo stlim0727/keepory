@@ -235,6 +235,7 @@ export function isRepairableSourceTitle(bookmark: { url: string | null; title: s
       return true;
     }
     if (isGenericGoogleMapsTitle(bookmark.title ?? undefined, bookmark.url)) return true;
+    if (isGoogleMapsUrl(bookmark.url) && trimmed === 'before you continue to google') return true;
     if (
       (trimmed === 'google' ||
         trimmed === 'google search' ||

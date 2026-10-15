@@ -27,6 +27,48 @@ test('Maps recovery works offline and short links retain a human fallback', asyn
   }
 });
 
+test('standard Maps search terms recover without inventing names for coordinates or IDs', () => {
+  for (const [query, expected] of [['Lumen Field', 'Lumen Field'], ['C++ Coffee', 'C++ Coffee'], ['47.59,-122.33', null], ['40.71 -74.00', null], ['849VCWC8+R9', null], ['place_id:ChIJ123', null]]) {
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query!)}`;
+    assert.equal(googleMapsPlaceName(url), expected);
+    assert.equal(deriveMetadata(url).title, expected ?? 'Google Maps');
+  }
+  assert.equal(googleMapsPlaceName('https://www.google.com/maps/search/?query=Lumen+Field'), null);
+});
+
+test('legacy Google consent titles can be explicitly repaired on Maps URLs', async () => {
+  const title = 'Before you continue to Google';
+  assert.equal(isRepairableSourceTitle({ url: placeUrl, title }), true);
+  assert.equal(isRepairableSourceTitle({ url: 'https://example.com/article', title }), false);
+  const result = await enrichBookmark({ url: placeUrl, title, title_is_derived: false } as Bookmark,
+    async () => parsePageMetadata(shell, placeUrl));
+  assert.equal(result.patch.title, placeName);
+});
+
+test('rejected Maps destinations retain expanded place URLs for fallback and browser retry', async () => {
+  const originalFetch = globalThis.fetch;
+  for (const rejection of ['http', 'non_html', 'body_error']) {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      urls.push(String(input));
+      if (urls.length === 1) return new Response(null, { status: 302, headers: { location: placeUrl } });
+      const response = rejection === 'http'
+        ? new Response(null, { status: 403 })
+        : new Response('', { headers: { 'content-type': rejection === 'non_html' ? 'application/json' : 'text/html' } });
+      Object.defineProperty(response, 'url', { value: placeUrl });
+      if (rejection === 'body_error') Object.defineProperty(response, 'body', { value: new ReadableStream({ start(controller) { controller.error(new Error('body failed')); } }) });
+      return response;
+    }) as typeof fetch;
+    try {
+      const metadata = await fetchPageMetadata('https://maps.app.goo.gl/7JkAdshyX3gR62qr6');
+      assert.equal(metadata?.title, placeName);
+      assert.equal(metadata?.title_is_derived, true);
+      assert.equal(urls.length, 3);
+      assert.equal(urls[2], placeUrl);
+    } finally { globalThis.fetch = originalFetch; }
+  }
+});
+
 test('Maps place names preserve encoded plus signs and decode raw separators as spaces', () => {
   const url = 'https://www.google.com/maps/place/C%2B%2B+Coffee/';
   assert.equal(googleMapsPlaceName(url), 'C++ Coffee');
