@@ -42,10 +42,13 @@ candidates** (`vX.Y.Z-rcN`) that lead up to each stable cut.
   "what's new since the last RC." Skipping this is exactly how `v1.0.0-rc4` went
   unlogged and the next build's number became a guess.
 
-## 1.2.4 cycle (current trunk)
+## 1.2.7 release (current)
 
-`apps/mobile/app.json` `version` = `1.2.4` (bumped `1.2.3 → 1.2.4` to open the next
-RC cycle after `v1.2.3` shipped stable). No RCs logged yet — next is `rc1`.
+`apps/mobile/app.json` `version` = `1.2.7` (bumped to ship `v1.2.7` stable release with smart clipboard capture, trickle AI enrichment, and login AI preference restoration).
+
+## 1.2.4–1.2.6 cycle (superseded — shipped `v1.2.5`, `v1.2.6` stable)
+
+`apps/mobile/app.json` `version` = `1.2.4` (bumped `1.2.3 → 1.2.4` to open the cycle). Shipped `v1.2.5` (guest shortcuts & collection RLS fixes) and `v1.2.6` (startup cache & CI-first testing policy).
 
 ## 1.2.0 cycle (superseded — shipped `v1.2.0`, `v1.2.1`, `v1.2.2`, `v1.2.3` stable)
 
