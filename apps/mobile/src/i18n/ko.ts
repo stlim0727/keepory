@@ -605,6 +605,7 @@ export const ko: Catalog = {
   'settings.import.duplicates': '{count}개는 이미 라이브러리에 있습니다.',
   'settings.import.skipped': '{count}개를 건너뛰었습니다 (웹 주소 없음).',
   'settings.import.completeTitle': '가져오기 완료',
+  'settings.import.trickleNote': '서재를 차분히 둘러보며 태그와 요약을 점진적으로 정리해 둘게요.',
   'settings.import.failedTitle': '가져오기 실패',
   'settings.import.failedBody': '해당 파일을 가져올 수 없습니다. 다시 시도해 주세요.',
 

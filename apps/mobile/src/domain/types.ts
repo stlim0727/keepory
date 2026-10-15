@@ -20,7 +20,7 @@ export type MetadataStatus = 'pending' | 'complete' | 'failed' | 'skipped';
  * unaffected either way. Mirrors `bookmarks.enrichment_policy`'s check
  * constraint (`supabase/migrations/20260803215821_bookmarks_enrichment_policy.sql`).
  */
-export type EnrichmentPolicy = 'auto' | 'skip';
+export type EnrichmentPolicy = 'auto' | 'skip' | 'trickle';
 
 export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'failed';
 

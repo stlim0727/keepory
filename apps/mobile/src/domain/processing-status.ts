@@ -11,6 +11,7 @@ export type AiServerQueueStatus = "pending" | "processing" | "failed";
 export interface AiServerQueueSnapshot {
   bookmark_id: string;
   status: AiServerQueueStatus;
+  priority?: number;
   attempts: number;
   created_at: string;
   updated_at: string;

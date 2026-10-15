@@ -128,6 +128,8 @@ interface BookmarkRow {
   site_name: string | null;
   content_type: string;
   collection_id?: string | null;
+  deleted_at?: string | null;
+  is_archived?: boolean;
 }
 
 /** Minimum confidence hurdle required before changing an already-filed bookmark's collection (STASH-74). */
@@ -217,6 +219,7 @@ interface PendingEnrichmentRow {
   user_id: string;
   locale: string | null;
   attempts: number;
+  priority?: number;
 }
 
 /** Mark a claimed row's outcome. Best-effort: a failure here just means the
@@ -321,12 +324,13 @@ async function loadEnrichmentContextForUser(
  *  Only an explicit allowed=true represents a successfully claimed slot. */
 async function claimEnrichmentQuotaSlot(
   userId: string,
-): Promise<{ eligible: boolean; slotClaimed: boolean }> {
+  isTrickle: boolean = false,
+): Promise<{ eligible: boolean; slotClaimed: boolean; retryAfter?: number }> {
   try {
     const res = await serviceRest(`/rpc/request_ai_enrichment_slot_for`, {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ p_user_id: userId }),
+      body: JSON.stringify({ p_user_id: userId, p_is_trickle: isTrickle }),
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) {
@@ -335,7 +339,7 @@ async function claimEnrichmentQuotaSlot(
     }
     const verdict = parseQuotaVerdict(await res.json());
     const allowed = verdict?.allowed === true;
-    return { eligible: allowed, slotClaimed: allowed };
+    return { eligible: allowed, slotClaimed: allowed, retryAfter: verdict?.retry_after };
   } catch (err) {
     console.error('Batch worker: rate-limit check threw', userId, err);
     return { eligible: false, slotClaimed: false };
@@ -472,6 +476,11 @@ async function processEnrichmentRow(
     // pending row). Retry rather than fail outright — may be a transient blip.
     const next = nextAttemptState(row.attempts);
     await markPendingEnrichmentSettled(row.id, next.status, next.attempts);
+    return;
+  }
+  if ((bookmark.deleted_at !== null && bookmark.deleted_at !== undefined) || bookmark.is_archived === true) {
+    if (slotClaimed) await refundEnrichmentQuotaSlot(row.user_id);
+    await markPendingEnrichmentSettled(row.id, 'done', row.attempts);
     return;
   }
   const ctx = contextByUser.get(row.user_id) ?? EMPTY_ENRICHMENT_CONTEXT;
@@ -795,23 +804,34 @@ async function runBatchWorker(): Promise<Response> {
     // fallback provider — nothing to protect (mirrors `enforceRateLimit` on
     // the single-item path above).
     let eligible = claimed;
-    let deferred: PendingEnrichmentRow[] = [];
+    let deferred: { row: PendingEnrichmentRow; retryAfter?: number }[] = [];
     // Per-row record of whether its quota RPC actually inserted a slot (vs.
     // unavailable eligibility with no real charge) — see claimEnrichmentQuotaSlot
     // and processEnrichmentRow's refund guard.
     const slotClaimedByRowId = new Map<string, boolean>();
     if (enforceRateLimit) {
-      const results = await Promise.all(claimed.map((row) => claimEnrichmentQuotaSlot(row.user_id)));
+      const results = await Promise.all(
+        claimed.map((row) => claimEnrichmentQuotaSlot(row.user_id, (row.priority ?? 10) >= 50)),
+      );
       claimed.forEach((row, i) => slotClaimedByRowId.set(row.id, results[i].slotClaimed));
       eligible = claimed.filter((_, i) => results[i].eligible);
-      deferred = claimed.filter((_, i) => !results[i].eligible);
+      deferred = claimed
+        .map((row, i) => ({ row, retryAfter: results[i].retryAfter }))
+        .filter((_, i) => !results[i].eligible);
     } else {
       claimed.forEach((row) => slotClaimedByRowId.set(row.id, false));
     }
-    // Rows still over quota go straight back to 'pending' with no attempts
-    // penalty — this isn't a failure, just "try again once the window rolls
-    // over" — so the next tick's claim picks them up again unchanged.
-    await Promise.all(deferred.map((row) => markPendingEnrichmentSettled(row.id, 'pending', row.attempts)));
+    // Rows still over quota (or waiting for headroom) go straight back to 'pending'.
+    // If retry_after is provided, set retry_not_before so the worker doesn't
+    // repeatedly claim them on the next 1-minute tick.
+    await Promise.all(
+      deferred.map(({ row, retryAfter }) => {
+        const retryNotBefore = retryAfter
+          ? new Date(Date.now() + retryAfter * 1000).toISOString()
+          : null;
+        return markPendingEnrichmentSettled(row.id, 'pending', row.attempts, retryNotBefore);
+      }),
+    );
 
     if (eligible.length === 0) {
       return json({ processed: 0, deferred: deferred.length }, 200);
@@ -819,7 +839,7 @@ async function runBatchWorker(): Promise<Response> {
 
     const bookmarkIds = [...new Set(eligible.map((row) => row.bookmark_id))];
     const bookmarksRes = await serviceRest(
-      `/bookmarks?id=in.(${bookmarkIds.join(',')})&select=id,user_id,url,title,description,notes,site_name,content_type,collection_id`,
+      `/bookmarks?id=in.(${bookmarkIds.join(',')})&select=id,user_id,url,title,description,notes,site_name,content_type,collection_id,deleted_at,is_archived`,
     );
     const bookmarks = bookmarksRes.ok ? ((await bookmarksRes.json()) as BookmarkRow[]) : [];
     const bookmarksById = new Map(bookmarks.map((b) => [b.id, b] as const));

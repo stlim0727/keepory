@@ -1,3 +1,4 @@
+import type { AiSuggestionsMode } from "@/domain/ai-suggestions-pref";
 import { isContentType, type ImportItem } from "@/domain/import";
 import { mockUserId } from "@/domain/mock-data";
 import {
@@ -64,6 +65,7 @@ interface Dependencies {
   syncPendingRef: RefObject<boolean>;
   syncPendingForceRef: RefObject<boolean>;
   syncNowRef: RefObject<((options?: { force?: boolean; }) => Promise<boolean>) | null>;
+  aiSuggestionsModeRef?: RefObject<AiSuggestionsMode>;
 }
 
 export function useImportBookmarks({
@@ -90,6 +92,7 @@ export function useImportBookmarks({
   syncPendingRef,
   syncPendingForceRef,
   syncNowRef,
+  aiSuggestionsModeRef,
 }: Dependencies) {
 
   // Bulk re-ingest of imported items. Mirrors addBookmark's local-first create
@@ -439,9 +442,12 @@ export function useImportBookmarks({
               favicon_url: faviconUrl,
               site_name: siteName,
               metadata_status: metadataStatus,
-              // #671: never let an imported/restored bookmark auto-spend AI
-              // quota — only a fresh save/share gets automatic server-side AI.
-              enrichment_policy: "skip",
+              // #671 & #940: External imports trickle-enrich gradually when
+              // AI suggestions are enabled; otherwise stay 'skip'. Backup restores
+              // keep 'skip' (already carry snapshot or were intentional exports).
+              enrichment_policy: isBackupRestore
+                ? "skip"
+                : (aiSuggestionsModeRef?.current === "off" ? "skip" : "trickle"),
               created_at: itemCreatedAt,
             },
             sync_status: "pending",
