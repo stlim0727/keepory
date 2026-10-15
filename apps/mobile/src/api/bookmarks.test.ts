@@ -881,6 +881,7 @@ test('fetchAiQueueSnapshot returns bookmark-addressable active and failed server
         {
           bookmark_id: '00000000-0000-4000-8000-000000000001',
           status: 'processing',
+          priority: 10,
           attempts: 2,
           created_at: '2026-08-05T00:00:00.000Z',
           updated_at: '2026-08-05T00:01:00.000Z',
@@ -893,8 +894,9 @@ test('fetchAiQueueSnapshot returns bookmark-addressable active and failed server
   const rows = await api.fetchAiQueueSnapshot();
 
   assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.priority, 10);
   const params = new URLSearchParams(seenPaths[0].split('?')[1]);
-  assert.equal(params.get('select'), 'bookmark_id,status,attempts,created_at,updated_at');
+  assert.equal(params.get('select'), 'bookmark_id,status,priority,attempts,created_at,updated_at');
   assert.equal(params.get('status'), 'in.(pending,processing,failed)');
   assert.equal(params.get('order'), 'created_at.asc,bookmark_id.asc');
 });
