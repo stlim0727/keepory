@@ -21,6 +21,7 @@ import {
   isGoogleSearchUrl,
   youtubeVideoId,
 } from './page-metadata.ts';
+import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
 
 export interface UrlTitle {
   title: string;
@@ -54,6 +55,10 @@ export function describeKnownUrl(rawUrl: string): UrlTitle | null {
   }
   const host = url.hostname.replace(/^www\./, '').replace(/^m\./, '');
   const segs = url.pathname.split('/').filter(Boolean);
+
+  if (isGoogleMapsUrl(rawUrl)) {
+    return { title: googleMapsPlaceName(rawUrl) ?? 'Google Maps', preview_image_url: null };
+  }
 
   // YouTube: the id is opaque, but it deterministically yields both a clean
   // label and a real thumbnail — so a failed fetch still looks fully enriched.
@@ -229,6 +234,8 @@ export function isRepairableSourceTitle(bookmark: { url: string | null; title: s
     ) {
       return true;
     }
+    if (isGenericGoogleMapsTitle(bookmark.title ?? undefined, bookmark.url)) return true;
+    if (isGoogleMapsUrl(bookmark.url) && trimmed === 'before you continue to google') return true;
     if (
       (trimmed === 'google' ||
         trimmed === 'google search' ||

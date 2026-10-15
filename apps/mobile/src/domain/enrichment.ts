@@ -110,7 +110,7 @@ export async function enrichBookmark(
       title: fetched.title ?? fallback.title,
       site_name: fetched.site_name ?? fallback.site_name,
       favicon_url: fetched.favicon_url ?? fallback.favicon_url,
-      preview_image_url: fetched.preview_image_url ?? fallback.preview_image_url,
+      preview_image_url: fetched.preview_image_url !== undefined ? fetched.preview_image_url : fallback.preview_image_url,
     };
     const patch: Partial<Bookmark> = {};
     // A source app's share-sheet title is generated metadata, not a user edit.
@@ -124,7 +124,7 @@ export async function enrichBookmark(
       // Record provenance: true when the title came from the URL fallback (no
       // fetched title), false when it's a real fetched page title. Lets the
       // backfill/UI trust a recorded fact instead of string-matching.
-      patch.title_is_derived = !fetched.title;
+      patch.title_is_derived = !fetched.title || fetched.title_is_derived === true;
       // Diagnostic: the page fetch gave no title, so we're labelling the
       // bookmark with a value derived from its URL (a path slug or host). This
       // is the "the preview is just the URL / a random-looking string" moment —
@@ -143,7 +143,7 @@ export async function enrichBookmark(
     if (bookmark.favicon_url == null) {
       patch.favicon_url = derived.favicon_url;
     }
-    if (bookmark.preview_image_url == null && derived.preview_image_url != null) {
+    if (bookmark.preview_image_url == null && (derived.preview_image_url != null || fetched.preview_image_url === null)) {
       patch.preview_image_url = derived.preview_image_url;
     }
     return { patch, metadata_status: 'complete' };

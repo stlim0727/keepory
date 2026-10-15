@@ -8,6 +8,7 @@
 import { Parser } from 'htmlparser2';
 import { fetchPublicPreview, isPublicPreviewUrl } from './preview-network.ts';
 import { previewFetch } from '@/domain/preview-fetch';
+import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
 
 // Relative .ts import (not the @ alias) so Node's test runner can resolve it.
 import { recordLog } from '../observability/log-buffer.ts';
@@ -91,9 +92,12 @@ const OEMBED_HEADERS: Record<string, string> = {
 
 export interface FetchedMetadata {
   title?: string;
+  /** True when a provider shell's title was recovered from its URL. */
+  title_is_derived?: boolean;
   site_name?: string;
   favicon_url?: string;
-  preview_image_url?: string;
+  /** null explicitly rejects an unrelated shell image; undefined means unavailable. */
+  preview_image_url?: string | null;
 }
 
 function clean(value: string | undefined): string | undefined {
@@ -163,6 +167,7 @@ export function isChallengeOrBoilerplateTitle(title: string | undefined): boolea
     lower === 'checking your browser...' ||
     lower.startsWith('checking your browser before accessing') ||
     lower === 'before you continue to youtube' ||
+    lower === 'before you continue to google' ||
     lower === 'before you continue'
   );
 }
@@ -262,8 +267,12 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
 
   const image = meta.get('og:image') ?? meta.get('og:image:url') ?? meta.get('twitter:image');
   let candidateTitle = [meta.get('og:title'), meta.get('twitter:title'), title].find(
-    (t) => t && !isChallengeOrBoilerplateTitle(t),
+    (t) => t && !isChallengeOrBoilerplateTitle(t) && !isGenericGoogleMapsTitle(t, baseUrl),
   );
+
+  const mapsShell = isGoogleMapsUrl(baseUrl) && !candidateTitle;
+  const mapsPlaceName = mapsShell ? googleMapsPlaceName(baseUrl) : null;
+  if (mapsPlaceName) candidateTitle = mapsPlaceName;
 
   if (isGoogleSearchUrl(baseUrl) && isGenericGoogleSearchTitle(candidateTitle, baseUrl)) {
     const query = extractGoogleSearchQuery(baseUrl);
@@ -273,14 +282,17 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
   }
 
   const isGoogle = isGoogleHost(baseUrl);
-  const candidateSiteName = meta.get('og:site_name') || (isGoogle ? 'Google' : undefined);
+  const candidateSiteName = meta.get('og:site_name') || (isGoogleMapsUrl(baseUrl) ? 'Google Maps' : isGoogle ? 'Google' : undefined);
   const candidateFavicon = favicon || (isGoogle ? 'https://www.google.com/favicon.ico' : undefined);
+  const previewImage = image ? resolveHref(image, baseUrl) : undefined;
 
   return {
     title: candidateTitle,
+    ...(mapsPlaceName ? { title_is_derived: true } : {}),
     site_name: candidateSiteName,
     favicon_url: candidateFavicon,
-    preview_image_url: image ? resolveHref(image, baseUrl) : undefined,
+    // A generic Maps shell's static map can be centered on the viewer's location.
+    preview_image_url: mapsShell || (isGoogleMapsUrl(baseUrl) && !previewImage) ? null : previewImage,
   };
 }
 
@@ -427,22 +439,28 @@ async function readCappedBody(
 async function fetchHtmlMetadata(url: string, userAgent: string): Promise<HtmlFetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  let finalUrl = url;
+  const failed = (outcome: string): HtmlFetchResult => ({
+    metadata: googleMapsPlaceName(finalUrl) ? parsePageMetadata('', finalUrl) : null,
+    outcome,
+    finalUrl,
+  });
   try {
     const response = await fetchPublicPreview(url, {
       signal: controller.signal,
       headers: htmlHeaders(userAgent, url),
     });
+    finalUrl = response.url || url;
     if (!response.ok) {
-      return { metadata: null, outcome: `http_${response.status}` };
+      return failed(`http_${response.status}`);
     }
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('html')) {
-      return { metadata: null, outcome: `non_html:${contentType.split(';')[0] || 'unknown'}` };
+      return failed(`non_html:${contentType.split(';')[0] || 'unknown'}`);
     }
     // Read raw bytes and decode with the page's real charset. Many Korean/CJK
     // sites serve legacy encodings (EUC-KR, Shift_JIS, …), often declared only
     // in a <meta> tag, so decoding as UTF-8 produces mojibake.
-    const finalUrl = response.url || url;
     const byteLimit = htmlByteLimit(finalUrl);
     const needsMore = byteLimit > MAX_HTML_BYTES
       ? async (prefix: Uint8Array) => {
@@ -455,7 +473,7 @@ async function fetchHtmlMetadata(url: string, userAgent: string): Promise<HtmlFe
     const body = await readCappedBody(response, byteLimit, needsMore);
     if (!body) {
       const declared = response.headers.get('content-length') ?? 'unknown';
-      return { metadata: null, outcome: `too_large:${declared}` };
+      return failed(`too_large:${declared}`);
     }
     const charset = detectCharset(contentType, body.bytes);
     const html = await decodeHtml(body.bytes, charset);
@@ -486,7 +504,7 @@ async function fetchHtmlMetadata(url: string, userAgent: string): Promise<HtmlFe
     }
     return { metadata, outcome: 'ok', finalUrl, discoveredOembedUrl };
   } catch (err) {
-    return { metadata: null, outcome: `error:${err instanceof Error ? err.name : 'unknown'}` };
+    return failed(`error:${err instanceof Error ? err.name : 'unknown'}`);
   } finally {
     clearTimeout(timer);
   }
@@ -790,6 +808,7 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
   }
   if (
     bot.metadata?.title &&
+    !bot.metadata.title_is_derived &&
     !isGenericNaverMapTitle(bot.metadata.title, botTargetUrl) &&
     !isGenericGoogleSearchTitle(bot.metadata.title, botTargetUrl) &&
     !isGenericYouTubeTitle(bot.metadata.title, botTargetUrl) &&
@@ -800,7 +819,10 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
   // The honest request was refused or returned a title-less shell; try once as a
   // browser. Keep the bot result as a fallback so we never discard usable
   // partial metadata (e.g. a favicon) the browser retry can't improve on.
-  const browser = await fetchHtmlMetadata(target, BROWSER_USER_AGENT);
+  // Retry the expanded Maps destination: a browser UA on the short link may
+  // receive a Firebase trampoline instead of the place page.
+  const browserTarget = bot.metadata?.title_is_derived && bot.finalUrl ? bot.finalUrl : target;
+  const browser = await fetchHtmlMetadata(browserTarget, BROWSER_USER_AGENT);
   if (browser.discoveredOembedUrl && browser.discoveredOembedUrl !== bot.discoveredOembedUrl) {
     const discovered = await fetchOembed(browser.discoveredOembedUrl);
     if (discovered?.title) {
@@ -822,8 +844,12 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
         : `browser_redirect=${redirectedOembed.outcome}`;
     }
   }
-  let result = browser.metadata ?? bot.metadata;
-  const landedOn = browser.finalUrl ?? bot.finalUrl;
+  const keepMapsFallback = bot.metadata?.title_is_derived &&
+    (!browser.metadata?.title || isChallengeOrBoilerplateTitle(browser.metadata.title) ||
+      isGenericGoogleSearchTitle(browser.metadata.title) ||
+      /^https:\/\/consent\.google\./i.test(browser.finalUrl ?? ''));
+  let result = keepMapsFallback ? bot.metadata : browser.metadata ?? bot.metadata;
+  const landedOn = keepMapsFallback ? bot.finalUrl : browser.finalUrl ?? bot.finalUrl;
   const landedUrl = landedOn || target;
 
   // SPA shell with no title: if we landed on a page that has a server-rendered
