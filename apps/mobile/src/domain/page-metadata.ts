@@ -8,6 +8,7 @@
 import { Parser } from 'htmlparser2';
 import { fetchPublicPreview, isPublicPreviewUrl } from './preview-network.ts';
 import { previewFetch } from '@/domain/preview-fetch';
+import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
 
 // Relative .ts import (not the @ alias) so Node's test runner can resolve it.
 import { recordLog } from '../observability/log-buffer.ts';
@@ -93,7 +94,8 @@ export interface FetchedMetadata {
   title?: string;
   site_name?: string;
   favicon_url?: string;
-  preview_image_url?: string;
+  /** null explicitly rejects an unrelated shell image; undefined means unavailable. */
+  preview_image_url?: string | null;
 }
 
 function clean(value: string | undefined): string | undefined {
@@ -262,8 +264,11 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
 
   const image = meta.get('og:image') ?? meta.get('og:image:url') ?? meta.get('twitter:image');
   let candidateTitle = [meta.get('og:title'), meta.get('twitter:title'), title].find(
-    (t) => t && !isChallengeOrBoilerplateTitle(t),
+    (t) => t && !isChallengeOrBoilerplateTitle(t) && !isGenericGoogleMapsTitle(t, baseUrl),
   );
+
+  const mapsShell = isGoogleMapsUrl(baseUrl) && !candidateTitle;
+  if (mapsShell) candidateTitle = googleMapsPlaceName(baseUrl) ?? undefined;
 
   if (isGoogleSearchUrl(baseUrl) && isGenericGoogleSearchTitle(candidateTitle, baseUrl)) {
     const query = extractGoogleSearchQuery(baseUrl);
@@ -273,14 +278,15 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
   }
 
   const isGoogle = isGoogleHost(baseUrl);
-  const candidateSiteName = meta.get('og:site_name') || (isGoogle ? 'Google' : undefined);
+  const candidateSiteName = meta.get('og:site_name') || (isGoogleMapsUrl(baseUrl) ? 'Google Maps' : isGoogle ? 'Google' : undefined);
   const candidateFavicon = favicon || (isGoogle ? 'https://www.google.com/favicon.ico' : undefined);
 
   return {
     title: candidateTitle,
     site_name: candidateSiteName,
     favicon_url: candidateFavicon,
-    preview_image_url: image ? resolveHref(image, baseUrl) : undefined,
+    // A generic Maps shell's static map can be centered on the viewer's location.
+    preview_image_url: mapsShell ? null : image ? resolveHref(image, baseUrl) : undefined,
   };
 }
 

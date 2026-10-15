@@ -110,7 +110,7 @@ export async function enrichBookmark(
       title: fetched.title ?? fallback.title,
       site_name: fetched.site_name ?? fallback.site_name,
       favicon_url: fetched.favicon_url ?? fallback.favicon_url,
-      preview_image_url: fetched.preview_image_url ?? fallback.preview_image_url,
+      preview_image_url: fetched.preview_image_url !== undefined ? fetched.preview_image_url : fallback.preview_image_url,
     };
     const patch: Partial<Bookmark> = {};
     // A source app's share-sheet title is generated metadata, not a user edit.
@@ -143,7 +143,7 @@ export async function enrichBookmark(
     if (bookmark.favicon_url == null) {
       patch.favicon_url = derived.favicon_url;
     }
-    if (bookmark.preview_image_url == null && derived.preview_image_url != null) {
+    if (bookmark.preview_image_url == null && (derived.preview_image_url != null || fetched.preview_image_url === null)) {
       patch.preview_image_url = derived.preview_image_url;
     }
     return { patch, metadata_status: 'complete' };

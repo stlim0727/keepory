@@ -21,6 +21,7 @@ import {
   isGoogleSearchUrl,
   youtubeVideoId,
 } from './page-metadata.ts';
+import { isGenericGoogleMapsTitle } from './google-maps.ts';
 
 export interface UrlTitle {
   title: string;
@@ -229,6 +230,7 @@ export function isRepairableSourceTitle(bookmark: { url: string | null; title: s
     ) {
       return true;
     }
+    if (isGenericGoogleMapsTitle(bookmark.title ?? undefined, bookmark.url)) return true;
     if (
       (trimmed === 'google' ||
         trimmed === 'google search' ||
