@@ -84,12 +84,25 @@ test('Google Maps handling stays scoped to recognized map hosts and paths', () =
   }
   assert.equal(isGoogleMapsUrl('https://goo.gl/maps/abc'), true);
   assert.equal(isGoogleMapsUrl('https://maps.google.com/'), true);
-  for (const host of ['www.google.co.uk', 'www.google.co.kr', 'google.de']) {
+  for (const host of ['www.google.co.uk', 'www.google.co.kr', 'google.de', 'maps.google.co.uk', 'maps.google.de']) {
     const url = placeUrl.replace('www.google.com', host);
     assert.equal(isGoogleMapsUrl(url), true);
     assert.equal(googleMapsPlaceName(url), placeName);
+    assert.equal(deriveMetadata(url).title, placeName);
     assert.equal(parsePageMetadata(shell, url).preview_image_url, null);
     assert.equal(isRepairableSourceTitle({ url, title: 'Google Maps' }), true);
+  }
+});
+
+test('title-only Maps metadata explicitly clears a stale image during refresh', async () => {
+  for (const image of ['', '<meta property="og:image" content="file:///private/image.png">']) {
+    const metadata = parsePageMetadata(`<head><title>Restaurant details</title>${image}</head>`, placeUrl);
+    assert.equal(metadata.title, 'Restaurant details');
+    assert.equal(metadata.preview_image_url, null);
+    const result = await enrichBookmark({ url: placeUrl, title: null, preview_image_url: null } as Bookmark,
+      async () => metadata);
+    assert.equal(result.patch.title, 'Restaurant details');
+    assert.equal(result.patch.preview_image_url, null);
   }
 });
 

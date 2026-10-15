@@ -284,6 +284,7 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
   const isGoogle = isGoogleHost(baseUrl);
   const candidateSiteName = meta.get('og:site_name') || (isGoogleMapsUrl(baseUrl) ? 'Google Maps' : isGoogle ? 'Google' : undefined);
   const candidateFavicon = favicon || (isGoogle ? 'https://www.google.com/favicon.ico' : undefined);
+  const previewImage = image ? resolveHref(image, baseUrl) : undefined;
 
   return {
     title: candidateTitle,
@@ -291,7 +292,7 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
     site_name: candidateSiteName,
     favicon_url: candidateFavicon,
     // A generic Maps shell's static map can be centered on the viewer's location.
-    preview_image_url: mapsShell ? null : image ? resolveHref(image, baseUrl) : undefined,
+    preview_image_url: mapsShell || (isGoogleMapsUrl(baseUrl) && !previewImage) ? null : previewImage,
   };
 }
 
