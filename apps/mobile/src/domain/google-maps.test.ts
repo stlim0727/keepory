@@ -271,3 +271,13 @@ test('STASH-7R: existing memos, manual titles, ambiguous commas and other sites 
     assert.equal(result.patch.notes, undefined);
   }
 });
+
+
+test('STASH-7R: comma-bearing business names keep numeric phrases before the real address', async () => {
+  const title = 'ABC, 24/7 Self Storage, 123 Main Street, Boston';
+  const result = await enrichBookmark({ url: placeUrl, title, title_is_derived: true, notes: null } as Bookmark,
+    async () => null);
+  assert.equal(result.patch.title, 'ABC, 24/7 Self Storage');
+  assert.equal(result.patch.notes, '123 Main Street, Boston');
+  assert.equal(result.patch.title_is_derived, true);
+});

@@ -304,7 +304,7 @@ export function useBookmarkEdits({
           // title is a known repairable placeholder (e.g. 'Bbs View' or 'Reddit').
           const wouldDegradeExistingTitle =
             patch.title_is_derived === true &&
-            patch.notes === undefined &&
+            (patch.notes === undefined || `${patch.title}, ${patch.notes}` !== bookmark.title) &&
             Boolean(bookmark.title?.trim()) &&
             !isRepairableSourceTitle(bookmark);
           if (!wouldDegradeExistingTitle) {

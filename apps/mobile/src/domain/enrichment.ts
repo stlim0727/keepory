@@ -138,10 +138,12 @@ export async function enrichBookmark(
         );
       }
     }
-    const place = patch.title && !bookmark.notes?.trim()
-      ? googleMapsPlaceDetails(bookmark.url, patch.title) : null;
+    const mapsTitle = patch.title ?? (bookmark.title_is_derived === true ? bookmark.title : null);
+    const place = mapsTitle && !bookmark.notes?.trim()
+      ? googleMapsPlaceDetails(bookmark.url, mapsTitle) : null;
     if (place) {
       patch.title = place.title;
+      patch.title_is_derived ??= bookmark.title_is_derived;
       patch.notes = place.address;
     }
     if (bookmark.site_name == null) {

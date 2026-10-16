@@ -86,3 +86,19 @@ test.each([false, true])('STASH-7R: Maps title and address persist together, pro
     metadata_status: 'complete',
   }));
 });
+
+test('STASH-7R: failed refresh keeps a better source title over an unrelated address fallback', async () => {
+  fakeRepo.__reset([makeStoredBookmark({
+    id: SYNCED_ID, url: 'https://www.google.com/maps/place/URL+Fallback+Place,+123+Main+Street/',
+    title: 'Better source-app place title', title_is_derived: true, notes: null, metadata_status: 'complete',
+  })]);
+  mockEnrichBookmark.mockResolvedValue({
+    patch: { title: 'URL Fallback Place', title_is_derived: true, notes: '123 Main Street' },
+    metadata_status: 'complete',
+  });
+  const { result } = await renderStore();
+  await act(async () => { await result.current.refreshBookmarkPreview(SYNCED_ID); });
+  expect(fakeRepo.__bookmarks().find((row) => row.id === SYNCED_ID)).toMatchObject({
+    title: 'Better source-app place title', notes: null,
+  });
+});
