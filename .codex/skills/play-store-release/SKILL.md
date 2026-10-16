@@ -34,7 +34,11 @@ gh run list --repo stlim0727/stash --workflow android-playstore.yml --limit 5 \
   --json databaseId,status,conclusion,headSha,url
 ```
 
-`inspect` creates and deletes an unpublished edit; it does not change a track.
+`inspect` uses the read-only release-summary endpoint; it never creates an edit
+and can run while EAS submits. Summaries contain release lifecycle state and
+artifact codes, not the full notes or track rollout status. Do not replace this
+with edit creation: a new edit invalidates another open edit by the same API
+user. See [Google edit semantics](https://developers.google.com/android-publisher/edits).
 Credential absence is not evidence Play is unavailable: check configured app
 capabilities and bindings. Never extract GitHub secret values. Existing workflow
 secrets can build remotely even when local EAS says "Not logged in".
@@ -108,7 +112,9 @@ Prepare a UTF-8 JSON file with independently written notes, for example:
 ]
 ```
 
-First preview, replacing all sample arguments with inspected values:
+First preview, replacing all sample arguments with inspected values. Preview
+shows read-only summaries and the proposed notes; it is provisional. Exact track
+status, code guards, and idempotence are checked inside the commit's edit:
 
 ```sh
 node scripts/play-production-release.mjs promote --credentials "$PLAY_KEY_PATH" \
@@ -116,18 +122,24 @@ node scripts/play-production-release.mjs promote --credentials "$PLAY_KEY_PATH" 
   --notes /tmp/play-release-notes.json
 ```
 
-When production publishing is authorized, repeat with `--commit`. That flag
-performs the actual rollout; do not ask again if the current request already
-authorizes it. An empty production track uses `--expected-production-codes ''`;
-multiple existing codes use a comma-separated list from inspection.
+When production publishing is authorized, wait for EAS Submit and any other
+publisher/Console operations to finish. Keep publisher operations serialized
+through the entire promotion and readback. Then repeat with
+`--commit --publisher-idle`: the latter acknowledges you verified this exclusive
+window; it is not a distributed lock. The helper cannot discover another
+publisher's open edit. Do not ask again if the request already authorizes the
+rollout. An empty production track uses `--expected-production-codes ''`.
+
+The commit uses `changesInReviewBehavior=ERROR_IF_IN_REVIEW`, so an existing
+review blocks publication instead of being cancelled. Do not remove this guard
+to force publication. See [Google commit behavior](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit).
 
 The helper checks the exact completed internal version/code, the expected current
 production codes, increasing versionCode, and both locales. It replaces the
 production track release with a `completed` release (full rollout), validates the
 edit, commits once, then rereads production to verify version, code, status, and
-notes. Use a different reviewed approach for staged rollouts or preserving
-multiple device-targeted production releases; this helper intentionally replaces
-them and requires their codes to be explicitly acknowledged. A repeated call
+notes. Staged, halted, draft, and multiple production releases are rejected;
+use a separate reviewed approach for those cases. A repeated commit call
 with the same already-published version/code/notes succeeds without a new commit.
 
 On API policy/access errors, stop the rollout and report the concrete blocker.

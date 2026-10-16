@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
 const PACKAGE = 'com.keepory.app';
-const BASE = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE}/edits`;
+const BASE = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE}`;
 const canonical = (value) => JSON.stringify([...value].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
 const codes = (track) => (track?.releases ?? []).flatMap((r) => r.versionCodes ?? []);
 
@@ -31,6 +31,10 @@ export function planPromotion(tracks, options) {
     canonical(codes(production)) === canonical([code]) &&
     canonical(production.releases[0].releaseNotes ?? []) === canonical(release.releaseNotes);
   if (alreadyPublished) return { release, alreadyPublished: true };
+  if ((production?.releases ?? []).some((r) => r.status !== 'completed') ||
+      (production?.releases ?? []).length > 1) {
+    throw new Error('Staged, halted, draft, or multiple production releases require a separate reviewed rollout plan.');
+  }
   if (!Array.isArray(expectedProductionCodes) ||
       canonical(codes(production)) !== canonical(expectedProductionCodes)) {
     throw new Error('Production changed or expected production codes are missing. Inspect tracks again; do not overwrite blindly.');
@@ -63,7 +67,7 @@ export async function publisher(credentialsPath) {
   if (!auth.ok) throw new Error(`Google authentication failed (${auth.status}); check credential binding and access.`);
   const { access_token: token } = await auth.json();
   if (!token) throw new Error('Google authentication returned no access token.');
-  return async (suffix = '', method = 'GET', data) => {
+  return async (suffix, method = 'GET', data) => {
     const response = await fetch(BASE + suffix, {
       method, signal: AbortSignal.timeout(60000),
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -75,27 +79,36 @@ export async function publisher(credentialsPath) {
 }
 
 export async function withEdit(api, action) {
-  const { id } = await api('', 'POST', {});
+  const { id } = await api('/edits', 'POST', {});
   let committed = false;
   try {
-    return await action(`/${id}`, async () => {
+    return await action(`/edits/${id}`, async () => {
       // A lost commit response is ambiguous: inspect production before retrying.
-      const result = await api(`/${id}:commit`, 'POST');
+      const result = await api(`/edits/${id}:commit?changesInReviewBehavior=ERROR_IF_IN_REVIEW`, 'POST');
       committed = true;
       return result;
     });
   } finally {
     if (!committed) {
-      try { await api(`/${id}`, 'DELETE'); }
+      try { await api(`/edits/${id}`, 'DELETE'); }
       catch { console.error('Could not delete temporary edit; it will expire.'); }
     }
   }
 }
 
 export async function runRelease(api, options) {
+  // Summaries can be read without opening/invalidation of any publisher edit.
+  if (options.command === 'inspect' || !options.commit) {
+    const summaries = await Promise.all(['production', 'internal'].map(async (track) => ({
+      track, ...await api(`/tracks/${track}/releases`),
+    })));
+    return options.command === 'inspect' ? { summaries } : {
+      summaries, release: releasePayload(options), committed: false, provisional: true,
+    };
+  }
+  if (!options.publisherIdle) throw new Error('Verify all publisher operations are idle, then pass --publisher-idle before opening an edit.');
   const result = await withEdit(api, async (edit, commit) => {
     const { tracks } = await api(`${edit}/tracks`);
-    if (options.command === 'inspect') return { tracks };
     const plan = planPromotion(tracks, options);
     if (plan.alreadyPublished || !options.commit) return { ...plan, committed: false };
     await api(`${edit}/tracks/production`, 'PUT', { track: 'production', releases: [plan.release] });
@@ -119,11 +132,11 @@ async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     credentials: { type: 'string' }, version: { type: 'string' }, code: { type: 'string' },
     'expected-production-codes': { type: 'string' }, notes: { type: 'string' },
-    commit: { type: 'boolean', default: false }, help: { type: 'boolean', default: false },
+    commit: { type: 'boolean', default: false }, 'publisher-idle': { type: 'boolean', default: false }, help: { type: 'boolean', default: false },
   } });
   if (values.help) {
     console.log('Usage: node scripts/play-production-release.mjs inspect|promote --credentials PATH\n' +
-      'promote: --version X.Y.Z --code N --expected-production-codes N[,N] --notes PATH [--commit]\n' +
+      'promote: --version X.Y.Z --code N --expected-production-codes N[,N] --notes PATH [--commit --publisher-idle]\n' +
       'Without --commit, promote only prints the plan. Notes: [{language:"en-US",text:"..."},{language:"ko-KR",text:"..."}].');
     return;
   }
@@ -131,7 +144,7 @@ async function main() {
   if (!['inspect', 'promote'].includes(command) || positionals.length !== 1) throw new Error('Use inspect or promote; see --help.');
   const credentials = values.credentials || process.env.GOOGLE_APPLICATION_CREDENTIALS;
   if (!credentials) throw new Error('Set --credentials or GOOGLE_APPLICATION_CREDENTIALS to the publisher key path.');
-  const options = { command, commit: values.commit, version: values.version, code: values.code };
+  const options = { command, commit: values.commit, version: values.version, code: values.code, publisherIdle: values['publisher-idle'] };
   if (command === 'promote') {
     options.notes = JSON.parse(await readFile(values.notes, 'utf8'));
     options.expectedProductionCodes = values['expected-production-codes']?.split(',').filter(Boolean);

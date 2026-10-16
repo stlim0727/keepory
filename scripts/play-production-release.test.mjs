@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { planPromotion, runRelease } from './play-production-release.mjs';
 
 const notes = [{ language: 'en-US', text: 'Improved sync.' }, { language: 'ko-KR', text: '동기화 개선.' }];
-const options = { command: 'promote', version: '1.2.8', code: '32', expectedProductionCodes: ['31'], notes };
+const options = { command: 'promote', version: '1.2.8', code: '32', expectedProductionCodes: ['31'], notes, publisherIdle: true };
 const original = () => [
   { track: 'production', releases: [{ name: '1.2.7', versionCodes: ['31'], status: 'completed' }] },
   { track: 'internal', releases: [{ name: '1.2.8', versionCodes: ['32'], status: 'completed' }] },
@@ -17,10 +17,11 @@ function fakePublisher({ fail, mismatchReadback = false } = {}) {
   return { calls, api: async (path = '', method = 'GET', data) => {
     calls.push([path, method, data]);
     if (fail?.(path, method)) throw new Error('simulated failure');
-    if (!path && method === 'POST') return { id: String(++editNumber) };
+    if (path === '/edits' && method === 'POST') return { id: String(++editNumber) };
+    if (/\/tracks\/(production|internal)\/releases$/.test(path)) return { releases: [] };
     if (path.endsWith('/tracks')) return { tracks: structuredClone(tracks) };
     if (method === 'PUT') { pending = data; return data; }
-    if (path.endsWith(':commit')) {
+    if (path.includes(':commit')) {
       if (!mismatchReadback) tracks = [pending, tracks[1]];
       return { id: 'committed' };
     }
@@ -33,8 +34,9 @@ test('preview preserves distinct locales and never updates or commits a track', 
   const result = await runRelease(f.api, options);
   assert.equal(result.committed, false);
   assert.deepEqual(result.release.releaseNotes, notes);
-  assert.equal(f.calls.some(([path, method]) => method === 'PUT' || path.endsWith(':commit')), false);
-  assert.equal(f.calls.at(-1)[1], 'DELETE');
+  assert.equal(f.calls.some(([path, method]) => method === 'PUT' || path.includes(':commit')), false);
+  assert.equal(f.calls.every(([, method]) => method === 'GET'), true);
+  assert.equal(result.provisional, true);
 });
 
 test('commit validates first, publishes once, then verifies production in a new edit', async () => {
@@ -42,8 +44,8 @@ test('commit validates first, publishes once, then verifies production in a new 
   const result = await runRelease(f.api, { ...options, commit: true });
   assert.equal(result.verified, true);
   assert.deepEqual(f.calls.map(([path, method]) => `${method} ${path}`), [
-    'POST ', 'GET /1/tracks', 'PUT /1/tracks/production', 'POST /1:validate',
-    'POST /1:commit', 'POST ', 'GET /2/tracks', 'DELETE /2',
+    'POST /edits', 'GET /edits/1/tracks', 'PUT /edits/1/tracks/production', 'POST /edits/1:validate',
+    'POST /edits/1:commit?changesInReviewBehavior=ERROR_IF_IN_REVIEW', 'POST /edits', 'GET /edits/2/tracks', 'DELETE /edits/2',
   ]);
 });
 
@@ -79,23 +81,23 @@ test('same completed release and notes is idempotent despite stale expected old 
   const calls = [];
   const api = async (path = '', method = 'GET') => {
     calls.push([path, method]);
-    return !path ? { id: '1' } : path.endsWith('/tracks') ? { tracks: [{ track: 'production', releases: [release] }] } : {};
+    return path === '/edits' ? { id: '1' } : path.endsWith('/tracks') ? { tracks: [{ track: 'production', releases: [release] }] } : {};
   };
   assert.equal((await runRelease(api, { ...options, commit: true })).alreadyPublished, true);
-  assert.equal(calls.some(([path, method]) => method === 'PUT' || path.endsWith(':commit')), false);
+  assert.equal(calls.some(([path, method]) => method === 'PUT' || path.includes(':commit')), false);
 });
 
 test('validation failure deletes the edit and never commits', async () => {
   const f = fakePublisher({ fail: (path) => path.endsWith(':validate') });
   await assert.rejects(runRelease(f.api, { ...options, commit: true }), /simulated/);
-  assert.equal(f.calls.some(([path]) => path.endsWith(':commit')), false);
+  assert.equal(f.calls.some(([path]) => path.includes(':commit')), false);
   assert.equal(f.calls.at(-1)[1], 'DELETE');
 });
 
 test('ambiguous commit failure is not retried automatically', async () => {
-  const f = fakePublisher({ fail: (path) => path.endsWith(':commit') });
+  const f = fakePublisher({ fail: (path) => path.includes(':commit') });
   await assert.rejects(runRelease(f.api, { ...options, commit: true }), /simulated/);
-  assert.equal(f.calls.filter(([path]) => path.endsWith(':commit')).length, 1);
+  assert.equal(f.calls.filter(([path]) => path.includes(':commit')).length, 1);
 });
 
 test('reports mismatched readback without a second publish', async () => {
@@ -129,6 +131,30 @@ test('publisher signs the Google assertion and uses the token without printing c
     assert.match(url, /applications\/com\.keepory\.app\/edits$/);
     return Response.json({ id: 'test-edit' });
   });
-  assert.deepEqual(await (await publisher(keyPath))('', 'POST', {}), { id: 'test-edit' });
+  assert.deepEqual(await (await publisher(keyPath))('/edits', 'POST', {}), { id: 'test-edit' });
   assert.equal(requests, 2);
+});
+
+
+test('inspection uses only read-only summary endpoints', async () => {
+  const f = fakePublisher();
+  await runRelease(f.api, { command: 'inspect' });
+  assert.deepEqual(f.calls.map(([path, method]) => `${method} ${path}`), [
+    'GET /tracks/production/releases', 'GET /tracks/internal/releases',
+  ]);
+});
+
+test('commit requires an exclusive idle publisher window before creating an edit', async () => {
+  const f = fakePublisher();
+  await assert.rejects(runRelease(f.api, { ...options, commit: true, publisherIdle: false }), /publisher-idle/);
+  assert.equal(f.calls.length, 0);
+});
+
+test('refuses staged, halted, draft, and multiple completed production releases', () => {
+  for (const status of ['inProgress', 'halted', 'draft']) {
+    const tracks = original(); tracks[0].releases[0].status = status;
+    assert.throws(() => planPromotion(tracks, options), /separate reviewed rollout/);
+  }
+  const tracks = original(); tracks[0].releases.push({ status: 'completed', versionCodes: ['30'] });
+  assert.throws(() => planPromotion(tracks, { ...options, expectedProductionCodes: ['31', '30'] }), /separate reviewed rollout/);
 });
