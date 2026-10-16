@@ -25,6 +25,11 @@ on:
         description: 'Expected current production version codes (comma-separated, e.g. 32)'
         required: false
         default: '32'
+      publisher_idle:
+        description: 'Acknowledge all publisher and Play Console operations are idle'
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: android-playstore
@@ -51,6 +56,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           VERSION_CODE: ${{ inputs.version_code }}
           EXPECTED_PRODUCTION_CODES: ${{ inputs.expected_production_codes }}
+          PUBLISHER_IDLE: ${{ inputs.publisher_idle }}
         run: |
           KEY_PATH="/tmp/play-service-account.json"
           NOTES_PATH="/tmp/play-release-notes.json"
@@ -64,13 +70,18 @@ jobs:
             const doc = fs.readFileSync(`docs/release-notes/v${v}.md`, "utf8");
             const enMatch = doc.match(/## English\s*\n\s*([\s\S]*?)(?=\n##|$)/i);
             const koMatch = doc.match(/## (?:한국어|Korean)\s*\n\s*([\s\S]*?)(?=\n##|$)/i);
-            const en = (enMatch ? enMatch[1].trim() : "").slice(0, 500);
-            const ko = (koMatch ? koMatch[1].trim() : "").slice(0, 500);
+            const en = enMatch ? enMatch[1].trim() : "";
+            const ko = koMatch ? koMatch[1].trim() : "";
             fs.writeFileSync(process.argv[1], JSON.stringify([
               { language: "en-US", text: en },
               { language: "ko-KR", text: ko }
             ], null, 2));
           ' "$NOTES_PATH"
+
+          IDLE_FLAG=""
+          if [ "$PUBLISHER_IDLE" = "true" ]; then
+            IDLE_FLAG="--publisher-idle"
+          fi
 
           node scripts/play-production-release.mjs promote \
             --credentials "$KEY_PATH" \
@@ -78,6 +89,6 @@ jobs:
             --code "$VERSION_CODE" \
             --expected-production-codes "$EXPECTED_PRODUCTION_CODES" \
             --notes "$NOTES_PATH" \
-            --commit --publisher-idle
+            --commit $IDLE_FLAG
 
           rm -f "$KEY_PATH" "$NOTES_PATH"
