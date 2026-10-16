@@ -56,6 +56,18 @@ import { ANONYMOUS_NUDGE_DISMISSED_PREF_KEY } from '@/ui/AnonymousNudgeBanner';
 import { makeStoredBookmark } from './helpers/fake-repository';
 import type { FakeRepositoryModule } from './helpers/fake-repository';
 
+// The native Jest window needs browser listeners for the web tutorial effect.
+const originalAddEventListener = window.addEventListener;
+const originalRemoveEventListener = window.removeEventListener;
+beforeAll(() => {
+  window.addEventListener = jest.fn();
+  window.removeEventListener = jest.fn();
+});
+afterAll(() => {
+  window.addEventListener = originalAddEventListener;
+  window.removeEventListener = originalRemoveEventListener;
+});
+
 const defaultPlatformOS = Platform.OS;
 const fakeRepo = jest.requireMock('@/storage/repository') as FakeRepositoryModule;
 
