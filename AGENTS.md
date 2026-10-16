@@ -1,6 +1,6 @@
 # Keepory agent orientation
 
-Last updated: 2026-10-13 (PR ownership and review methodology reference).
+Last updated: 2026-10-16 (reusable EAS and Play production release procedure).
 
 Keepory (historically named Stash in code) is an Expo SDK 58 / React Native
 bookmark app in `apps/mobile`, with local-first storage, Supabase REST sync,
@@ -16,6 +16,9 @@ and Cloudflare Workers web hosting. Source wins over dated prose.
 - Operational procedures live in `.claude/skills`, mirrored in `.codex/skills`.
   Prefer configured MCP tools, then applicable skills, then scripts/CLI. Change
   both skill mirrors together so agent procedures do not drift.
+- For EAS / Google Play publishing or build resumption, use
+  [play-store-release](.claude/skills/play-store-release/SKILL.md); it includes
+  exact-build promotion and verified localized notes.
 - Verify branch/PR/CI state live when relevant; dated milestones and verification
   reports are historical. Never infer a deployed migration or function from CI.
 
