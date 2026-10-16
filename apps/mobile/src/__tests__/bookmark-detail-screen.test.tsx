@@ -156,6 +156,10 @@ test('Details keeps diagnostics opt-in and reports the inline bookmark identity'
   await fireEvent.press(screen.getByLabelText('Toggle technical details'));
   expect(screen.getByText(SYNCED_ID)).toBeTruthy();
   expect(screen.getByText('Not checked on this device')).toBeTruthy();
+  const expandedTree = JSON.stringify(screen.toJSON());
+  expect(expandedTree.indexOf('"accessibilityLabel":"Bookmark ID:')).toBeGreaterThanOrEqual(0);
+  expect(expandedTree.indexOf('"accessibilityLabel":"Toggle technical details"'))
+    .toBeLessThan(expandedTree.indexOf('"accessibilityLabel":"Bookmark ID:'));
   await fireEvent.press(screen.getByLabelText('Toggle technical details'));
   expect(screen.queryByText(SYNCED_ID)).toBeNull();
   await fireEvent.press(screen.getByText('Report a problem with this bookmark'));
@@ -1645,6 +1649,8 @@ test('unmounts preview hero when the image fails to load so it does not occupy e
     expect(screen.queryByTestId('bookmark-detail-preview')).toBeNull();
   });
   expect(screen.getByTestId('bookmark-detail-refresh-preview')).toBeTruthy();
+  expect(screen.queryByTestId('detail-drawer-refresh-preview')).toBeNull();
+  expect(screen.getAllByLabelText('Refresh preview')).toHaveLength(1);
 });
 
 test('refresh and report precede details and remain available with details collapsed', async () => {
@@ -1846,4 +1852,16 @@ test('clicking a link in a plain text memo records bookmark access', async () =>
   });
   expect(openURL).toHaveBeenCalledWith('https://keepory.app');
   openURL.mockRestore();
+});
+
+
+test.each([false, true])('failed metadata offers one refresh action with hidden hero=%s', async (hidePreviewHero) => {
+  mockRouteId = SYNCED_ID;
+  fakeRepo.__reset([makeStoredBookmark({
+    id: SYNCED_ID, title: 'Failed page', url: 'https://example.com/failure', metadata_status: 'failed',
+  })]);
+  const screen = await renderDetail({ hidePreviewHero });
+  await waitFor(() => expect(screen.getByText('Failed page')).toBeTruthy());
+  expect(screen.getAllByLabelText('Refresh preview')).toHaveLength(1);
+  expect(Boolean(screen.queryByTestId('detail-drawer-refresh-preview'))).toBe(hidePreviewHero);
 });

@@ -1192,6 +1192,61 @@ export default function BookmarkDetailScreen({
     );
   })();
 
+  const renderDetailRows = (rows: typeof details) => rows.map((row, index) => {
+    const isUrlRow = row.label === t('detail.rowUrl') && isSafeMarkdownLink(row.value);
+    const rowStyle = [
+      styles.detailRow,
+      index > 0
+        ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: palette.border }
+        : null,
+    ];
+
+    if (isUrlRow) {
+      return (
+        <Pressable
+          key={row.label}
+          accessibilityRole="link"
+          accessibilityLabel={`${row.label}: ${row.value}`}
+          accessibilityHint={t('detail.openWebsite')}
+          onPress={handleOpenLink}
+          onLongPress={Platform.OS === 'android' ? handleCopyLink : undefined}
+          style={rowStyle}
+        >
+          <Text style={[styles.detailLabel, { color: palette.textSecondary }]}>{row.label}</Text>
+          <PostHogMaskView>
+            <Text
+              selectable
+              style={[styles.detailValue, { color: palette.accent, textDecorationLine: 'underline' }]}
+            >
+              {row.value}
+            </Text>
+          </PostHogMaskView>
+        </Pressable>
+      );
+    }
+
+    return (
+      <View
+        key={row.label}
+        // `accessible` + `accessibilityLabel` combine the label and
+        // value into one announced unit for VoiceOver/TalkBack — the
+        // masked value Text below has no accessible ancestor of its
+        // own otherwise, and could be skipped or announced as the
+        // mask's own sentinel label instead of its real content.
+        accessible
+        accessibilityLabel={`${row.label}: ${row.value}`}
+        style={rowStyle}
+      >
+        <Text style={[styles.detailLabel, { color: palette.textSecondary }]}>{row.label}</Text>
+        <PostHogMaskView>
+          <Text style={[styles.detailValue, { color: palette.text }]} selectable>
+            {row.value}
+          </Text>
+        </PostHogMaskView>
+      </View>
+    );
+  });
+
   const content = (
     <>
       {inline && onInlineClose ? (
@@ -1599,7 +1654,7 @@ export default function BookmarkDetailScreen({
       </Card>
 
       <View style={styles.detailsSection}>
-        {bookmark.url ? (
+        {bookmark.url && (hidePreviewHero || !(isPreviewFailed || hasImageLoadFailed)) ? (
           <Button
             testID="detail-drawer-refresh-preview"
             variant="ghost"
@@ -1635,60 +1690,7 @@ export default function BookmarkDetailScreen({
         </Pressable>
         {showDetails ? (
           <Card elevated={false} style={styles.field}>
-            {[...details, ...(showTechnicalDetails ? technicalDetails : [])].map((row, index) => {
-              const isUrlRow = row.label === t('detail.rowUrl') && isSafeMarkdownLink(row.value);
-              const rowStyle = [
-                styles.detailRow,
-                index > 0
-                  ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: palette.border }
-                  : null,
-              ];
-
-              if (isUrlRow) {
-                return (
-                  <Pressable
-                    key={row.label}
-                    accessibilityRole="link"
-                    accessibilityLabel={`${row.label}: ${row.value}`}
-                    accessibilityHint={t('detail.openWebsite')}
-                    onPress={handleOpenLink}
-                    onLongPress={Platform.OS === 'android' ? handleCopyLink : undefined}
-                    style={rowStyle}
-                  >
-                    <Text style={[styles.detailLabel, { color: palette.textSecondary }]}>{row.label}</Text>
-                    <PostHogMaskView>
-                      <Text
-                        selectable
-                        style={[styles.detailValue, { color: palette.accent, textDecorationLine: 'underline' }]}
-                      >
-                        {row.value}
-                      </Text>
-                    </PostHogMaskView>
-                  </Pressable>
-                );
-              }
-
-              return (
-                <View
-                  key={row.label}
-                  // `accessible` + `accessibilityLabel` combine the label and
-                  // value into one announced unit for VoiceOver/TalkBack — the
-                  // masked value Text below has no accessible ancestor of its
-                  // own otherwise, and could be skipped or announced as the
-                  // mask's own sentinel label instead of its real content.
-                  accessible
-                  accessibilityLabel={`${row.label}: ${row.value}`}
-                  style={rowStyle}
-                >
-                  <Text style={[styles.detailLabel, { color: palette.textSecondary }]}>{row.label}</Text>
-                  <PostHogMaskView>
-                    <Text style={[styles.detailValue, { color: palette.text }]} selectable>
-                      {row.value}
-                    </Text>
-                  </PostHogMaskView>
-                </View>
-              );
-            })}
+            {renderDetailRows(details)}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t('detail.toggleTechnicalDetailsA11y')}
@@ -1700,6 +1702,7 @@ export default function BookmarkDetailScreen({
                 {showTechnicalDetails ? t('detail.technicalDetailsHide') : t('detail.technicalDetailsShow')}
               </Text>
             </Pressable>
+            {showTechnicalDetails ? renderDetailRows(technicalDetails) : null}
             {showTechnicalDetails ? (
               <Text style={[styles.detailLabel, { color: palette.textSecondary }]}>
                 {t('detail.stateHelp')}
