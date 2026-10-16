@@ -225,6 +225,12 @@ export function TutorialModal({ visible, onClose }: TutorialModalProps) {
               {t(slide.bodyKey)}
             </Text>
 
+            {Platform.OS === 'web' && slide.key === 'capture' ? (
+              <Text style={[styles.slideDescription, { color: palette.textSecondary }]}>
+                {t('inbox.emptyHintWebNote')}
+              </Text>
+            ) : null}
+
             {/* Feature Points */}
             <View style={styles.pointsList}>
               {slide.points.map((pt, idx) => (

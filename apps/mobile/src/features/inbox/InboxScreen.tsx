@@ -2062,10 +2062,8 @@ export default function InboxScreen() {
               </Text>
             </View>
           ) : (
-            // First run: teach the real capture path for THIS platform. Native's
-            // whole point is the share sheet; web has no share intent
-            // (expo-share-intent is a no-op there — see share/), so it must not
-            // promise a "Share a link from any app" flow that doesn't exist here.
+            // First run: invite capture and account sync as distinct benefits.
+            // Native share guidance supplements the direct save action.
             <View style={styles.emptyState} testID="inbox-empty-onboarding">
               <Ionicons
                 name="bookmarks-outline"
@@ -2073,7 +2071,7 @@ export default function InboxScreen() {
                 color={palette.textSecondary}
                 style={styles.emptyGlyph}
               />
-              <Text style={[styles.emptyTitle, { color: palette.text }]}>
+              <Text style={[styles.emptyTitle, styles.emptyWelcomeTitle, { color: palette.text }]}>
                 {t('inbox.emptyTitle')}
               </Text>
               <Button
@@ -2085,44 +2083,32 @@ export default function InboxScreen() {
                 {t('inbox.emptySave')}
               </Button>
               {auth.status === 'anonymous' || auth.status === 'signed_out' ? (
-                <View style={styles.emptyAccount} testID="inbox-empty-account">
-                  <Text style={[styles.emptyAccountBenefit, { color: palette.textSecondary }]}>
-                    {t('inbox.emptySignInBenefit')}
-                  </Text>
-                  <Button
-                    variant="secondary"
-                    size="md"
-                    style={styles.emptySignInButton}
-                    onPress={() => router.push({ pathname: '/settings', params: { focus: 'account' } })}
-                    testID="inbox-empty-sign-in"
-                  >
-                    {t('settings.account.signIn')}
-                  </Button>
-                  <Text style={[styles.emptyAccountReassurance, { color: palette.textSecondary }]}>
+                <>
+                  <Text style={[styles.emptySaveReassurance, { color: palette.textSecondary }]}>
                     {t('inbox.emptySignInOptional')}
                   </Text>
-                </View>
-              ) : null}
-              {isWeb ? (
-                <>
-                  <View style={styles.emptyHintRow} testID="inbox-empty-web-step">
-                    <Ionicons
-                      name="add-circle-outline"
-                      size={18}
-                      color={palette.accent}
-                      style={styles.emptyHintIcon}
-                    />
-                    <Text style={[styles.emptyHintText, { color: palette.textSecondary }]}>
-                      {t('inbox.emptyHintWebStep')}
+                  <View
+                    style={[styles.emptyAccount, { backgroundColor: palette.accentSoft, borderColor: palette.border }]}
+                    testID="inbox-empty-account"
+                  >
+                    <Ionicons name="phone-portrait-outline" size={24} color={palette.accentText} />
+                    <Text style={[styles.emptyAccountBenefit, { color: palette.text }]}>
+                      {t('inbox.emptySignInBenefit')}
                     </Text>
+                    <Button
+                      variant="ghost"
+                      size="md"
+                      style={[styles.emptySignInButton, { backgroundColor: palette.surface, borderColor: palette.accent }]}
+                      onPress={() => router.push({ pathname: '/settings', params: { focus: 'account' } })}
+                      testID="inbox-empty-sign-in"
+                    >
+                      {t('inbox.emptySignInAction')}
+                    </Button>
                   </View>
-                  <View style={[styles.emptyDivider, { backgroundColor: palette.border }]} />
-                  <Text style={[styles.emptyHintFallback, { color: palette.textSecondary }]}>
-                    {t('inbox.emptyHintWebNote')}
-                  </Text>
                 </>
-              ) : (
-                <>
+              ) : null}
+              {!isWeb ? (
+                <View style={styles.emptyShareGuide}>
                   <View style={styles.emptyHintRow} testID="inbox-empty-step-1">
                     <Text style={[styles.emptyStepNumber, { color: palette.accent }]}>1</Text>
                     <Ionicons
@@ -2147,12 +2133,8 @@ export default function InboxScreen() {
                       {t('inbox.emptyHintStep2')}
                     </Text>
                   </View>
-                  <View style={[styles.emptyDivider, { backgroundColor: palette.border }]} />
-                  <Text style={[styles.emptyHintFallback, { color: palette.textSecondary }]}>
-                    {t('inbox.emptyHintFallback')}
-                  </Text>
-                </>
-              )}
+                </View>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.emptyTutorialButton, { opacity: pressed ? 0.7 : 1 }]}
