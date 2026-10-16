@@ -275,7 +275,6 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
     maxWidth: 320,
-    marginTop: 24,
     marginBottom: 24,
   },
   emptyAccountBenefit: {
@@ -286,7 +285,7 @@ export const styles = StyleSheet.create({
   emptySignInButton: {
     alignSelf: 'stretch',
     minHeight: 48,
-    marginTop: 16,
+    marginTop: 12,
   },
   emptyAccountReassurance: {
     fontSize: 12,

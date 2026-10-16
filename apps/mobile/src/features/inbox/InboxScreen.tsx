@@ -2084,6 +2084,25 @@ export default function InboxScreen() {
               >
                 {t('inbox.emptySave')}
               </Button>
+              {auth.status === 'anonymous' || auth.status === 'signed_out' ? (
+                <View style={styles.emptyAccount} testID="inbox-empty-account">
+                  <Text style={[styles.emptyAccountBenefit, { color: palette.textSecondary }]}>
+                    {t('inbox.emptySignInBenefit')}
+                  </Text>
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    style={styles.emptySignInButton}
+                    onPress={() => router.push({ pathname: '/settings', params: { focus: 'account' } })}
+                    testID="inbox-empty-sign-in"
+                  >
+                    {t('settings.account.signIn')}
+                  </Button>
+                  <Text style={[styles.emptyAccountReassurance, { color: palette.textSecondary }]}>
+                    {t('inbox.emptySignInOptional')}
+                  </Text>
+                </View>
+              ) : null}
               {isWeb ? (
                 <>
                   <View style={styles.emptyHintRow} testID="inbox-empty-web-step">
@@ -2145,25 +2164,6 @@ export default function InboxScreen() {
                   {t('inbox.emptyTutorialButton')}
                 </Text>
               </Pressable>
-              {auth.status === 'anonymous' || auth.status === 'signed_out' ? (
-                <View style={styles.emptyAccount} testID="inbox-empty-account">
-                  <Text style={[styles.emptyAccountBenefit, { color: palette.textSecondary }]}>
-                    {t('inbox.emptySignInBenefit')}
-                  </Text>
-                  <Button
-                    variant="ghost"
-                    size="md"
-                    style={styles.emptySignInButton}
-                    onPress={() => router.push({ pathname: '/settings', params: { focus: 'account' } })}
-                    testID="inbox-empty-sign-in"
-                  >
-                    {t('settings.account.signIn')}
-                  </Button>
-                  <Text style={[styles.emptyAccountReassurance, { color: palette.textSecondary }]}>
-                    {t('inbox.emptySignInOptional')}
-                  </Text>
-                </View>
-              ) : null}
             </View>
           )
         }

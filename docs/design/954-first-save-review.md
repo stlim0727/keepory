@@ -5,8 +5,9 @@ with a Jony Ive-inspired design subagent on 2026-10-15.
 
 The empty library previously offered sign-in before capture instructions. Its
 save path was prose pointing to a separate + control. The first change makes
-“Save your first link” a direct action into the existing add screen, moves
-optional sign-in below capture guidance with secondary styling, and removes the
+“Save your first link” a direct action into the existing add screen, keeps
+optional sign-in directly below the save action with secondary styling and its
+cross-device benefit, before capture guidance, and removes the
 disabled Android acquisition button. Native sharing guidance remains available.
 English and Korean copy lead with the user's intent to return to a link.
 
@@ -24,6 +25,8 @@ after an error-page save does not establish that the error caused churn.
 ## Acceptance
 
 - A settled empty library offers a direct save action before account actions.
+- Optional sign-in and its cross-device benefit appear before sharing guidance
+  so account promotion remains prominent without blocking capture.
 - Anonymous and signed-out users can open `/add` without an auth prerequisite.
 - Web offers paste guidance; native retains its share-sheet instructions.
 - Loading, account verification, sync, filtered-empty and search branches retain
