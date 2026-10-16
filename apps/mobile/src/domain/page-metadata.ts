@@ -192,13 +192,13 @@ export function isChallengeOrBoilerplateTitle(title: string | undefined): boolea
   }
 
   // Korean error notices, login gates, and age verification shells (STASH-7Q/Issue 954)
+  // Bare "오류" matches exact only; compound shell phrases match exact or with brand delimiters ([-–—|])
+  const krShell =
+    '(?:오류\\s*(?:안내\\s*페이지|안내|페이지)|로그인\\s*(?:안내|이\\s*필요한?\\s*서비스(?:입니다)?|이\\s*필요합니다)|성인\\s*인증(?:\\s*안내)?|접근\\s*(?:권한이\\s*없습니다|이\\s*거부되었습니다|이\\s*제한되었습니다)|서비스\\s*이용\\s*제한|페이지를\\s*찾을\\s*수\\s*없습니다)';
   if (
-    /^(?:오류\s*(?:안내\s*페이지|안내|페이지)?|로그인\s*(?:안내|이\s*필요한?\s*서비스(?:입니다)?|이\s*필요합니다)?|성인\s*인증(?:\s*안내)?|접근\s*(?:권한이\s*없습니다|이\s*거부되었습니다|이\s*제한되었습니다)|서비스\s*이용\s*제한|페이지를\s*찾을\s*수\s*없습니다)(?:\s*[-–—|:]\s*.*)?$/i.test(
-      cleanTitle,
-    ) ||
-    /^.*?\s*[-–—|:]\s*(?:오류\s*안내\s*페이지|오류안내\s*페이지|오류안내|오류\s*페이지|오류|로그인이\s*필요합니다)$/i.test(
-      cleanTitle,
-    )
+    lower === '오류' ||
+    new RegExp(`^(?:${krShell})(?:\\s*[-–—|]\\s*.*)?$`, 'i').test(cleanTitle) ||
+    new RegExp(`^.*?\\s*[-–—|]\\s*(?:${krShell})$`, 'i').test(cleanTitle)
   ) {
     return true;
   }

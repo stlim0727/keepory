@@ -644,6 +644,8 @@ test('isChallengeOrBoilerplateTitle recognizes bot challenge, login gate, and er
   assert.equal(isChallengeOrBoilerplateTitle('오류안내 페이지 | 커뮤니티'), true);
   // Real content containing the word error/오류 is preserved
   assert.equal(isChallengeOrBoilerplateTitle('React 오류 해결 방법'), false);
+  assert.equal(isChallengeOrBoilerplateTitle('오류: 자바스크립트 오류를 해결하는 방법'), false);
+  assert.equal(isChallengeOrBoilerplateTitle('오류 - 리액트 렌더링 에러 해결'), false);
   assert.equal(isChallengeOrBoilerplateTitle('Debugging checking your browser requests'), false);
   assert.equal(isChallengeOrBoilerplateTitle('How to Set Up Claude Code Agent Teams'), false);
   assert.equal(isChallengeOrBoilerplateTitle(''), false);
