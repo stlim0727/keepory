@@ -1,3 +1,5 @@
+import type { Bookmark } from './types.ts';
+
 /** Google Maps shells can advertise the viewer's map, rather than the shared place. */
 export function isGoogleMapsUrl(rawUrl: string): boolean {
   try {
@@ -35,4 +37,20 @@ export function googleMapsPlaceName(rawUrl: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Split only an explicit street-number address; commas also occur in business names. */
+export function googleMapsPlaceDetails(url: string, title: string): { title: string; address: string } | null {
+  if (!isGoogleMapsUrl(url)) return null;
+  const match = title.match(/^(.+?),\s*(\d+[A-Za-z]?(?:[-/]\d+)?\s+[^,]+(?:,.*)?)$/u);
+  if (!match || !/(?:^|\s)(?:P\.|Đ\.|Phố|Đường|Street|St\.?|Road|Rd\.?|Avenue|Ave\.?|Lane|Ln\.?|Drive|Dr\.?|Boulevard|Blvd\.?|Way|길|로)(?:\s|,|$)/iu.test(match[2])) return null;
+  return { title: match[1].trim(), address: match[2].trim() };
+}
+
+/** Keep the address and shortened title together, preserving edits made during fetching. */
+export function preserveMapMemoEdit(patch: Partial<Bookmark>, latest: Bookmark): Partial<Bookmark> {
+  if (patch.notes === undefined || (!latest.notes?.trim() &&
+    (latest.title == null || latest.title_is_derived === true))) return patch;
+  const { notes: _notes, title: _title, title_is_derived: _derived, ...rest } = patch;
+  return rest;
 }

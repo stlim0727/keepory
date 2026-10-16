@@ -3,13 +3,14 @@ import { isPublicPreviewUrl } from './preview-network.ts';
 import { fetchPageMetadata } from './page-metadata.ts';
 import type { FetchedMetadata } from './page-metadata.ts';
 import { describeKnownUrl, isRepairableSourceTitle, looksOpaqueId } from './url-title.ts';
+import { googleMapsPlaceDetails } from './google-maps.ts';
 import { recordLog } from '../observability/log-buffer.ts';
 import type { Bookmark, MetadataStatus } from '@/domain/types';
 
 /**
  * Generated (non-user-authored) metadata fields. Keeping this set explicit
- * ensures enrichment never touches user-owned fields like `notes` or a title
- * the user typed themselves.
+ * protects user-authored titles and memos. The Maps adapter may fill an empty
+ * memo with an address removed from a generated title.
  */
 export interface DerivedMetadata {
   title: string | null;
@@ -136,6 +137,12 @@ export async function enrichBookmark(
           'enrich: URL-derived fallback title used (no fetched title)',
         );
       }
+    }
+    const place = patch.title && !bookmark.notes?.trim()
+      ? googleMapsPlaceDetails(bookmark.url, patch.title) : null;
+    if (place) {
+      patch.title = place.title;
+      patch.notes = place.address;
     }
     if (bookmark.site_name == null) {
       patch.site_name = derived.site_name;

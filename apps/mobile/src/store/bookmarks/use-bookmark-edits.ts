@@ -5,6 +5,7 @@ import {
   type AiSuggestionsMode
 } from "@/domain/ai-suggestions-pref";
 import { enrichBookmark } from "@/domain/enrichment";
+import { preserveMapMemoEdit } from "@/domain/google-maps";
 import { isTransientNetworkError } from "@/domain/network-errors";
 import { checkYoutubeAvailability, isYoutubeAvailabilityCandidate } from "@/domain/page-metadata";
 import { clearPreviewImageFailed } from "@/domain/preview-image-cache";
@@ -283,7 +284,8 @@ export function useBookmarkEdits({
           favicon_url: null,
           preview_image_url: null,
         };
-        const { patch, metadata_status } = await enrichBookmark(refreshTarget);
+        const result = await enrichBookmark(refreshTarget);
+        const { metadata_status } = result;
         const latest =
           bookmarksRef.current?.find((item) => item.id === id) ?? bookmark;
         // A title edit can land while the metadata request is in flight. Only
@@ -294,6 +296,7 @@ export function useBookmarkEdits({
           !userTitle &&
           latest.title === bookmark.title &&
           latest.title_is_derived === bookmark.title_is_derived;
+        const patch = preserveMapMemoEdit(result.patch, { ...latest, title_is_derived: titleStillRefreshable });
         const nextPatch: Partial<Bookmark> = { metadata_status };
         if (titleStillRefreshable && patch.title !== undefined) {
           // If the patch title was just a URL-derived fallback (no real title was fetched from the page)
@@ -301,10 +304,12 @@ export function useBookmarkEdits({
           // title is a known repairable placeholder (e.g. 'Bbs View' or 'Reddit').
           const wouldDegradeExistingTitle =
             patch.title_is_derived === true &&
+            patch.notes === undefined &&
             Boolean(bookmark.title?.trim()) &&
             !isRepairableSourceTitle(bookmark);
           if (!wouldDegradeExistingTitle) {
             nextPatch.title = patch.title;
+            if (patch.notes !== undefined) nextPatch.notes = patch.notes;
             nextPatch.title_is_derived = patch.title_is_derived;
           }
         }

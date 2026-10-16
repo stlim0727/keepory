@@ -52,6 +52,7 @@ import { resolveAliasedId } from "@/domain/bookmark-id-swap";
 import { buildBookmarkProcessingSnapshot } from "@/domain/bookmark-processing";
 import { createConcurrencyLimiter } from "@/domain/concurrency";
 import { enrichBookmark } from "@/domain/enrichment";
+import { preserveMapMemoEdit } from "@/domain/google-maps";
 import { buildLibrarySyncFlow } from "@/domain/library-sync-status";
 import {
   PENDING_ENRICHMENT_RESTORE_KEY,
@@ -989,7 +990,8 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       // itself waits for a limiter slot so bulk passes stay bounded.
       void enrichmentSlots.current(async () => {
         try {
-          const { patch, metadata_status } = await enrichBookmark(bookmark);
+          const result = await enrichBookmark(bookmark);
+          const { metadata_status } = result;
           if (resetEpoch.current !== epochAtStart || backgroundEnrichmentRequests.current.get(bookmark.id) !== request) {
             return; // library was reset while fetch was in flight
           }
@@ -1054,12 +1056,14 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
           // Fill only generated fields that are still empty. A source-app
           // share title is itself generated and may be improved; a manual
           // user title remains protected.
+          const patch = preserveMapMemoEdit(result.patch, latest);
           const safePatch: Partial<Bookmark> = {};
           if (
             patch.title !== undefined &&
             (latest.title === null || latest.title_is_derived === true)
           ) {
             safePatch.title = patch.title;
+            if (patch.notes !== undefined) safePatch.notes = patch.notes;
             // Carry the title's provenance alongside it, so a generated fallback
             // title is recorded as such (and a real fetched title as not-derived).
             safePatch.title_is_derived = patch.title_is_derived;

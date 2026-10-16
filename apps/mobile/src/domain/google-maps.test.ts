@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
+import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl, preserveMapMemoEdit } from './google-maps.ts';
 import { parsePageMetadata, fetchPageMetadata } from './page-metadata.ts';
 import { deriveMetadata, enrichBookmark, isRepairableSourceTitle } from './enrichment.ts';
 import type { Bookmark } from './types.ts';
@@ -22,7 +22,8 @@ test('Maps recovery works offline and short links retain a human fallback', asyn
   for (const [url, expected] of [[placeUrl, placeName], ['https://maps.app.goo.gl/7JkAdshyX3gR62qr6', 'Google Maps']]) {
     assert.equal(deriveMetadata(url).title, expected);
     const result = await enrichBookmark({ url, title: null } as Bookmark, async () => null);
-    assert.equal(result.patch.title, expected);
+    assert.equal(result.patch.title, expected === placeName ? 'Nem Nướng Nha Trang Quế Hoa' : expected);
+    if (expected === placeName) assert.equal(result.patch.notes, '23 P. Hồ Hoàn Kiếm');
     assert.equal(result.patch.title_is_derived, true);
   }
 });
@@ -44,7 +45,8 @@ test('legacy Google consent titles can be explicitly repaired on Maps URLs', asy
   assert.equal(isRepairableSourceTitle({ url: 'https://example.com/article', title }), false);
   const result = await enrichBookmark({ url: placeUrl, title, title_is_derived: false } as Bookmark,
     async () => parsePageMetadata(shell, placeUrl));
-  assert.equal(result.patch.title, placeName);
+  assert.equal(result.patch.title, 'Nem Nướng Nha Trang Quế Hoa');
+  assert.equal(result.patch.notes, '23 P. Hồ Hoàn Kiếm');
 });
 
 test('rejected Maps destinations retain expanded place URLs for fallback and browser retry', async () => {
@@ -158,7 +160,7 @@ test('Maps preview refresh can repair a generic title while protecting manual ed
   for (const title of ['Google Maps', '넴느엉 퀘호아 Google Maps']) {
     const result = await enrichBookmark({ url, title, title_is_derived: false } as Bookmark,
       async () => parsePageMetadata(shell, placeUrl));
-    assert.equal(result.patch.title, title === 'Google Maps' ? placeName : undefined);
+    assert.equal(result.patch.title, title === 'Google Maps' ? 'Nem Nướng Nha Trang Quế Hoa' : undefined);
     assert.equal(result.patch.title_is_derived, title === 'Google Maps' ? true : undefined);
     // Preview refresh clears its generated image before enrichment; explicitly
     // returning null lets it remove a previously saved, unrelated shell map.
@@ -228,5 +230,44 @@ test('browser Maps metadata improves URL fallback, while empty or failed retries
     } finally {
       globalThis.fetch = originalFetch;
     }
+  }
+});
+
+
+test('STASH-7R: Maps separates a street address into an empty memo without AI', async () => {
+  const bookmark = { url: placeUrl, title: null, notes: null } as Bookmark;
+  for (const fetcher of [async () => null, async () => parsePageMetadata(shell, placeUrl)]) {
+    const { patch } = await enrichBookmark(bookmark, fetcher);
+    assert.equal(patch.title, 'Nem Nướng Nha Trang Quế Hoa');
+    assert.equal(patch.notes, '23 P. Hồ Hoàn Kiếm');
+    assert.equal(patch.title_is_derived, true);
+    assert.equal(preserveMapMemoEdit(patch, bookmark).notes, patch.notes);
+    for (const latest of [
+      { ...bookmark, notes: 'Meet at noon' },
+      { ...bookmark, title: 'My restaurant', title_is_derived: false },
+    ]) {
+      const safe = preserveMapMemoEdit(patch, latest);
+      assert.equal(safe.title, undefined);
+      assert.equal(safe.notes, undefined);
+    }
+  }
+});
+
+test('STASH-7R: existing memos, manual titles, ambiguous commas and other sites are preserved', async () => {
+  const base = { url: placeUrl, title: null, notes: null } as Bookmark;
+  const existing = await enrichBookmark({ ...base, notes: 'My memo' }, async () => null);
+  assert.equal(existing.patch.title, placeName);
+  assert.equal(existing.patch.notes, undefined);
+  const manual = await enrichBookmark({ ...base, title: 'My title', title_is_derived: false }, async () => parsePageMetadata(shell, placeUrl));
+  assert.equal(manual.patch.title, undefined);
+  assert.equal(manual.patch.notes, undefined);
+  for (const [url, title] of [
+    [placeUrl, 'Coffee, 24 Hours'],
+    [placeUrl, 'Coffee, Bakery'],
+    ['https://example.com/place', placeName],
+  ]) {
+    const result = await enrichBookmark({ ...base, url }, async () => ({ title }));
+    assert.equal(result.patch.title, title);
+    assert.equal(result.patch.notes, undefined);
   }
 });
