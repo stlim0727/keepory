@@ -52,5 +52,8 @@ export function preserveMapMemoEdit(patch: Partial<Bookmark>, latest: Bookmark):
   if (patch.notes === undefined || (!latest.notes?.trim() &&
     (latest.title == null || latest.title_is_derived === true))) return patch;
   const { notes: _notes, title: _title, title_is_derived: _derived, ...rest } = patch;
+  if (latest.title == null && patch.title) {
+    return { ...rest, title: `${patch.title}, ${patch.notes}`, title_is_derived: patch.title_is_derived };
+  }
   return rest;
 }

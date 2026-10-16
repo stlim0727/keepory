@@ -61,13 +61,13 @@ beforeEach(() => {
 });
 
 
-test.each([false, true])('STASH-7R: Maps title and address persist together, protecting mid-fetch memo edits=%s', async (editMemo) => {
+test.each([[false, false], [true, false], [false, true], [true, true]])('STASH-7R: Maps persists title/address with memo edits=%s and untitled start=%s', async (editMemo, untitled) => {
   let finish!: (value: { patch: Partial<Bookmark>; metadata_status: MetadataStatus }) => void;
   mockEnrichBookmark.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
   fakeRepo.__reset([makeStoredBookmark({
     id: SYNCED_ID,
     url: 'https://maps.app.goo.gl/fqLik2TQgUTorsyp8',
-    title: 'Restaurant, 23 P. Example',
+    title: untitled ? null : 'Restaurant, 23 P. Example',
     title_is_derived: true,
     notes: null,
     metadata_status: 'pending',

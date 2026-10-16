@@ -247,7 +247,7 @@ test('STASH-7R: Maps separates a street address into an empty memo without AI', 
       { ...bookmark, title: 'My restaurant', title_is_derived: false },
     ]) {
       const safe = preserveMapMemoEdit(patch, latest);
-      assert.equal(safe.title, undefined);
+      assert.equal(safe.title, latest.title == null ? placeName : undefined);
       assert.equal(safe.notes, undefined);
     }
   }
