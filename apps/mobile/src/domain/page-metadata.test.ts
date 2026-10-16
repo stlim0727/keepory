@@ -13,10 +13,12 @@ import {
   isChallengeOrBoilerplateTitle,
   isGenericGoogleSearchTitle,
   isGenericNaverMapTitle,
+  isGenericTikTokTitle,
   isGenericYouTubeTitle,
   isGoogleHost,
   isGoogleSearchUrl,
   isNaverMapUrl,
+  isTikTokUrl,
   isYoutubeAvailabilityCandidate,
   naverMapFolderShareId,
   normalizeCharsetLabel,
@@ -620,16 +622,140 @@ test('fetchPageMetadata uses Reddit oEmbed after an app share-link redirect (STA
   }
 });
 
-test('isChallengeOrBoilerplateTitle recognizes bot challenge and verification interstitials', () => {
+test('isChallengeOrBoilerplateTitle recognizes bot challenge, login gate, and error page titles', () => {
   assert.equal(isChallengeOrBoilerplateTitle('Reddit - Please wait for verification'), true);
   assert.equal(isChallengeOrBoilerplateTitle('Please wait for verification'), true);
   assert.equal(isChallengeOrBoilerplateTitle('Just a moment...'), true);
   assert.equal(isChallengeOrBoilerplateTitle('Attention Required! | Cloudflare'), true);
   assert.equal(isChallengeOrBoilerplateTitle('Checking your browser before accessing site'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('403 Forbidden'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('404 Not Found'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('404 Not Found | Example'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('Example - 503 Service Unavailable'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('504 Gateway Time-out'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('504 Gateway Timeout | Nginx'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('Access Denied | Cloudflare'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('Access Denied'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('How to fix 404 Not Found errors in React'), false);
+  // Korean error notices and login walls (STASH-7Q/Issue 954)
+  assert.equal(isChallengeOrBoilerplateTitle('오류안내 페이지'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('오류안내'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('오류'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('로그인이 필요합니다'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('로그인이 필요한 서비스입니다'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('성인 인증 안내'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('성인인증'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('접근 권한이 없습니다'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('manpeace.org - 오류안내 페이지'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('오류안내 페이지 | 커뮤니티'), true);
+  // Real content containing the word error/오류 is preserved
+  assert.equal(isChallengeOrBoilerplateTitle('React 오류 해결 방법'), false);
+  assert.equal(isChallengeOrBoilerplateTitle('오류: 자바스크립트 오류를 해결하는 방법'), false);
+  assert.equal(isChallengeOrBoilerplateTitle('오류 - 리액트 렌더링 에러 해결'), false);
   assert.equal(isChallengeOrBoilerplateTitle('Debugging checking your browser requests'), false);
   assert.equal(isChallengeOrBoilerplateTitle('How to Set Up Claude Code Agent Teams'), false);
   assert.equal(isChallengeOrBoilerplateTitle(''), false);
   assert.equal(isChallengeOrBoilerplateTitle(undefined), false);
+});
+
+test('isTikTokUrl recognizes TikTok, TikTok Lite, and short domains', () => {
+  assert.equal(isTikTokUrl('https://www.tiktok.com/@user/video/123'), true);
+  assert.equal(isTikTokUrl('https://lite.tiktok.com/t/ZSJ1234/'), true);
+  assert.equal(isTikTokUrl('https://vt.tiktok.com/ZSJ1234/'), true);
+  assert.equal(isTikTokUrl('https://vm.tiktok.com/ZSJ1234/'), true);
+  assert.equal(isTikTokUrl('https://example.com/tiktok'), false);
+});
+
+test('isGenericTikTokTitle identifies generic shells', () => {
+  assert.equal(isGenericTikTokTitle('TikTok', 'https://www.tiktok.com/@user/video/123'), true);
+  assert.equal(isGenericTikTokTitle('TikTok Lite', 'https://lite.tiktok.com/t/ZS123/'), true);
+  assert.equal(isGenericTikTokTitle('틱톡', 'https://www.tiktok.com/'), true);
+  assert.equal(isGenericTikTokTitle('후쿠오카 라멘 맛집 Best 3', 'https://www.tiktok.com/@user/video/123'), false);
+  assert.equal(isGenericTikTokTitle('TikTok', 'https://news.ycombinator.com'), false);
+});
+
+test('oembedEndpoint builds provider URLs for TikTok videos and shortlinks', () => {
+  assert.equal(
+    oembedEndpoint('https://www.tiktok.com/@scout/video/12345'),
+    'https://www.tiktok.com/oembed?url=https%3A%2F%2Fwww.tiktok.com%2F%40scout%2Fvideo%2F12345',
+  );
+  assert.equal(
+    oembedEndpoint('https://lite.tiktok.com/t/ZSJ1234/'),
+    'https://www.tiktok.com/oembed?url=https%3A%2F%2Flite.tiktok.com%2Ft%2FZSJ1234%2F',
+  );
+});
+
+test('parseOembed maps TikTok video title, author fallback, and thumbnail', () => {
+  const withTitle = parseOembed({
+    title: '후쿠오카 텐진 라멘 투어 #후쿠오카 #라멘',
+    provider_name: 'TikTok',
+    thumbnail_url: 'https://p16-sign.tiktokcdn-us.com/thumb.jpg',
+  });
+  assert.equal(withTitle.title, '후쿠오카 텐진 라멘 투어 #후쿠오카 #라멘');
+  assert.equal(withTitle.title_is_derived, undefined);
+  assert.equal(withTitle.site_name, 'TikTok');
+  assert.equal(withTitle.preview_image_url, 'https://p16-sign.tiktokcdn-us.com/thumb.jpg');
+
+  const withAuthorUrl = parseOembed({
+    author_name: 'Fukuoka Foodie',
+    author_url: 'https://www.tiktok.com/@fukuoka_foodie',
+    provider_name: 'TikTok',
+    thumbnail_url: 'https://p16-sign.tiktokcdn-us.com/thumb.jpg',
+  });
+  assert.equal(withAuthorUrl.title, 'TikTok by @fukuoka_foodie');
+  assert.equal(withAuthorUrl.title_is_derived, true);
+
+  const withDisplayNameOnly = parseOembed({
+    author_name: 'Scout & Suki',
+    provider_name: 'TikTok',
+    thumbnail_url: 'https://p16-sign.tiktokcdn-us.com/thumb.jpg',
+  });
+  assert.equal(withDisplayNameOnly.title, 'TikTok by Scout & Suki');
+  assert.equal(withDisplayNameOnly.title_is_derived, true);
+});
+
+test('fetchPageMetadata prefers TikTok oEmbed over generic HTML title', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (target: string) => {
+    calls.push(target);
+    if (target.startsWith('https://www.tiktok.com/oembed')) {
+      return {
+        ok: true,
+        json: async () => ({
+          title: 'Fukuoka Gourmet Guide 2026',
+          provider_name: 'TikTok',
+          thumbnail_url: 'https://p16-sign.tiktokcdn.com/thumb.jpg',
+        }),
+      } as unknown as Response;
+    }
+    return htmlResponse('<head><title>TikTok Lite - Watch Videos</title></head>');
+  }) as typeof fetch;
+  try {
+    const meta = await fetchPageMetadata('https://lite.tiktok.com/t/ZSJ12345/');
+    assert.equal(meta?.title, 'Fukuoka Gourmet Guide 2026');
+    assert.equal(meta?.site_name, 'TikTok');
+    assert.equal(meta?.preview_image_url, 'https://p16-sign.tiktokcdn.com/thumb.jpg');
+    assert.equal(calls.length, 1, 'successful oEmbed avoids downloading the SPA HTML shell');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchPageMetadata rejects TikTok Lite HTML shell title when oEmbed fails', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (target: string) => {
+    if (target.startsWith('https://www.tiktok.com/oembed')) {
+      return { ok: false, status: 404 } as unknown as Response;
+    }
+    return htmlResponse('<head><title>TikTok Lite - Watch Videos</title></head>');
+  }) as typeof fetch;
+  try {
+    const meta = await fetchPageMetadata('https://lite.tiktok.com/t/ZSJ12345/');
+    assert.equal(meta?.title, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('parsePageMetadata rejects challenge titles and returns undefined title', () => {

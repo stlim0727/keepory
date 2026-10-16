@@ -9,8 +9,8 @@ import { Parser } from 'htmlparser2';
 import { fetchPublicPreview, isPublicPreviewUrl } from './preview-network.ts';
 import { previewFetch } from '@/domain/preview-fetch';
 import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
-
-// Relative .ts import (not the @ alias) so Node's test runner can resolve it.
+import { isGenericTikTokTitle, isTikTokUrl, tikTokOembedEndpoint } from './tiktok.ts';
+export { isGenericTikTokTitle, isTikTokUrl, tikTokOembedEndpoint } from './tiktok.ts';
 import { recordLog } from '../observability/log-buffer.ts';
 
 const FETCH_TIMEOUT_MS = 8000;
@@ -157,8 +157,9 @@ export function isChallengeOrBoilerplateTitle(title: string | undefined): boolea
   if (!title) {
     return false;
   }
-  const lower = title.trim().toLowerCase();
-  return (
+  const cleanTitle = title.trim();
+  const lower = cleanTitle.toLowerCase();
+  if (
     lower === 'reddit - please wait for verification' ||
     lower === 'please wait for verification' ||
     lower === 'please wait for verification...' ||
@@ -169,7 +170,34 @@ export function isChallengeOrBoilerplateTitle(title: string | undefined): boolea
     lower === 'before you continue to youtube' ||
     lower === 'before you continue to google' ||
     lower === 'before you continue'
-  );
+  ) {
+    return true;
+  }
+
+  // HTTP & server error notices (exact or with brand delimiters [-–—|])
+  const serverErrorPattern =
+    '(?:40[134]\\s+(?:unauthorized|forbidden|not\\s+found)|50[0234]\\s+(?:internal\\s+server\\s+error|bad\\s+gateway|service\\s+unavailable|gateway\\s+time-?out)|access\\s+denied|permission\\s+denied|security\\s+check|error\\s+page|gateway\\s+time-?out)';
+  if (
+    lower === 'error' ||
+    new RegExp(`^(?:${serverErrorPattern})(?:\\s*[-–—|]\\s*.*)?$`, 'i').test(cleanTitle) ||
+    new RegExp(`^.*?\\s*[-–—|]\\s*(?:${serverErrorPattern})$`, 'i').test(cleanTitle)
+  ) {
+    return true;
+  }
+
+  // Korean error notices, login gates, and age verification shells (STASH-7Q/Issue 954)
+  // Bare "오류" matches exact only; compound shell phrases match exact or with brand delimiters ([-–—|])
+  const krShell =
+    '(?:오류\\s*(?:안내\\s*페이지|안내|페이지)|로그인\\s*(?:안내|이\\s*필요한?\\s*서비스(?:입니다)?|이\\s*필요합니다)|성인\\s*인증(?:\\s*안내)?|접근\\s*(?:권한이\\s*없습니다|이\\s*거부되었습니다|이\\s*제한되었습니다)|서비스\\s*이용\\s*제한|페이지를\\s*찾을\\s*수\\s*없습니다)';
+  if (
+    lower === '오류' ||
+    new RegExp(`^(?:${krShell})(?:\\s*[-–—|]\\s*.*)?$`, 'i').test(cleanTitle) ||
+    new RegExp(`^.*?\\s*[-–—|]\\s*(?:${krShell})$`, 'i').test(cleanTitle)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export function isGoogleHost(hostOrUrl: string): boolean {
@@ -267,7 +295,11 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
 
   const image = meta.get('og:image') ?? meta.get('og:image:url') ?? meta.get('twitter:image');
   let candidateTitle = [meta.get('og:title'), meta.get('twitter:title'), title].find(
-    (t) => t && !isChallengeOrBoilerplateTitle(t) && !isGenericGoogleMapsTitle(t, baseUrl),
+    (t) =>
+      t &&
+      !isChallengeOrBoilerplateTitle(t) &&
+      !isGenericGoogleMapsTitle(t, baseUrl) &&
+      !isGenericTikTokTitle(t, baseUrl),
   );
 
   const mapsShell = isGoogleMapsUrl(baseUrl) && !candidateTitle;
@@ -282,7 +314,10 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
   }
 
   const isGoogle = isGoogleHost(baseUrl);
-  const candidateSiteName = meta.get('og:site_name') || (isGoogleMapsUrl(baseUrl) ? 'Google Maps' : isGoogle ? 'Google' : undefined);
+  const isTikTok = isTikTokUrl(baseUrl);
+  const candidateSiteName =
+    meta.get('og:site_name') ||
+    (isGoogleMapsUrl(baseUrl) ? 'Google Maps' : isGoogle ? 'Google' : isTikTok ? 'TikTok' : undefined);
   const candidateFavicon = favicon || (isGoogle ? 'https://www.google.com/favicon.ico' : undefined);
   const previewImage = image ? resolveHref(image, baseUrl) : undefined;
 
@@ -1110,6 +1145,11 @@ export function oembedEndpoint(rawUrl: string): string | null {
       // structured preview just as we do for YouTube (STASH-6F).
       return `https://www.reddit.com/oembed?url=${encodeURIComponent(rawUrl)}`;
     }
+
+    const tiktok = tikTokOembedEndpoint(rawUrl);
+    if (tiktok) {
+      return tiktok;
+    }
   } catch {
     return null;
   }
@@ -1120,6 +1160,8 @@ interface OembedResponse {
   title?: unknown;
   provider_name?: unknown;
   thumbnail_url?: unknown;
+  author_name?: unknown;
+  author_url?: unknown;
 }
 
 /** Map an oEmbed JSON payload to our metadata shape. */
@@ -1130,9 +1172,22 @@ export function parseOembed(json: OembedResponse): FetchedMetadata {
     return isChallengeOrBoilerplateTitle(trimmed) ? undefined : trimmed;
   };
   const thumbnail = str(json.thumbnail_url);
+  const provider = str(json.provider_name);
+  let title = str(json.title);
+  let title_is_derived: boolean | undefined;
+  if (!title && provider?.toLowerCase() === 'tiktok') {
+    const authorUrl = typeof json.author_url === 'string' ? json.author_url : '';
+    const handle = authorUrl.match(/@([a-zA-Z0-9_.-]+)/)?.[1];
+    const authorName = typeof json.author_name === 'string' ? json.author_name.trim().replace(/^@/, '') : '';
+    if (handle || authorName) {
+      title = `TikTok by ${handle ? `@${handle}` : authorName}`;
+      title_is_derived = true;
+    }
+  }
   return {
-    title: str(json.title),
-    site_name: str(json.provider_name),
+    title,
+    ...(title_is_derived ? { title_is_derived: true } : {}),
+    site_name: provider,
     preview_image_url: thumbnail && isPublicPreviewUrl(thumbnail) ? thumbnail : undefined,
     // favicon is left to URL-derived metadata (origin/favicon.ico).
   };

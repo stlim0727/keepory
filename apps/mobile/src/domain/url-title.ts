@@ -115,7 +115,21 @@ export function describeKnownUrl(rawUrl: string): UrlTitle | null {
     return { title: user ? `Post by @${user} on X` : 'Post on X', preview_image_url: null };
   }
 
-  if (host === 'tiktok.com') {
+  if (
+    host === 'tiktok.com' ||
+    host === 'lite.tiktok.com' ||
+    host === 'vt.tiktok.com' ||
+    host === 'vm.tiktok.com'
+  ) {
+    if (
+      (host === 'vt.tiktok.com' || host === 'vm.tiktok.com') &&
+      segs.length > 0
+    ) {
+      return { title: 'TikTok video', preview_image_url: null };
+    }
+    if (segs[0] === 't' || segs[0] === 'v') {
+      return { title: 'TikTok link', preview_image_url: null };
+    }
     if (segs[1] !== 'video') {
       return null;
     }

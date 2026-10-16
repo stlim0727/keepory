@@ -53,4 +53,23 @@ Handle error/login-page detection and short-form metadata extraction as separate
 changes with server fixtures and recovery behavior. Preserve the saved link when
 enrichment is unavailable, and avoid presenting host-only topics as meaningful
 organization. Bulk import enrichment remains tracked by #940, including quota
-and scheduling safeguards. This first-save change does not resolve all of #954.
+and scheduling safeguards.
+
+## Metadata resilience and short-form recovery
+
+Following PR #957's welcoming actions, the metadata ingestion and enrichment
+pipeline was hardened against the failure modes identified in audit #954:
+- **Error / Login-Page Interception**: `isChallengeOrBoilerplateTitle` in
+  `domain/page-metadata.ts` detects Korean portal error shells (`오류안내 페이지`,
+  `로그인이 필요합니다`, `성인 인증`) and server errors (`403 Forbidden`,
+  `Access Denied`). Rejected error titles fall back cleanly to URL domain
+  derivation with `title_is_derived: true`.
+- **Short-Form Video Recovery (TikTok / Reels / Shorts)**: `domain/tiktok.ts`
+  resolves TikTok's public unauthenticated oEmbed endpoint across standard URLs,
+  TikTok Lite (`lite.tiktok.com/t/`), and mobile shortlinks (`vt.tiktok.com`),
+  bypassing client-side JavaScript hydration shells. Generic host titles
+  (`TikTok Lite`, `틱톡`) are filtered out.
+- **AI Tag Disinfection**: `supabase/functions/ai-enrich/gemini-provider.ts`
+  explicitly instructs the Gemini prompt against generating error-state tags
+  (`오류`, `error`) or host-only media labels (`소셜미디어`, `동영상`) when content
+  is unavailable.

@@ -193,10 +193,13 @@ test('tells the model not to reuse generic media buckets as real suggestions', a
 test('drops generic media tags and collections from model output', async () => {
   const { fetchImpl } = stubFetch({
     summary: 'A video about prompt engineering workflows.',
-    topics: ['video', 'prompt engineering'],
+    topics: ['video', 'prompt engineering', '오류', '소셜미디어'],
     suggested_tags: [
       { name: '비디오', confidence: 0.91 },
       { name: 'prompt engineering', confidence: 0.82 },
+      { name: '오류', confidence: 0.80 },
+      { name: '소셜미디어', confidence: 0.79 },
+      { name: 'error', confidence: 0.78 },
       { name: 'WatchLater', confidence: 0.77 },
       { name: '나중에보기', confidence: 0.76 },
       { name: 'Watch List', confidence: 0.75 },
@@ -219,6 +222,7 @@ test('drops generic media tags and collections from model output', async () => {
     }),
   );
 
+  assert.deepEqual(out.topics, ['prompt engineering']);
   assert.deepEqual(out.suggested_tags, [{ name: 'prompt engineering', confidence: 0.82 }]);
   assert.equal(out.suggested_collection, null);
   assert.equal(out.confidence, 0.82);
