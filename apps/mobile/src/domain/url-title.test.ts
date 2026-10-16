@@ -87,6 +87,9 @@ test('describeKnownUrl does not label profile/landing URLs as posts', () => {
   assert.equal(describeKnownUrl('https://www.threads.com/@ephemeris.ai'), null);
   assert.equal(describeKnownUrl('https://x.com/jack'), null);
   assert.equal(describeKnownUrl('https://www.tiktok.com/@scout'), null);
+  assert.equal(describeKnownUrl('https://lite.tiktok.com/'), null);
+  assert.equal(describeKnownUrl('https://lite.tiktok.com/explore'), null);
+  assert.equal(describeKnownUrl('https://vt.tiktok.com/'), null);
   assert.equal(describeKnownUrl('https://www.reddit.com/r/swimming'), null);
 });
 

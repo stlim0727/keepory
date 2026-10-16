@@ -725,6 +725,22 @@ test('fetchPageMetadata prefers TikTok oEmbed over generic HTML title', async ()
   }
 });
 
+test('fetchPageMetadata rejects TikTok Lite HTML shell title when oEmbed fails', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (target: string) => {
+    if (target.startsWith('https://www.tiktok.com/oembed')) {
+      return { ok: false, status: 404 } as unknown as Response;
+    }
+    return htmlResponse('<head><title>TikTok Lite - Watch Videos</title></head>');
+  }) as typeof fetch;
+  try {
+    const meta = await fetchPageMetadata('https://lite.tiktok.com/t/ZSJ12345/');
+    assert.equal(meta?.title, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('parsePageMetadata rejects challenge titles and returns undefined title', () => {
   const parsed = parsePageMetadata(
     '<head><title>Reddit - Please wait for verification</title></head>',

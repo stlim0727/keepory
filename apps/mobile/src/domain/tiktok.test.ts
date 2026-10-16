@@ -20,6 +20,14 @@ test('isTikTokUrl recognizes standard, lite, and mobile shortlinks', () => {
 test('isGenericTikTokTitle identifies generic shells and preserves real titles', () => {
   assert.equal(isGenericTikTokTitle('TikTok', 'https://www.tiktok.com/@user/video/123'), true);
   assert.equal(isGenericTikTokTitle('TikTok Lite', 'https://lite.tiktok.com/t/ZSJ1234/'), true);
+  assert.equal(
+    isGenericTikTokTitle('TikTok Lite - Watch Videos', 'https://lite.tiktok.com/t/ZSJ1234/'),
+    true,
+  );
+  assert.equal(
+    isGenericTikTokTitle('TikTok Lite - 동영상 시청', 'https://lite.tiktok.com/t/ZSJ1234/'),
+    true,
+  );
   assert.equal(isGenericTikTokTitle('틱톡', 'https://www.tiktok.com/@user/video/123'), true);
   assert.equal(isGenericTikTokTitle('틱톡 라이트', 'https://lite.tiktok.com/t/ZSJ1234/'), true);
   assert.equal(isGenericTikTokTitle('TikTok video', 'https://www.tiktok.com/@user/video/123'), true);
@@ -47,5 +55,8 @@ test('tikTokOembedEndpoint resolves oEmbed URLs for video and share URLs', () =>
   );
   assert.equal(tikTokOembedEndpoint('https://www.tiktok.com/@scout'), null);
   assert.equal(tikTokOembedEndpoint('https://www.tiktok.com/'), null);
+  assert.equal(tikTokOembedEndpoint('https://lite.tiktok.com/'), null);
+  assert.equal(tikTokOembedEndpoint('https://lite.tiktok.com/explore'), null);
+  assert.equal(tikTokOembedEndpoint('https://vt.tiktok.com/'), null);
   assert.equal(tikTokOembedEndpoint('https://example.com/video/123'), null);
 });

@@ -122,12 +122,12 @@ export function describeKnownUrl(rawUrl: string): UrlTitle | null {
     host === 'vm.tiktok.com'
   ) {
     if (
-      host === 'lite.tiktok.com' ||
-      host === 'vt.tiktok.com' ||
-      host === 'vm.tiktok.com' ||
-      segs[0] === 't' ||
-      segs[0] === 'v'
+      (host === 'vt.tiktok.com' || host === 'vm.tiktok.com') &&
+      segs.length > 0
     ) {
+      return { title: 'TikTok video', preview_image_url: null };
+    }
+    if (segs[0] === 't' || segs[0] === 'v') {
       return { title: 'TikTok video', preview_image_url: null };
     }
     if (segs[1] !== 'video') {
