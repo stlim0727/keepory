@@ -926,6 +926,8 @@ export const ko: Catalog = {
   'tutorial.step1.title': '하던 일을 멈추지 않고 바로 저장',
   'tutorial.step1.body':
     '읽고 있던 아티클, 영상, SNS 글에서 공유하기를 누르고 Keepory를 선택하세요. 화면을 벗어나지 않고 백그라운드에서 즉시 안전하게 저장됩니다.',
+  'tutorial.step1.bodyWeb': '다시 보고 싶은 글이나 영상, 게시물을 찾았나요? 추가 화면에서 링크를 붙여넣고 내 라이브러리에 저장하세요.',
+  'tutorial.step1.point1Web': '웹에서는 링크를 붙여넣어 저장',
   'tutorial.step1.point1': '어떤 앱에서든 원탭 OS 공유 지원',
   'tutorial.step1.point2': '링크 없는 간단한 생각과 메모도 저장',
   'tutorial.step1.point3': '오프라인에서도 즉시 작동하는 로컬 우선 저장',

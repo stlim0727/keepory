@@ -143,6 +143,10 @@ test('web empty state points at paste-a-link instead of the (unavailable) share 
   expect(screen.queryByText('Open any app, tap Share')).toBeNull();
   expect(screen.queryByText('Choose Keepory — saved instantly')).toBeNull();
   expect(screen.queryByText('Also on the web at keepory.app')).toBeNull();
+  await fireEvent.press(screen.getByTestId('inbox-empty-tutorial-button'));
+  expect(screen.getByText('Paste a link to save it on the web')).toBeTruthy();
+  expect(screen.queryByText('1-tap OS Share Sheet integration')).toBeNull();
+  expect(screen.getByText('Sharing from other apps works in the Keepory Android app, not on the web yet.')).toBeTruthy();
 });
 
 test('empty inbox displays tutorial button and opens tutorial modal when pressed', async () => {

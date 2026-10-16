@@ -123,6 +123,7 @@ export function TutorialModal({ visible, onClose }: TutorialModalProps) {
 
   const slide = SLIDES[step];
   const isLast = step === SLIDES.length - 1;
+  const isWebCapture = Platform.OS === 'web' && slide?.key === 'capture';
 
   const handleNext = useCallback(() => {
     if (isLast) {
@@ -222,10 +223,10 @@ export function TutorialModal({ visible, onClose }: TutorialModalProps) {
             <Text
               style={[styles.slideDescription, { color: palette.textSecondary }]}
             >
-              {t(slide.bodyKey)}
+              {t(isWebCapture ? 'tutorial.step1.bodyWeb' : slide.bodyKey)}
             </Text>
 
-            {Platform.OS === 'web' && slide.key === 'capture' ? (
+            {isWebCapture ? (
               <Text style={[styles.slideDescription, { color: palette.textSecondary }]}>
                 {t('inbox.emptyHintWebNote')}
               </Text>
@@ -242,13 +243,13 @@ export function TutorialModal({ visible, onClose }: TutorialModalProps) {
                   ]}
                 >
                   <Ionicons
-                    name={pt.icon}
+                    name={isWebCapture && idx === 0 ? 'add-circle-outline' : pt.icon}
                     size={16}
                     color={palette.accent}
                     style={styles.pointIcon}
                   />
                   <Text style={[styles.pointText, { color: palette.text }]}>
-                    {t(pt.textKey)}
+                    {t(isWebCapture && idx === 0 ? 'tutorial.step1.point1Web' : pt.textKey)}
                   </Text>
                 </View>
               ))}

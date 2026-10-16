@@ -1184,6 +1184,8 @@ export const en = {
   'tutorial.step1.title': 'Capture without leaving your flow',
   'tutorial.step1.body':
     'Found an interesting article, video, or post? Tap Share in any app and choose Keepory. It saves in milliseconds without interrupting what you’re doing.',
+  'tutorial.step1.bodyWeb': 'Found an article, video, or post worth keeping? Open the add form, paste its link, and save it to your library.',
+  'tutorial.step1.point1Web': 'Paste a link to save it on the web',
   'tutorial.step1.point1': '1-tap OS Share Sheet integration',
   'tutorial.step1.point2': 'Save quick notes even without a link',
   'tutorial.step1.point3': 'Instant local-first storage, works offline',
