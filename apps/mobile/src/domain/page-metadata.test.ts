@@ -684,6 +684,7 @@ test('parseOembed maps TikTok video title, author fallback, and thumbnail', () =
     thumbnail_url: 'https://p16-sign.tiktokcdn-us.com/thumb.jpg',
   });
   assert.equal(withTitle.title, '후쿠오카 텐진 라멘 투어 #후쿠오카 #라멘');
+  assert.equal(withTitle.title_is_derived, undefined);
   assert.equal(withTitle.site_name, 'TikTok');
   assert.equal(withTitle.preview_image_url, 'https://p16-sign.tiktokcdn-us.com/thumb.jpg');
 
@@ -693,6 +694,7 @@ test('parseOembed maps TikTok video title, author fallback, and thumbnail', () =
     thumbnail_url: 'https://p16-sign.tiktokcdn-us.com/thumb.jpg',
   });
   assert.equal(withAuthorOnly.title, 'TikTok by @fukuoka_foodie');
+  assert.equal(withAuthorOnly.title_is_derived, true);
 });
 
 test('fetchPageMetadata prefers TikTok oEmbed over generic HTML title', async () => {

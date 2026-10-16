@@ -57,12 +57,18 @@ const GENERIC_MEDIA_LABELS = new Set([
   'blog',
   'bookmark',
   'bookmarks',
+  'error',
+  'error page',
+  'errors',
   'link',
   'links',
   'media',
   'read later',
   'reading',
   'saved',
+  'sns',
+  'social media',
+  'socialmedia',
   'to read',
   'to watch',
   'video',
@@ -80,7 +86,13 @@ const GENERIC_MEDIA_LABELS = new Set([
   '미디어',
   '북마크',
   '비디오',
+  '소셜 미디어',
+  '소셜네트워크',
+  '소셜미디어',
   '아티클',
+  '오류',
+  '오류 페이지',
+  '오류안내',
   '읽을거리',
   '저장',
   '콘텐츠',
@@ -307,8 +319,10 @@ function normalize(parsed: unknown): EnrichmentOutput {
   const obj = (parsed ?? {}) as Record<string, unknown>;
 
   const topics = Array.isArray(obj.topics)
-    ? obj.topics.filter((t): t is string => typeof t === 'string' && Boolean(t.trim()))
+    ? obj.topics
+        .filter((t): t is string => typeof t === 'string' && Boolean(t.trim()))
         .map((t) => t.trim())
+        .filter((t) => !isGenericMediaLabel(t))
     : [];
 
   const suggested_tags: SuggestedTag[] = Array.isArray(obj.suggested_tags)

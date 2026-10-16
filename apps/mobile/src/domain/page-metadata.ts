@@ -1179,14 +1179,17 @@ export function parseOembed(json: OembedResponse): FetchedMetadata {
   const thumbnail = str(json.thumbnail_url);
   const provider = str(json.provider_name);
   let title = str(json.title);
+  let title_is_derived: boolean | undefined;
   if (!title && json.author_name && typeof json.author_name === 'string' && provider?.toLowerCase() === 'tiktok') {
     const cleanAuthor = json.author_name.trim().replace(/^@/, '');
     if (cleanAuthor) {
       title = `TikTok by @${cleanAuthor}`;
+      title_is_derived = true;
     }
   }
   return {
     title,
+    ...(title_is_derived ? { title_is_derived: true } : {}),
     site_name: provider,
     preview_image_url: thumbnail && isPublicPreviewUrl(thumbnail) ? thumbnail : undefined,
     // favicon is left to URL-derived metadata (origin/favicon.ico).
