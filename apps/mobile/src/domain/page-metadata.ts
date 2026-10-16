@@ -176,7 +176,7 @@ export function isChallengeOrBoilerplateTitle(title: string | undefined): boolea
 
   // HTTP & server error notices (exact or with brand delimiters [-–—|])
   const serverErrorPattern =
-    '(?:40[134]\\s+(?:unauthorized|forbidden|not\\s+found)|50[023]\\s+(?:internal\\s+server\\s+error|bad\\s+gateway|service\\s+unavailable)|access\\s+denied|permission\\s+denied|security\\s+check|error\\s+page)';
+    '(?:40[134]\\s+(?:unauthorized|forbidden|not\\s+found)|50[0234]\\s+(?:internal\\s+server\\s+error|bad\\s+gateway|service\\s+unavailable|gateway\\s+time-?out)|access\\s+denied|permission\\s+denied|security\\s+check|error\\s+page|gateway\\s+time-?out)';
   if (
     lower === 'error' ||
     new RegExp(`^(?:${serverErrorPattern})(?:\\s*[-–—|]\\s*.*)?$`, 'i').test(cleanTitle) ||

@@ -632,6 +632,8 @@ test('isChallengeOrBoilerplateTitle recognizes bot challenge, login gate, and er
   assert.equal(isChallengeOrBoilerplateTitle('404 Not Found'), true);
   assert.equal(isChallengeOrBoilerplateTitle('404 Not Found | Example'), true);
   assert.equal(isChallengeOrBoilerplateTitle('Example - 503 Service Unavailable'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('504 Gateway Time-out'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('504 Gateway Timeout | Nginx'), true);
   assert.equal(isChallengeOrBoilerplateTitle('Access Denied | Cloudflare'), true);
   assert.equal(isChallengeOrBoilerplateTitle('Access Denied'), true);
   assert.equal(isChallengeOrBoilerplateTitle('How to fix 404 Not Found errors in React'), false);
