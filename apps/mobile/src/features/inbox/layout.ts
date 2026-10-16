@@ -225,6 +225,10 @@ export const styles = StyleSheet.create({
     marginBottom: 16,
     opacity: 0.7,
   },
+  emptyWelcomeTitle: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
   emptyTitle: {
     textAlign: 'center',
     fontSize: 18,
@@ -256,42 +260,41 @@ export const styles = StyleSheet.create({
     marginTop: 1,
     width: 14,
   },
-  emptyDivider: {
-    width: 160,
-    height: StyleSheet.hairlineWidth,
-    marginVertical: 14,
-  },
-  emptyHintFallback: {
-    fontSize: 12,
-    textAlign: 'center',
-    maxWidth: 280,
-  },
   emptySaveButton: {
     width: '100%',
     maxWidth: 320,
-    marginBottom: 24,
+  },
+  emptySaveReassurance: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 10,
   },
   emptyAccount: {
     alignItems: 'center',
     width: '100%',
     maxWidth: 320,
-    marginBottom: 24,
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 24,
   },
   emptyAccountBenefit: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 24,
     textAlign: 'center',
+    marginTop: 10,
   },
   emptySignInButton: {
     alignSelf: 'stretch',
     minHeight: 48,
-    marginTop: 12,
+    marginTop: 16,
   },
-  emptyAccountReassurance: {
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: 'center',
-    marginTop: 10,
+  emptyShareGuide: {
+    width: '100%',
+    maxWidth: 320,
+    marginTop: 24,
   },
   emptyTutorialButton: {
     marginTop: 14,

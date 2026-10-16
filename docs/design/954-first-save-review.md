@@ -3,13 +3,18 @@
 Codex reviewed [issue #954](https://github.com/stlim0727/stash/issues/954)
 with a Jony Ive-inspired design subagent on 2026-10-15.
 
-The empty library previously offered sign-in before capture instructions. Its
-save path was prose pointing to a separate + control. The first change makes
-“Save your first link” a direct action into the existing add screen, keeps
-optional sign-in directly below the save action with secondary styling and its
-cross-device benefit, before capture guidance, and removes the
-disabled Android acquisition button. Native sharing guidance remains available.
-English and Korean copy lead with the user's intent to return to a link.
+A screenshot review with the same design subagent on 2026-10-16 found that
+button prominence alone left both actions feeling like chores. The long heading
+wrapped awkwardly, the login explanation was detached from its action, and the
+reassurance under login weakened its invitation.
+
+The revised composition leads with “Keep something worth revisiting” and a
+filled “Save your first link” action. “No account needed” belongs to saving.
+A softly tinted account card groups “Your links, on every device” with a
+high-contrast outlined “Sign in to sync” action. Native share guidance follows
+both invitations. Web's redundant + instruction is removed; the platform sharing
+limitation appears inside the existing capture tutorial instead. Both English
+and Korean use the same hierarchy, with natural wrapping and flexible heights.
 
 ## Evidence and limits
 
@@ -28,7 +33,8 @@ after an error-page save does not establish that the error caused churn.
 - Optional sign-in and its cross-device benefit appear before sharing guidance
   so account promotion remains prominent without blocking capture.
 - Anonymous and signed-out users can open `/add` without an auth prerequisite.
-- Web offers paste guidance; native retains its share-sheet instructions.
+- Web opens the existing add form directly; native retains its share-sheet
+  instructions. The web sharing limitation remains accessible in the tutorial.
 - Loading, account verification, sync, filtered-empty and search branches retain
   their existing eligibility rules.
 - Existing save persistence and cancel behavior are reused. Device checks for

@@ -56,6 +56,18 @@ import { ANONYMOUS_NUDGE_DISMISSED_PREF_KEY } from '@/ui/AnonymousNudgeBanner';
 import { makeStoredBookmark } from './helpers/fake-repository';
 import type { FakeRepositoryModule } from './helpers/fake-repository';
 
+// The native Jest window needs browser listeners for the web tutorial effect.
+const originalAddEventListener = window.addEventListener;
+const originalRemoveEventListener = window.removeEventListener;
+beforeAll(() => {
+  window.addEventListener = jest.fn();
+  window.removeEventListener = jest.fn();
+});
+afterAll(() => {
+  window.addEventListener = originalAddEventListener;
+  window.removeEventListener = originalRemoveEventListener;
+});
+
 const defaultPlatformOS = Platform.OS;
 const fakeRepo = jest.requireMock('@/storage/repository') as FakeRepositoryModule;
 
@@ -91,8 +103,7 @@ test('native empty state teaches the share-capture flow as a numbered 2-step wal
   await waitFor(() => expect(screen.getByTestId('inbox-empty-onboarding')).toBeTruthy());
   expect(screen.getByText('Open any app, tap Share')).toBeTruthy();
   expect(screen.getByText('Choose Keepory — saved instantly')).toBeTruthy();
-  // The secondary fallback line for the manual paste path.
-  expect(screen.getByText('Prefer to paste a link? Tap the + below.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Save your first link' })).toBeTruthy();
   expect(screen.queryByText('Also on the web at keepory.app')).toBeNull();
   // Never promises the (native-only) share flow's web-broken copy or the web variant.
   expect(screen.queryByText('Tap + to paste a link and save.')).toBeNull();
@@ -106,8 +117,8 @@ test.each(['anonymous', 'signed_out'] as const)('empty inbox offers %s users sig
   const screen = await renderInbox();
 
   await waitFor(() => expect(screen.getByTestId('inbox-empty-sign-in')).toBeTruthy());
-  expect(screen.getByText('Sign in to access your saved links across devices.')).toBeTruthy();
-  expect(screen.getByText('You can save links without signing in.')).toBeTruthy();
+  expect(screen.getByText('Your links, on every device')).toBeTruthy();
+  expect(screen.getByText('No account needed')).toBeTruthy();
   await fireEvent.press(screen.getByRole('button', { name: 'Save your first link' }));
   expect(mockPush).toHaveBeenCalledTimes(1);
   expect(mockPush).toHaveBeenCalledWith('/add');
@@ -133,10 +144,10 @@ test('web empty state points at paste-a-link instead of the (unavailable) share 
   const screen = await renderInbox();
 
   await waitFor(() => expect(screen.getByTestId('inbox-empty-onboarding')).toBeTruthy());
-  expect(screen.getByText('Tap + to paste a link and save.')).toBeTruthy();
+  expect(screen.queryByText('Tap + to paste a link and save.')).toBeNull();
   expect(
-    screen.getByText('Sharing from other apps works in the Keepory Android app, not on the web yet.'),
-  ).toBeTruthy();
+    screen.queryByText('Sharing from other apps works in the Keepory Android app, not on the web yet.'),
+  ).toBeNull();
   expect(screen.queryByText('Get the Android app')).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: 'Save your first link' }));
   expect(mockPush).toHaveBeenCalledWith('/add');
@@ -144,6 +155,10 @@ test('web empty state points at paste-a-link instead of the (unavailable) share 
   expect(screen.queryByText('Open any app, tap Share')).toBeNull();
   expect(screen.queryByText('Choose Keepory — saved instantly')).toBeNull();
   expect(screen.queryByText('Also on the web at keepory.app')).toBeNull();
+  await fireEvent.press(screen.getByTestId('inbox-empty-tutorial-button'));
+  expect(screen.getByText('Paste a link to save it on the web')).toBeTruthy();
+  expect(screen.queryByText('1-tap OS Share Sheet integration')).toBeNull();
+  expect(screen.getByText('Sharing from other apps works in the Keepory Android app, not on the web yet.')).toBeTruthy();
 });
 
 test('empty inbox displays tutorial button and opens tutorial modal when pressed', async () => {

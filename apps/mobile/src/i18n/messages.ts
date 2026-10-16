@@ -191,10 +191,11 @@ export const en = {
   'inbox.scopeClearA11y': 'Clear filter and show all bookmarks',
   'inbox.scopeClearSearchA11y': 'Clear the search',
   'inbox.emptyView': 'Nothing in this view yet.',
-  'inbox.emptyTitle': 'Keep what you want to come back to',
+  'inbox.emptyTitle': 'Keep something worth revisiting',
+  'inbox.emptySignInAction': 'Sign in to sync',
   'inbox.emptySave': 'Save your first link',
-  'inbox.emptySignInBenefit': 'Sign in to access your saved links across devices.',
-  'inbox.emptySignInOptional': 'You can save links without signing in.',
+  'inbox.emptySignInBenefit': 'Your links, on every device',
+  'inbox.emptySignInOptional': 'No account needed',
   // Native first-run teach: a numbered 2-step share-capture walkthrough, plus a
   // smaller fallback line for the manual add path. Web has no share sheet
   // (expo-share-intent is a no-op there), so it gets a distinct single-step
@@ -1183,6 +1184,8 @@ export const en = {
   'tutorial.step1.title': 'Capture without leaving your flow',
   'tutorial.step1.body':
     'Found an interesting article, video, or post? Tap Share in any app and choose Keepory. It saves in milliseconds without interrupting what you’re doing.',
+  'tutorial.step1.bodyWeb': 'Found an article, video, or post worth keeping? Open the add form, paste its link, and save it to your library.',
+  'tutorial.step1.point1Web': 'Paste a link to save it on the web',
   'tutorial.step1.point1': '1-tap OS Share Sheet integration',
   'tutorial.step1.point2': 'Save quick notes even without a link',
   'tutorial.step1.point3': 'Instant local-first storage, works offline',
