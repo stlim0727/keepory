@@ -690,13 +690,22 @@ test('parseOembed maps TikTok video title, author fallback, and thumbnail', () =
   assert.equal(withTitle.site_name, 'TikTok');
   assert.equal(withTitle.preview_image_url, 'https://p16-sign.tiktokcdn-us.com/thumb.jpg');
 
-  const withAuthorOnly = parseOembed({
-    author_name: 'fukuoka_foodie',
+  const withAuthorUrl = parseOembed({
+    author_name: 'Fukuoka Foodie',
+    author_url: 'https://www.tiktok.com/@fukuoka_foodie',
     provider_name: 'TikTok',
     thumbnail_url: 'https://p16-sign.tiktokcdn-us.com/thumb.jpg',
   });
-  assert.equal(withAuthorOnly.title, 'TikTok by @fukuoka_foodie');
-  assert.equal(withAuthorOnly.title_is_derived, true);
+  assert.equal(withAuthorUrl.title, 'TikTok by @fukuoka_foodie');
+  assert.equal(withAuthorUrl.title_is_derived, true);
+
+  const withDisplayNameOnly = parseOembed({
+    author_name: 'Scout & Suki',
+    provider_name: 'TikTok',
+    thumbnail_url: 'https://p16-sign.tiktokcdn-us.com/thumb.jpg',
+  });
+  assert.equal(withDisplayNameOnly.title, 'TikTok by Scout & Suki');
+  assert.equal(withDisplayNameOnly.title_is_derived, true);
 });
 
 test('fetchPageMetadata prefers TikTok oEmbed over generic HTML title', async () => {

@@ -1167,6 +1167,7 @@ interface OembedResponse {
   provider_name?: unknown;
   thumbnail_url?: unknown;
   author_name?: unknown;
+  author_url?: unknown;
 }
 
 /** Map an oEmbed JSON payload to our metadata shape. */
@@ -1180,10 +1181,12 @@ export function parseOembed(json: OembedResponse): FetchedMetadata {
   const provider = str(json.provider_name);
   let title = str(json.title);
   let title_is_derived: boolean | undefined;
-  if (!title && json.author_name && typeof json.author_name === 'string' && provider?.toLowerCase() === 'tiktok') {
-    const cleanAuthor = json.author_name.trim().replace(/^@/, '');
-    if (cleanAuthor) {
-      title = `TikTok by @${cleanAuthor}`;
+  if (!title && provider?.toLowerCase() === 'tiktok') {
+    const authorUrl = typeof json.author_url === 'string' ? json.author_url : '';
+    const handle = authorUrl.match(/@([a-zA-Z0-9_.-]+)/)?.[1];
+    const authorName = typeof json.author_name === 'string' ? json.author_name.trim().replace(/^@/, '') : '';
+    if (handle || authorName) {
+      title = `TikTok by ${handle ? `@${handle}` : authorName}`;
       title_is_derived = true;
     }
   }

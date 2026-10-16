@@ -26,7 +26,7 @@ test('describeKnownUrl leads social posts with the author handle', () => {
   );
   assert.equal(
     describeKnownUrl('https://lite.tiktok.com/t/ZSJ1234/')?.title,
-    'TikTok video',
+    'TikTok link',
   );
   assert.equal(
     describeKnownUrl('https://vt.tiktok.com/ZSJ1234/')?.title,

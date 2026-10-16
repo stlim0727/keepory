@@ -128,7 +128,7 @@ export function describeKnownUrl(rawUrl: string): UrlTitle | null {
       return { title: 'TikTok video', preview_image_url: null };
     }
     if (segs[0] === 't' || segs[0] === 'v') {
-      return { title: 'TikTok video', preview_image_url: null };
+      return { title: 'TikTok link', preview_image_url: null };
     }
     if (segs[1] !== 'video') {
       return null;
