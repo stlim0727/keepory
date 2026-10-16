@@ -139,7 +139,7 @@ export const ko: Catalog = {
   'inbox.scopeClearA11y': '필터를 지우고 모든 북마크 보기',
   'inbox.scopeClearSearchA11y': '검색 지우기',
   'inbox.emptyView': '이 보기에는 아직 아무것도 없습니다.',
-  'inbox.emptyTitle': '다시 보고 싶은 것을 모으세요',
+  'inbox.emptyTitle': '좋은 링크를 모으세요',
   'inbox.emptySignInAction': '로그인하고 동기화',
   'inbox.emptySave': '첫 링크 저장하기',
   'inbox.emptySignInBenefit': '어느 기기에서나 내 링크를',
