@@ -630,7 +630,11 @@ test('isChallengeOrBoilerplateTitle recognizes bot challenge, login gate, and er
   assert.equal(isChallengeOrBoilerplateTitle('Checking your browser before accessing site'), true);
   assert.equal(isChallengeOrBoilerplateTitle('403 Forbidden'), true);
   assert.equal(isChallengeOrBoilerplateTitle('404 Not Found'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('404 Not Found | Example'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('Example - 503 Service Unavailable'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('Access Denied | Cloudflare'), true);
   assert.equal(isChallengeOrBoilerplateTitle('Access Denied'), true);
+  assert.equal(isChallengeOrBoilerplateTitle('How to fix 404 Not Found errors in React'), false);
   // Korean error notices and login walls (STASH-7Q/Issue 954)
   assert.equal(isChallengeOrBoilerplateTitle('오류안내 페이지'), true);
   assert.equal(isChallengeOrBoilerplateTitle('오류안내'), true);

@@ -174,19 +174,13 @@ export function isChallengeOrBoilerplateTitle(title: string | undefined): boolea
     return true;
   }
 
-  // HTTP & server error notices
+  // HTTP & server error notices (exact or with brand delimiters [-–—|])
+  const serverErrorPattern =
+    '(?:40[134]\\s+(?:unauthorized|forbidden|not\\s+found)|50[023]\\s+(?:internal\\s+server\\s+error|bad\\s+gateway|service\\s+unavailable)|access\\s+denied|permission\\s+denied|security\\s+check|error\\s+page)';
   if (
-    lower === '403 forbidden' ||
-    lower === '401 unauthorized' ||
-    lower === '404 not found' ||
-    lower === '500 internal server error' ||
-    lower === '502 bad gateway' ||
-    lower === '503 service unavailable' ||
-    lower === 'access denied' ||
-    lower === 'permission denied' ||
-    lower === 'security check' ||
-    lower === 'error page' ||
-    lower === 'error'
+    lower === 'error' ||
+    new RegExp(`^(?:${serverErrorPattern})(?:\\s*[-–—|]\\s*.*)?$`, 'i').test(cleanTitle) ||
+    new RegExp(`^.*?\\s*[-–—|]\\s*(?:${serverErrorPattern})$`, 'i').test(cleanTitle)
   ) {
     return true;
   }
