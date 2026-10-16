@@ -1,0 +1,94 @@
+name: Promote to Google Play Production
+
+# Promotes an existing Google Play release (from the internal testing track)
+# to the production track with localized release notes using the Google Play
+# Developer Publishing API via scripts/play-production-release.mjs.
+#
+# Manual dispatch only.
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   PLAY_SERVICE_ACCOUNT_JSON  full contents of the Google Play publisher
+#                              service-account JSON key.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'App version to promote (e.g. 1.2.9)'
+        required: true
+        default: '1.2.9'
+      version_code:
+        description: 'Version code to promote (e.g. 33)'
+        required: true
+        default: '33'
+      expected_production_codes:
+        description: 'Expected current production version codes (comma-separated, e.g. 32)'
+        required: false
+        default: '32'
+      publisher_idle:
+        description: 'Acknowledge all publisher and Play Console operations are idle'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: android-playstore
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .node-version
+
+      - name: Promote release to Google Play production track
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          VERSION: ${{ inputs.version }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          EXPECTED_PRODUCTION_CODES: ${{ inputs.expected_production_codes }}
+          PUBLISHER_IDLE: ${{ inputs.publisher_idle }}
+        run: |
+          KEY_PATH="/tmp/play-service-account.json"
+          NOTES_PATH="/tmp/play-release-notes.json"
+
+          echo "$PLAY_SERVICE_ACCOUNT_JSON" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+
+          node -e '
+            const fs = require("fs");
+            const v = process.env.VERSION;
+            const doc = fs.readFileSync(`docs/release-notes/v${v}.md`, "utf8");
+            const enMatch = doc.match(/## English\s*\n\s*([\s\S]*?)(?=\n##|$)/i);
+            const koMatch = doc.match(/## (?:한국어|Korean)\s*\n\s*([\s\S]*?)(?=\n##|$)/i);
+            const en = enMatch ? enMatch[1].trim() : "";
+            const ko = koMatch ? koMatch[1].trim() : "";
+            fs.writeFileSync(process.argv[1], JSON.stringify([
+              { language: "en-US", text: en },
+              { language: "ko-KR", text: ko }
+            ], null, 2));
+          ' "$NOTES_PATH"
+
+          IDLE_FLAG=""
+          if [ "$PUBLISHER_IDLE" = "true" ]; then
+            IDLE_FLAG="--publisher-idle"
+          fi
+
+          node scripts/play-production-release.mjs promote \
+            --credentials "$KEY_PATH" \
+            --version "$VERSION" \
+            --code "$VERSION_CODE" \
+            --expected-production-codes "$EXPECTED_PRODUCTION_CODES" \
+            --notes "$NOTES_PATH" \
+            --commit $IDLE_FLAG
+
+          rm -f "$KEY_PATH" "$NOTES_PATH"
