@@ -24,6 +24,14 @@ test('describeKnownUrl leads social posts with the author handle', () => {
     describeKnownUrl('https://www.tiktok.com/@scout/video/12345')?.title,
     'TikTok by @scout',
   );
+  assert.equal(
+    describeKnownUrl('https://lite.tiktok.com/t/ZSJ1234/')?.title,
+    'TikTok video',
+  );
+  assert.equal(
+    describeKnownUrl('https://vt.tiktok.com/ZSJ1234/')?.title,
+    'TikTok video',
+  );
 });
 
 test('describeKnownUrl distinguishes Instagram reels from posts', () => {
