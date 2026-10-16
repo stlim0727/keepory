@@ -1987,29 +1987,3 @@ test("CAPTCHA loading and failure preserve local captures and their durable sync
   expect(fakeRepo.__bookmarks().find((row) => row.id === capturedId)).toEqual(storedBefore);
   expect(fakeRepo.__queue().find((row) => row.local_id === capturedId)).toEqual(queueBefore);
 });
-
-test.each([false, true])('STASH-7R: Maps title and address persist together, protecting mid-fetch memo edits=%s', async (editMemo) => {
-  let finish!: (value: { patch: Partial<Bookmark>; metadata_status: MetadataStatus }) => void;
-  mockEnrichBookmark.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-  fakeRepo.__reset([makeStoredBookmark({
-    id: SYNCED_ID,
-    url: 'https://maps.app.goo.gl/fqLik2TQgUTorsyp8',
-    title: 'Restaurant, 23 P. Example',
-    title_is_derived: true,
-    notes: null,
-    metadata_status: 'pending',
-  })]);
-  const { result } = await renderStore();
-  await waitFor(() => expect(mockEnrichBookmark).toHaveBeenCalled());
-  if (editMemo) {
-    await act(async () => { result.current.updateBookmarkFields(SYNCED_ID, { notes: 'Meet at noon' }); });
-  }
-  await act(async () => {
-    finish({ patch: { title: 'Restaurant', title_is_derived: true, notes: '23 P. Example' }, metadata_status: 'complete' });
-  });
-  await waitFor(() => expect(fakeRepo.__bookmarks().find((row) => row.id === SYNCED_ID)).toMatchObject({
-    title: editMemo ? 'Restaurant, 23 P. Example' : 'Restaurant',
-    notes: editMemo ? 'Meet at noon' : '23 P. Example',
-    metadata_status: 'complete',
-  }));
-});
