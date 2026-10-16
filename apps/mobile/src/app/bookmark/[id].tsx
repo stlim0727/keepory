@@ -157,6 +157,7 @@ export default function BookmarkDetailScreen({
   const [draftNotes, setDraftNotes] = useState<MemoDraft | null>(null);
   const [draftDescription, setDraftDescription] = useState<MemoDraft | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   // Long titles (e.g. a full Instagram caption pasted as the title) are
   // collapsed to a few lines with a "Show more" toggle so they don't push the
   // rest of the screen out of view. null = not yet measured.
@@ -603,8 +604,7 @@ export default function BookmarkDetailScreen({
     }
   };
 
-  // One tidy "Details" section instead of a card per field. Only rows with a
-  // real value show, so a sparse bookmark doesn't render mostly-empty cards.
+  // Basic details stay brief; support diagnostics are opt-in.
   const processing = getBookmarkProcessing(bookmark.id);
   const none = t('detail.stateNone');
   const yesNo = (value: boolean) => t(value ? 'detail.stateYes' : 'detail.stateNo');
@@ -629,19 +629,20 @@ export default function BookmarkDetailScreen({
   ].filter(Boolean).join(', ') : '';
   const details = [
     bookmark.url ? { label: t('detail.rowUrl'), value: bookmark.url } : null,
-    bookmark.site_name ? { label: t('detail.rowSite'), value: bookmark.site_name } : null,
-    // Skip the Description row for a text note whose body is already the header
-    // title, so the same text doesn't appear twice.
     !isTextMemo && bookmark.description && bookmark.description !== displayedTitle
       ? { label: t('detail.rowDescription'), value: bookmark.description }
       : null,
     { label: t('detail.rowSaved'), value: formatDate(bookmark.created_at) },
-    { label: t('detail.rowId'), value: bookmark.id },
+    { label: t('detail.rowUpdated'), value: formatDate(bookmark.updated_at) },
     bookmark.source_app ? { label: t('detail.rowFrom'), value: bookmark.source_app } : null,
-    processing ? {
-      label: t('detail.rowSyncState'),
-      value: `${t(`detail.syncPhase.${processing.sync.phase}`)} (${processing.sync.phase})`,
-    } : null,
+    { label: t('detail.rowSyncState'), value: processing ? t(`detail.syncPhase.${processing.sync.phase}`) : bookmark.sync_status },
+    { label: t('detail.rowMetadata'), value: previewRefreshing ? t('detail.previewRefreshing') : metadataStatusLabel(t, bookmark.metadata_status) },
+  ].filter((row): row is { label: string; value: string } => row !== null);
+  // Keep support diagnostics available without repeating content or normal states
+  // in the everyday details. Reports always capture the full processing snapshot.
+  const technicalDetails = [
+    { label: t('detail.rowId'), value: bookmark.id },
+    bookmark.site_name ? { label: t('detail.rowSite'), value: bookmark.site_name } : null,
     processing ? {
       label: t('detail.rowSyncBlockers'),
       value: processing.sync.blockers.map((reason) => t(`detail.syncBlocker.${reason}`)).join(', ') || none,
@@ -678,9 +679,7 @@ export default function BookmarkDetailScreen({
     syncQueueEntry?.last_error ? {
       label: t('detail.rowSyncError'), value: `${syncQueueEntry.last_error_kind ?? 'unknown'}: ${syncQueueEntry.last_error}`,
     } : null,
-    { label: t('detail.rowUpdated'), value: formatDate(bookmark.updated_at) },
     processing ? { label: t('detail.rowLastPull'), value: processing.sync.lastPulledAt ? formatDate(processing.sync.lastPulledAt) : none } : null,
-    { label: t('detail.rowMetadata'), value: `${metadataStatusLabel(t, bookmark.metadata_status)} (${bookmark.metadata_status})${previewRefreshing ? ' · refreshing' : ''}` },
     { label: t('detail.rowTitleDerived'), value: yesNo(bookmark.title_is_derived === true) },
     processing ? { label: t('detail.rowAiWork'), value: aiMarkers || none } : null,
     processing ? { label: t('detail.rowAiMode'), value: processing.ai.mode } : null,
@@ -1600,9 +1599,33 @@ export default function BookmarkDetailScreen({
       </Card>
 
       <View style={styles.detailsSection}>
+        {bookmark.url ? (
+          <Button
+            testID="detail-drawer-refresh-preview"
+            variant="ghost"
+            icon="refresh"
+            disabled={busy || previewRefreshing}
+            onPress={handleRefreshPreview}
+            accessibilityLabel={t('detail.previewRefresh')}
+          >
+            {previewRefreshing ? t('detail.previewRefreshing') : t('detail.previewRefresh')}
+          </Button>
+        ) : null}
+        <Button
+          variant="ghost"
+          icon="bug-outline"
+          disabled={reportCapturing}
+          onPress={() => void openReport({
+            route: '/bookmark/detail', surface: 'bookmark_detail', bookmarkId: bookmark.id,
+            bookmarkProcessing: getBookmarkProcessing(bookmark.id),
+          })}
+        >
+          {t('detail.reportProblem')}
+        </Button>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('detail.toggleDetailsA11y')}
+          accessibilityState={{ expanded: showDetails }}
           onPress={() => setShowDetails((value) => !value)}
           style={styles.detailsToggle}
         >
@@ -1612,7 +1635,7 @@ export default function BookmarkDetailScreen({
         </Pressable>
         {showDetails ? (
           <Card elevated={false} style={styles.field}>
-            {details.map((row, index) => {
+            {[...details, ...(showTechnicalDetails ? technicalDetails : [])].map((row, index) => {
               const isUrlRow = row.label === t('detail.rowUrl') && isSafeMarkdownLink(row.value);
               const rowStyle = [
                 styles.detailRow,
@@ -1666,32 +1689,22 @@ export default function BookmarkDetailScreen({
                 </View>
               );
             })}
-            {bookmark.url ? (
-              <Button
-                testID="detail-drawer-refresh-preview"
-                variant="ghost"
-                icon="refresh"
-                disabled={busy || previewRefreshing}
-                onPress={handleRefreshPreview}
-                accessibilityLabel={t('detail.previewRefresh')}
-              >
-                {previewRefreshing ? t('detail.previewRefreshing') : t('detail.previewRefresh')}
-              </Button>
-            ) : null}
-            <Text style={[styles.detailLabel, { color: palette.textSecondary }]}>
-              {t('detail.stateHelp')}
-            </Text>
-            <Button
-              variant="ghost"
-              icon="bug-outline"
-              disabled={reportCapturing}
-              onPress={() => void openReport({
-                route: '/bookmark/detail', surface: 'bookmark_detail', bookmarkId: bookmark.id,
-                bookmarkProcessing: getBookmarkProcessing(bookmark.id),
-              })}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('detail.toggleTechnicalDetailsA11y')}
+              accessibilityState={{ expanded: showTechnicalDetails }}
+              onPress={() => setShowTechnicalDetails((value) => !value)}
+              style={styles.detailsToggle}
             >
-              {t('detail.reportProblem')}
-            </Button>
+              <Text style={[styles.fieldLabel, { color: palette.textSecondary }]}>
+                {showTechnicalDetails ? t('detail.technicalDetailsHide') : t('detail.technicalDetailsShow')}
+              </Text>
+            </Pressable>
+            {showTechnicalDetails ? (
+              <Text style={[styles.detailLabel, { color: palette.textSecondary }]}>
+                {t('detail.stateHelp')}
+              </Text>
+            ) : null}
           </Card>
         ) : null}
       </View>

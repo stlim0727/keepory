@@ -135,7 +135,7 @@ function renderDetail(props?: Parameters<typeof BookmarkDetailScreen>[0]) {
   );
 }
 
-test('Details shows independent processing state and reports the inline bookmark identity', async () => {
+test('Details keeps diagnostics opt-in and reports the inline bookmark identity', async () => {
   mockRouteId = 'different-route-id';
   mockOpenReport.mockClear();
   fakeRepo.__reset([makeStoredBookmark({ id: SYNCED_ID, sync_status: 'synced', metadata_status: 'complete' })]);
@@ -148,10 +148,16 @@ test('Details shows independent processing state and reports the inline bookmark
   );
   await waitFor(() => expect(screen.getByLabelText('Toggle details')).toBeTruthy());
   await fireEvent.press(screen.getByLabelText('Toggle details'));
-  expect(screen.getByText(SYNCED_ID)).toBeTruthy();
-  expect(screen.getByText('Cloud save confirmed; no pending upload (synced)')).toBeTruthy();
+  expect(screen.queryByText(SYNCED_ID)).toBeNull();
+  expect(screen.getByText('Cloud save confirmed; no pending upload')).toBeTruthy();
   expect(screen.getByText('Page information state')).toBeTruthy();
+  expect(screen.queryByText('Stored bookmark sync state')).toBeNull();
+  expect(screen.queryByText('Not checked on this device')).toBeNull();
+  await fireEvent.press(screen.getByLabelText('Toggle technical details'));
+  expect(screen.getByText(SYNCED_ID)).toBeTruthy();
   expect(screen.getByText('Not checked on this device')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Toggle technical details'));
+  expect(screen.queryByText(SYNCED_ID)).toBeNull();
   await fireEvent.press(screen.getByText('Report a problem with this bookmark'));
   expect(mockOpenReport).toHaveBeenCalledWith(expect.objectContaining({
     bookmarkId: SYNCED_ID, surface: 'bookmark_detail',
@@ -1641,7 +1647,7 @@ test('unmounts preview hero when the image fails to load so it does not occupy e
   expect(screen.getByTestId('bookmark-detail-refresh-preview')).toBeTruthy();
 });
 
-test('details drawer exposes preview refresh for URL bookmarks', async () => {
+test('refresh and report precede details and remain available with details collapsed', async () => {
   mockRouteId = SYNCED_ID;
   fakeRepo.__reset([
     makeStoredBookmark({
@@ -1655,8 +1661,19 @@ test('details drawer exposes preview refresh for URL bookmarks', async () => {
   const screen = await renderDetail();
   await waitFor(() => expect(screen.getByText('Site without preview failure')).toBeTruthy());
 
-  // Details drawer is initially collapsed
-  expect(screen.queryByTestId('detail-drawer-refresh-preview')).toBeNull();
+  expect(screen.getByTestId('detail-drawer-refresh-preview')).toBeTruthy();
+  expect(screen.getByText('Report a problem with this bookmark')).toBeTruthy();
+  expect(screen.queryByText('Page information state')).toBeNull();
+  const tree = JSON.stringify(screen.toJSON());
+  const detailsIndex = tree.indexOf('"accessibilityLabel":"Toggle details"');
+  expect(detailsIndex).toBeGreaterThanOrEqual(0);
+  expect(tree.indexOf('"testID":"detail-drawer-refresh-preview"')).toBeLessThan(detailsIndex);
+  expect(tree.indexOf('Report a problem with this bookmark')).toBeLessThan(detailsIndex);
+  mockOpenReport.mockClear();
+  await fireEvent.press(screen.getByText('Report a problem with this bookmark'));
+  expect(mockOpenReport).toHaveBeenCalledWith(expect.objectContaining({
+    bookmarkId: SYNCED_ID, bookmarkProcessing: expect.objectContaining({ bookmarkId: SYNCED_ID }),
+  }));
 
   // Expand details drawer
   fireEvent.press(screen.getByLabelText('Toggle details'));
