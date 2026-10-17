@@ -9,7 +9,7 @@ import { Parser } from 'htmlparser2';
 import { fetchPublicPreview, isPublicPreviewUrl } from './preview-network.ts';
 import { previewFetch } from '@/domain/preview-fetch';
 import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
-import { isGenericTikTokTitle, isTikTokUrl, tikTokOembedEndpoint } from './tiktok.ts';
+import { canonicalTikTokVideoUrl, isGenericTikTokTitle, isTikTokShortlink, isTikTokUrl, resolveTikTokShortlink, tikTokOembedEndpoint } from './tiktok.ts';
 export { isGenericTikTokTitle, isTikTokUrl, tikTokOembedEndpoint } from './tiktok.ts';
 import { recordLog } from '../observability/log-buffer.ts';
 
@@ -795,7 +795,11 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
   // their oEmbed endpoint, which returns the real title + thumbnail; fall back
   // to HTML scraping when there's no oEmbed provider or it fails.
   let oembedOutcome: string | null = null;
-  const directOembed = await fetchKnownOembedMetadata(target);
+  let directOembed = await fetchKnownOembedMetadata(target);
+  if (!directOembed.metadata?.title && isTikTokShortlink(target)) {
+    const resolved = await resolveTikTokShortlink(target);
+    if (resolved) directOembed = await fetchKnownOembedMetadata(resolved);
+  }
   if (directOembed.metadata?.title) {
     return directOembed.metadata;
   }
@@ -817,7 +821,7 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
   // /s/ links are a common example). Prefer that provider's structured data
   // even when the redirected HTML has a generic title such as "Reddit".
   if (bot.finalUrl && bot.finalUrl !== target) {
-    const redirectedOembed = await fetchKnownOembedMetadata(bot.finalUrl);
+    const redirectedOembed = await fetchKnownOembedMetadata(canonicalTikTokVideoUrl(bot.finalUrl) || bot.finalUrl);
     if (redirectedOembed.metadata?.title) {
       recordLog('info', `preview: recovered via oEmbed for ${bot.finalUrl} from ${url}`);
       return redirectedOembed.metadata;
@@ -868,7 +872,7 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
       : 'browser_discovered=failed';
   }
   if (browser.finalUrl && browser.finalUrl !== target && browser.finalUrl !== bot.finalUrl) {
-    const redirectedOembed = await fetchKnownOembedMetadata(browser.finalUrl);
+    const redirectedOembed = await fetchKnownOembedMetadata(canonicalTikTokVideoUrl(browser.finalUrl) || browser.finalUrl);
     if (redirectedOembed.metadata?.title) {
       recordLog('info', `preview: recovered via oEmbed for ${browser.finalUrl} from ${url}`);
       return redirectedOembed.metadata;
