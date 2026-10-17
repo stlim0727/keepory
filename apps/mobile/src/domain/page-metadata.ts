@@ -9,8 +9,50 @@ import { Parser } from 'htmlparser2';
 import { fetchPublicPreview, isPublicPreviewUrl } from './preview-network.ts';
 import { previewFetch } from '@/domain/preview-fetch';
 import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
-import { canonicalTikTokVideoUrl, isGenericTikTokTitle, isTikTokShortlink, isTikTokUrl, resolveTikTokShortlink, tikTokOembedEndpoint } from './tiktok.ts';
-export { isGenericTikTokTitle, isTikTokUrl, tikTokOembedEndpoint } from './tiktok.ts';
+import {
+  canonicalTikTokVideoUrl,
+  isGenericTikTokTitle,
+  isTikTokShortlink,
+  isTikTokUrl,
+  resolveTikTokShortlink,
+  tikTokOembedEndpoint,
+} from './tiktok.ts';
+export {
+  canonicalTikTokVideoUrl,
+  isGenericTikTokTitle,
+  isTikTokShortlink,
+  isTikTokUrl,
+  resolveTikTokShortlink,
+  tikTokOembedEndpoint,
+} from './tiktok.ts';
+import {
+  extractNaverBlogIframeUrl,
+  isGenericNaverBlogTitle,
+  isNaverBlogPostUrl,
+  isNaverBlogUrl,
+  naverBlogPreviewUrl,
+} from './naver-blog.ts';
+export {
+  extractNaverBlogIframeUrl,
+  isGenericNaverBlogTitle,
+  isNaverBlogPostUrl,
+  isNaverBlogUrl,
+  naverBlogPreviewUrl,
+} from './naver-blog.ts';
+import {
+  buildNaverMapFolderStaticMapUrl,
+  fetchNaverMapFolderMetadata,
+  isGenericNaverMapTitle,
+  isNaverMapUrl,
+  naverMapFolderShareId,
+} from './naver-map.ts';
+export {
+  buildNaverMapFolderStaticMapUrl,
+  fetchNaverMapFolderMetadata,
+  isGenericNaverMapTitle,
+  isNaverMapUrl,
+  naverMapFolderShareId,
+} from './naver-map.ts';
 import { recordLog } from '../observability/log-buffer.ts';
 
 const FETCH_TIMEOUT_MS = 8000;
@@ -565,8 +607,13 @@ export function previewSourceUrl(rawUrl: string): string | null {
     return null;
   }
   const host = parsed.hostname.replace(/^www\./, '');
-  const isNaver = host === 'naver.com' || host.endsWith('.naver.com');
-  if (!isNaver) {
+  const isMapHost =
+    host === 'map.naver.com' ||
+    host === 'place.naver.com' ||
+    host === 'pcmap.place.naver.com' ||
+    host === 'pages.map.naver.com' ||
+    host === 'naver.me';
+  if (!isMapHost) {
     return null;
   }
   // A numeric place id from either the map wrapper (/p/entry/place/{id}) or a
@@ -578,188 +625,6 @@ export function previewSourceUrl(rawUrl: string): string | null {
   return null;
 }
 
-/**
- * Detects a Naver Map favorite/bookmark folder (MyPlace list) and returns its
- * share id, or null if the URL is not a Naver Map folder.
- * Matches:
- *  - map.naver.com/p/favorite/myPlace/folder/{shareId}
- *  - map.naver.com/v5/favorite/myPlace/folder/{shareId}
- *  - map.naver.com/p/favorite/{userEncryptId}/folder/{shareId}
- *  - pages.map.naver.com/save-pages/pc/detail-list/{shareId}
- *  - pages.map.naver.com/save-pages/api/maps-bookmark/v3/shares/{shareId}/...
- */
-export function naverMapFolderShareId(rawUrl: string): string | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    return null;
-  }
-  const host = parsed.hostname.replace(/^www\./, '');
-  const isNaver = host === 'naver.com' || host.endsWith('.naver.com');
-  if (!isNaver) {
-    return null;
-  }
-  const match = parsed.pathname.match(/\/(?:folder|detail-list|shares)\/([a-zA-Z0-9]+)(?:\/|$)/);
-  return match?.[1] ?? null;
-}
-
-/**
- * Builds a Naver Map static map thumbnail URL displaying pins for places in the
- * folder, matching the official Naver Map web client's implementation.
- */
-export function buildNaverMapFolderStaticMapUrl(
-  markerColor: string | number | undefined,
-  bookmarks: Array<{ px?: number; py?: number }>,
-): string | null {
-  const valid = bookmarks.filter(
-    (b) =>
-      typeof b.px === 'number' &&
-      typeof b.py === 'number' &&
-      !Number.isNaN(b.px) &&
-      !Number.isNaN(b.py),
-  );
-  if (valid.length === 0) {
-    return null;
-  }
-  const color = markerColor ? String(markerColor) : '1';
-  const icon = `https://map.pstatic.net/resource/api/v2/image/maps/bookmark/m_my_folder${color}@2x.png`;
-  // Limit to at most 15 markers to stay well within URL size limits
-  const markers = valid
-    .slice(0, 15)
-    .map((b) => `markers=type:e|icon:${icon}|anchor:center|pos:${b.px} ${b.py}`);
-  return `https://simg.pstatic.net/static.map/v2/map/staticmap.bin?caller=og_map&scale=2&w=500&h=300&${markers.join('&')}`;
-}
-
-export function isNaverMapUrl(rawUrl: string): boolean {
-  try {
-    const parsed = new URL(rawUrl);
-    const host = parsed.hostname.replace(/^www\./, '');
-    if (host === 'naver.me') {
-      return true;
-    }
-    return (
-      host === 'map.naver.com' ||
-      host === 'pcmap.place.naver.com' ||
-      host === 'place.naver.com' ||
-      host === 'pages.map.naver.com'
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function isGenericNaverMapTitle(title: string | undefined, url?: string): boolean {
-  if (!title) return true;
-  if (url && !isNaverMapUrl(url)) {
-    return false;
-  }
-  const t = title.trim();
-  return (
-    t === '네이버지도 저장' ||
-    t === '네이버지도' ||
-    t === '네이버 지도' ||
-    t === 'NAVER Map' ||
-    t === 'Naver Map'
-  );
-}
-
-/**
- * Fetches structured metadata for a Naver Map folder (MyPlace list) from Naver's
- * save-pages bookmark API. Returns folder title, site name, author attribution,
- * and a static map preview image.
- *
- * Follows the repository's hybrid UA convention: queries using the honest bot UA
- * first, and falls back to impersonating a browser only when the bot is refused or
- * yields an empty response.
- */
-export async function fetchNaverMapFolderMetadata(
-  shareId: string,
-  fetcher: typeof fetch = previewFetch as typeof fetch,
-): Promise<FetchedMetadata | null> {
-  const apiUrl = `https://pages.map.naver.com/save-pages/api/maps-bookmark/v3/shares/${encodeURIComponent(shareId)}`;
-
-  type AttemptResult =
-    | { status: 'success'; metadata: FetchedMetadata }
-    | { status: 'refused' }
-    | { status: 'too_large' }
-    | { status: 'failed' };
-
-  const fetchAttempt = async (userAgent: string): Promise<AttemptResult> => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    try {
-      const response = await fetchPublicPreview(apiUrl, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': userAgent,
-          Accept: 'application/json',
-        },
-      }, fetcher);
-      if (!response.ok) {
-        return { status: 'refused' };
-      }
-      const body = await readCappedBody(response);
-      if (!body || body.truncated) {
-        return { status: 'too_large' };
-      }
-      const text = new TextDecoder('utf-8').decode(body.bytes);
-      const data = JSON.parse(text) as {
-        folder?: {
-          name?: string;
-          memo?: string;
-          markerColor?: string | number;
-          bookmarkCount?: number;
-          placeUserProfile?: {
-            nick?: string;
-            imageUrl?: string;
-          };
-        };
-        bookmarkList?: Array<{ px?: number; py?: number }>;
-      };
-
-      const folder = data.folder;
-      if (!folder?.name?.trim()) {
-        return { status: 'failed' };
-      }
-      const baseName = folder.name.trim();
-
-      const nick = folder.placeUserProfile?.nick?.trim();
-      const titleSuffix = baseName.includes('네이버 지도') ? '' : ' : 네이버 지도';
-      const title = nick ? `${baseName} (${nick})${titleSuffix}` : `${baseName}${titleSuffix}`;
-
-      const staticMap = buildNaverMapFolderStaticMapUrl(folder.markerColor, data.bookmarkList ?? []);
-      const previewImage =
-        staticMap ||
-        folder.placeUserProfile?.imageUrl ||
-        'https://ssl.pstatic.net/static/maps/assets/images/og-map-400x200.png';
-
-      return {
-        status: 'success',
-        metadata: {
-          title,
-          site_name: '네이버 지도',
-          favicon_url: 'https://ssl.pstatic.net/static/maps/assets/icons/favicon.ico',
-          preview_image_url: previewImage,
-        },
-      };
-    } catch {
-      return { status: 'failed' };
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
-  const bot = await fetchAttempt(BOT_USER_AGENT);
-  if (bot.status === 'success') {
-    return bot.metadata;
-  }
-  if (bot.status === 'too_large') {
-    return null;
-  }
-  const browser = await fetchAttempt(BROWSER_USER_AGENT);
-  return browser.status === 'success' ? browser.metadata : null;
-}
 
 /**
  * Fetches a page and extracts its metadata. Resolves to null on timeout,
@@ -807,7 +672,18 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
     oembedOutcome = directOembed.outcome;
   }
 
-  const bot = await fetchHtmlMetadata(target, BOT_USER_AGENT);
+  // Some portals (notably desktop Naver Blog and Naver Map places) serve an
+  // iframe or SPA shell with no OG card. Use the mobile server-rendered sibling
+  // up front so we fetch the real metadata on the first request.
+  const initialSibling = naverBlogPreviewUrl(target) || previewSourceUrl(target);
+  const fetchTarget = initialSibling || target;
+  let bot = await fetchHtmlMetadata(fetchTarget, BOT_USER_AGENT);
+  if (initialSibling && !bot.metadata?.title) {
+    const fallbackBot = await fetchHtmlMetadata(target, BOT_USER_AGENT);
+    if (fallbackBot.metadata?.title) {
+      bot = fallbackBot;
+    }
+  }
   if (bot.discoveredOembedUrl) {
     const discovered = await fetchOembed(bot.discoveredOembedUrl);
     if (discovered?.title) {
@@ -845,13 +721,15 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
       return folderMeta;
     }
   }
+  const botHasSibling = Boolean(naverBlogPreviewUrl(botTargetUrl) || previewSourceUrl(botTargetUrl));
   if (
     bot.metadata?.title &&
     !bot.metadata.title_is_derived &&
     !isGenericNaverMapTitle(bot.metadata.title, botTargetUrl) &&
     !isGenericGoogleSearchTitle(bot.metadata.title, botTargetUrl) &&
     !isGenericYouTubeTitle(bot.metadata.title, botTargetUrl) &&
-    !isChallengeOrBoilerplateTitle(bot.metadata.title)
+    !isChallengeOrBoilerplateTitle(bot.metadata.title) &&
+    !(botHasSibling && !bot.metadata.preview_image_url)
   ) {
     return bot.metadata;
   }
@@ -859,9 +737,17 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
   // browser. Keep the bot result as a fallback so we never discard usable
   // partial metadata (e.g. a favicon) the browser retry can't improve on.
   // Retry the expanded Maps destination: a browser UA on the short link may
-  // receive a Firebase trampoline instead of the place page.
-  const browserTarget = bot.metadata?.title_is_derived && bot.finalUrl ? bot.finalUrl : target;
-  const browser = await fetchHtmlMetadata(browserTarget, BROWSER_USER_AGENT);
+  const browserTarget =
+    bot.metadata?.title_is_derived && bot.finalUrl
+      ? bot.finalUrl
+      : (initialSibling && !bot.metadata?.title ? target : fetchTarget);
+  let browser = await fetchHtmlMetadata(browserTarget, BROWSER_USER_AGENT);
+  if (initialSibling && browserTarget === fetchTarget && !browser.metadata?.title) {
+    const fallbackBrowser = await fetchHtmlMetadata(target, BROWSER_USER_AGENT);
+    if (fallbackBrowser.metadata?.title) {
+      browser = fallbackBrowser;
+    }
+  }
   if (browser.discoveredOembedUrl && browser.discoveredOembedUrl !== bot.discoveredOembedUrl) {
     const discovered = await fetchOembed(browser.discoveredOembedUrl);
     if (discovered?.title) {
@@ -891,18 +777,20 @@ export async function fetchPageMetadata(url: string): Promise<FetchedMetadata | 
   const landedOn = keepMapsFallback ? bot.finalUrl : browser.finalUrl ?? bot.finalUrl;
   const landedUrl = landedOn || target;
 
-  // SPA shell with no title: if we landed on a page that has a server-rendered
-  // sibling (e.g. a Naver Map place entry), fetch that for the real metadata.
+  // SPA shell with no title (or desktop shell lacking preview image):
+  // if we landed on a page that has a server-rendered sibling (e.g. a Naver Map place entry,
+  // Naver Blog post), fetch that for the real metadata.
   let spa: HtmlFetchResult | null = null;
+  const altUrl = landedOn ? (naverBlogPreviewUrl(landedOn) || previewSourceUrl(landedOn)) : null;
   if (
     !result?.title ||
+    !result?.preview_image_url ||
     isGenericNaverMapTitle(result.title, landedUrl) ||
     isGenericGoogleSearchTitle(result.title, landedUrl) ||
     isGenericYouTubeTitle(result.title, landedUrl) ||
     isChallengeOrBoilerplateTitle(result.title)
   ) {
-    const altUrl = landedOn ? previewSourceUrl(landedOn) : null;
-    if (altUrl) {
+    if (altUrl && altUrl !== landedOn) {
       spa = await fetchHtmlMetadata(altUrl, BROWSER_USER_AGENT);
       if (spa.metadata?.title && !isGenericNaverMapTitle(spa.metadata.title, altUrl)) {
         recordLog('info', `preview: recovered via ${altUrl} for ${url}`);
