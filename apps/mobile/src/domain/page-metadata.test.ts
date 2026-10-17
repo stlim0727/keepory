@@ -1854,3 +1854,41 @@ test('fetchPageMetadata recovers Google search query after share.google redirect
     globalThis.fetch = originalFetch;
   }
 });
+
+test('fetchPageMetadata resolves TikTok shortlink via HEAD and strips query parameters for oEmbed (STASH-7V)', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  const canonicalUrl = 'https://www.tiktok.com/@jeonyeogi365/video/7671897897641790740';
+  const redirectedUrl = `${canonicalUrl}?_r=1&_t=ZS-9AbUeQg3hfo`;
+  globalThis.fetch = (async (target: string, init?: RequestInit) => {
+    calls.push(target);
+    // Direct oEmbed on shortlink fails (400 Invalid URL)
+    if (target.includes('vt.tiktok.com') && target.startsWith('https://www.tiktok.com/oembed')) {
+      return { ok: false, status: 400 } as unknown as Response;
+    }
+    // HEAD request to resolve shortlink
+    if (init?.method === 'HEAD' && target === 'https://vt.tiktok.com/ZSgNw1uD1/') {
+      return htmlResponse('', { url: redirectedUrl });
+    }
+    // Canonical oEmbed request (without query params)
+    if (target === `https://www.tiktok.com/oembed?url=${encodeURIComponent(canonicalUrl)}`) {
+      return {
+        ok: true,
+        json: async () => ({
+          title: '새우계란덮밥🦐🍳 이 레시피 하나면 끝! #레시피',
+          provider_name: 'TikTok',
+          thumbnail_url: 'https://p16-sign-sg.ibyteimg.com/tos-alisg-p-0037/thumb.jpeg',
+        }),
+      } as unknown as Response;
+    }
+    return htmlResponse('<head><title>TikTok - Make Your Day</title></head>');
+  }) as typeof fetch;
+  try {
+    const meta = await fetchPageMetadata('https://vt.tiktok.com/ZSgNw1uD1/');
+    assert.equal(meta?.title, '새우계란덮밥🦐🍳 이 레시피 하나면 끝! #레시피');
+    assert.equal(meta?.site_name, 'TikTok');
+    assert.equal(meta?.preview_image_url, 'https://p16-sign-sg.ibyteimg.com/tos-alisg-p-0037/thumb.jpeg');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
