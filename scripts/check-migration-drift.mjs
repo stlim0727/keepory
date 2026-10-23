@@ -122,8 +122,14 @@ async function main() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
 
   if (!token || !url) {
-    console.log(
-      'SUPABASE_ACCESS_TOKEN or EXPO_PUBLIC_SUPABASE_URL not set — skipping migration drift check.',
+    const missing = [!token && 'SUPABASE_ACCESS_TOKEN', !url && 'EXPO_PUBLIC_SUPABASE_URL'].filter(
+      Boolean
+    );
+    // Named explicitly rather than a generic "skipping": an unattended green
+    // nightly job reads as "no drift" unless it says it verified nothing.
+    console.warn(
+      `::warning title=Migration drift not checked::Not set: ${missing.join(', ')}. ` +
+        'This job verified NOTHING; it is not evidence of an unapplied-free database.',
     );
     return;
   }

@@ -50,6 +50,42 @@ async function expectRejects(name, promise) {
   }
 }
 
+// When a realtime check fails, the operator's first question is whether Realtime
+// itself is unreachable or only this client's join failed. RealtimeClient reports
+// neither the transport error nor a close reason, so repeat the handshake with the
+// exact URL the client built and say which one it was.
+async function probeRealtimeHandshake(endpointUrl, apiKey) {
+  const redact = (text) => String(text).split(apiKey).join('<apikey>');
+  try {
+    return await new Promise((resolve) => {
+      const ws = new WebSocket(endpointUrl);
+      const timer = setTimeout(() => {
+        resolve('handshake produced no open/close event within 5000ms');
+        try {
+          ws.close();
+        } catch {
+          // already failed or closing
+        }
+      }, 5000);
+      ws.addEventListener('open', () => {
+        clearTimeout(timer);
+        resolve('opened');
+        ws.close();
+      });
+      ws.addEventListener('close', (event) => {
+        clearTimeout(timer);
+        resolve(`closed (code ${event.code})`);
+      });
+      ws.addEventListener('error', (event) => {
+        clearTimeout(timer);
+        resolve(`error (${redact(event.message || 'non-101 response')})`);
+      });
+    });
+  } catch (error) {
+    return `probe threw (${redact(error instanceof Error ? error.message : error)})`;
+  }
+}
+
 async function testRealtimeChannel(session, userId, expectSuccess) {
   const configState = getSupabaseConfigState();
   if (configState.status !== 'configured') {
@@ -76,25 +112,26 @@ async function testRealtimeChannel(session, userId, expectSuccess) {
       },
     });
 
-    let socketOpened = false;
-    rt.onOpen(() => {
-      socketOpened = true;
-    });
-
+    // Observed end to end in CI: the private-channel RLS reject took 4.5s to come
+    // back, so the original 5s budget failed against a healthy database. On a
+    // timeout, the handshake probe below reports whether Realtime is reachable at
+    // all, which is the distinction this message used to guess at.
+    const JOIN_TIMEOUT_MS = 15000;
     let settled = false;
     const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        rt.disconnect();
-        if (!socketOpened) {
-          reject(new Error('WebSocket connection could not be opened (network offline or Realtime disabled)'));
-        } else if (expectSuccess) {
-          reject(new Error('realtime connection timed out (expected success)'));
-        } else {
-          reject(new Error('realtime connection timed out without receiving CHANNEL_ERROR (expected rejection)'));
-        }
-      }
-    }, 5000);
+      if (settled) return;
+      settled = true;
+      rt.disconnect();
+      probeRealtimeHandshake(rt.endpointURL(), configState.config.anonKey).then((detail) => {
+        reject(
+          new Error(
+            `realtime join did not settle within ${JOIN_TIMEOUT_MS}ms ` +
+              `(${expectSuccess ? 'expected SUBSCRIBED' : 'expected CHANNEL_ERROR'}); ` +
+              `raw handshake to the same endpoint: ${detail}`,
+          ),
+        );
+      });
+    }, JOIN_TIMEOUT_MS);
 
     channel.subscribe((status, err) => {
       if (settled) return;
