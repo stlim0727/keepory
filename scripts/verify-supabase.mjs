@@ -112,28 +112,28 @@ async function testRealtimeChannel(session, userId, expectSuccess) {
       },
     });
 
-    // RealtimeClient exposes no socket-open hook (onOpen lives only on its
-    // internal socket adapter), so read the connection state when deciding.
-    let joinAcked = false;
+    // Observed end to end in CI: the private-channel RLS reject took 4.5s to come
+    // back, so the original 5s budget failed against a healthy database. On a
+    // timeout, the handshake probe below reports whether Realtime is reachable at
+    // all, which is the distinction this message used to guess at.
+    const JOIN_TIMEOUT_MS = 15000;
     let settled = false;
     const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        const socketNeverOpened = !joinAcked && rt.connectionState() !== 'open';
-        rt.disconnect();
-        probeRealtimeHandshake(rt.endpointURL(), configState.config.anonKey).then((detail) => {
-          const reason = socketNeverOpened
-            ? `WebSocket connection could not be opened (network offline or Realtime disabled) — raw handshake to the same endpoint: ${detail}`
-            : expectSuccess
-              ? 'realtime connection timed out (expected success)'
-              : 'realtime connection timed out without receiving CHANNEL_ERROR (expected rejection)';
-          reject(new Error(reason));
-        });
-      }
-    }, 5000);
+      if (settled) return;
+      settled = true;
+      rt.disconnect();
+      probeRealtimeHandshake(rt.endpointURL(), configState.config.anonKey).then((detail) => {
+        reject(
+          new Error(
+            `realtime join did not settle within ${JOIN_TIMEOUT_MS}ms ` +
+              `(${expectSuccess ? 'expected SUBSCRIBED' : 'expected CHANNEL_ERROR'}); ` +
+              `raw handshake to the same endpoint: ${detail}`,
+          ),
+        );
+      });
+    }, JOIN_TIMEOUT_MS);
 
     channel.subscribe((status, err) => {
-      joinAcked = true;
       if (settled) return;
       if (status === 'SUBSCRIBED') {
         if (expectSuccess) {
