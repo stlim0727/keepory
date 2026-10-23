@@ -49,7 +49,7 @@ test("'off' mode skips the automatic deferred trigger, but a manual request stil
     error = await store.current!.requestAiEnrichment(ID_A); // default source: 'manual'
   });
   expect(error).toBeNull();
-  expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(ID_A, expect.anything(), 'en');
+  expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(ID_A, expect.anything(), 'en', 'manual');
 });
 
 test("'off' mode also skips the backoff-scheduled retry check", async () => {
@@ -426,7 +426,7 @@ test.each([null, 'off'])('linking the same guest ID retains staged work across m
       await act(() => result.current.setAiSuggestionsMode('auto_accept'));
     }
     await act(async () => { jest.advanceTimersByTime(400); });
-    await waitFor(() => expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(ID_A, expect.anything(), 'en'));
+    await waitFor(() => expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(ID_A, expect.anything(), 'en', 'auto'));
   } finally {
     jest.useRealTimers();
   }

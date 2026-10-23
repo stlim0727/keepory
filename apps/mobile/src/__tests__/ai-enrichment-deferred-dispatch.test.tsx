@@ -22,6 +22,7 @@ test('re-hydrates a persisted deferred AI trigger and fires it after a restart',
       SYNCED_ID,
       expect.anything(),
       'en',
+      'auto',
     ),
   );
   // ...and the durable marker is cleared once it succeeds, so it won't re-fire.
