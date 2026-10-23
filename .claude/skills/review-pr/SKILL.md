@@ -17,7 +17,7 @@ already in the base branch before reviewing the diff** — a superseded PR is th
 most common and most easily-missed disposition, and reviewing its diff in detail
 before that check wastes effort.
 
-Owner/repo is `stlim0727/stash` and the base is almost always `main`. Use the
+Owner/repo is `stlim0727/keepory` and the base is almost always `main`. Use the
 GitHub MCP tools (`mcp__github__pull_request_read`, `…__update_pull_request`,
 `…__add_issue_comment`); fall back to `git` over the fetched refs when MCP is
 unavailable.

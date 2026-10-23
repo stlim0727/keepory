@@ -292,7 +292,7 @@ jobs:
             if [ -n "$TOKEN" ]; then
               PROVIDER=$(curl -s -S -H "Authorization: token $TOKEN" \
                 -H "Accept: application/vnd.github+json" \
-                https://api.github.com/repos/stlim0727/stash/actions/variables/CI_PROVIDER \
+                https://api.github.com/repos/stlim0727/keepory/actions/variables/CI_PROVIDER \
                 | node -e "
                   let data;
                   try {

@@ -44,7 +44,7 @@ fi
 [ "$REF" = "HEAD" ] && REF=""  # detached checkout: no meaningful branch name
 
 COMMIT_URL=""
-[ -n "$SHA" ] && COMMIT_URL="https://github.com/stlim0727/stash/commit/$SHA"
+[ -n "$SHA" ] && COMMIT_URL="https://github.com/stlim0727/keepory/commit/$SHA"
 
 echo "web-build: provenance SHA=[$SHA] REF=[$REF] (git=$(command -v git || echo none), dotgit=$( [ -e .git ] && echo yes || echo no ))"
 

@@ -18,7 +18,7 @@ decides *what* the next version is): run `versioning` if you need to reason abou
 MINOR/PATCH or a stable cut; run **this** to actually build the next RC and do
 the housekeeping. Do the three steps in order and report all three at the end.
 
-Repo: **`stlim0727/stash`**. Branch to build from: **`main`** (RCs always ship
+Repo: **`stlim0727/keepory`**. Branch to build from: **`main`** (RCs always ship
 from the trunk). Only **Step 1** is an agent action: trigger GitHub Actions
 `workflow_dispatch` on `android-apk.yml` with the `version` input. In Codex,
 first use `tool_search` for a GitHub workflow-dispatch tool. If no dispatch tool
@@ -71,14 +71,14 @@ cross-check that catches a stale/mistracked marker before it reaches CI.
      `git log refs/tags/dev..origin/main` — don't build on the *intent* to merge.
 3. **Check for open PRs against `main`** — use
    `mcp__codex_apps__github._search_prs` with `repository_full_name:
-   "stlim0727/stash"`, `state: "open"`, and query `base:main`. If any open PR
+   "stlim0727/keepory"`, `state: "open"`, and query `base:main`. If any open PR
    looks like it belongs in this RC, ask the user whether to wait for it before
    building; otherwise proceed. (Ignore infra/docs PRs that clearly don't
    belong.)
 4. **Dispatch the build:**
    ```
    # Use the GitHub workflow-dispatch tool if exposed by tool_search.
-   owner/repo: stlim0727/stash
+   owner/repo: stlim0727/keepory
    workflow_id: android-apk.yml
    ref: main
    inputs: { "version": "vX.Y.Z-rcN" }   # e.g. v1.1.0-rc4

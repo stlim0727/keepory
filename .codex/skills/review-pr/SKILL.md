@@ -17,7 +17,7 @@ already in the base branch before reviewing the diff** — a superseded PR is th
 most common and most easily-missed disposition, and reviewing its diff in detail
 before that check wastes effort.
 
-Owner/repo is `stlim0727/stash` and the base is almost always `main`. Use the
+Owner/repo is `stlim0727/keepory` and the base is almost always `main`. Use the
 GitHub app tools exposed in Codex (`mcp__codex_apps__github._fetch_pr`,
 `_fetch_pr_patch`, `_get_pr_info`, `_search_prs`, `_add_review_to_pr`, etc.);
 use `tool_search` first if a needed GitHub action is not currently callable.

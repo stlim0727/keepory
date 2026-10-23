@@ -18,7 +18,7 @@ decides *what* the next version is): run `versioning` if you need to reason abou
 MINOR/PATCH or a stable cut; run **this** to actually build the next RC and do
 the housekeeping. Do the three steps in order and report all three at the end.
 
-Repo: **`stlim0727/stash`**. Branch to build from: **`main`** (RCs always ship
+Repo: **`stlim0727/keepory`**. Branch to build from: **`main`** (RCs always ship
 from the trunk). Only **Step 1** is an agent action — a GitHub Actions
 `workflow_dispatch` on `android-apk.yml` via `mcp__github__actions_run_trigger`
 (no git tag, no PR required; the `dev` release self-records the label, see Step 1).

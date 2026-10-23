@@ -137,7 +137,7 @@ RC builds stamp from the tag, so `app.json` need not carry the `-rcN`.
 
 **Before tagging or building, check for open PRs.** List open PRs against the
 target branch with `mcp__codex_apps__github._search_prs` (`repository_full_name:
-"stlim0727/stash"`, `state: "open"`, query `base:main` or the relevant
+"stlim0727/keepory"`, `state: "open"`, query `base:main` or the relevant
 `release/X.Y.x`). If any are open, **ask the user whether to wait for them to
 merge and publish afterward**, instead of cutting from the current commit — the
 open work may belong in this release. List the open PRs in the question so they
@@ -168,7 +168,7 @@ is exposed, do not invent a different release path; report the exact payload the
 user should run.
 
 ```
-owner/repo: stlim0727/stash
+owner/repo: stlim0727/keepory
 workflow_id: android-apk.yml
 ref: <branch>
 inputs: { "version": "vX.Y.Z-rcN" }
