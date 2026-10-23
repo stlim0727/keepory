@@ -48,11 +48,22 @@ class VerificationAbort extends Error {}
 // leaves collections behind.
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY ?? '';
 
-function adminDeleteUser(client, userId) {
-  return client.request(`/auth/v1/admin/users/${userId}`, {
-    method: 'DELETE',
+// Admin routes need the service-role key in *both* credential headers. Verified
+// live against this project: publishable `apikey` + secret `Authorization` is
+// rejected 403 bad_jwt ("token contains an invalid number of segments"), while
+// secret + secret is accepted — the gateway only translates an opaque apikey when
+// the apikey itself is the secret key. client.request spreads options.headers
+// last, so overriding apikey here wins over the anon default.
+function adminRequest(client, path, options = {}) {
+  return client.request(path, {
+    ...options,
     accessToken: SERVICE_ROLE_KEY,
+    headers: { ...options.headers, apikey: SERVICE_ROLE_KEY },
   });
+}
+
+function adminDeleteUser(client, userId) {
+  return adminRequest(client, `/auth/v1/admin/users/${userId}`, { method: 'DELETE' });
 }
 
 async function expectRejects(name, promise) {
@@ -489,9 +500,8 @@ try {
   const verifierPassword = crypto.randomUUID();
   let realSession;
   try {
-    const verifier = await client.request('/auth/v1/admin/users', {
+    const verifier = await adminRequest(client, '/auth/v1/admin/users', {
       method: 'POST',
-      accessToken: SERVICE_ROLE_KEY,
       body: { email: verifierEmail, password: verifierPassword, email_confirm: true },
     });
     cleanups.push(() => adminDeleteUser(client, verifier.id));
