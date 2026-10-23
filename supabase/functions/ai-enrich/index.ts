@@ -989,7 +989,7 @@ Deno.serve(async (req) => {
 
   try {
     const bookmarkRes = await rest(
-      `/bookmarks?id=eq.${bookmarkId}&select=id,user_id,url,title,description,notes,site_name,content_type,collection_id&limit=1`,
+      `/bookmarks?id=eq.${bookmarkId}&select=id,user_id,url,title,description,notes,site_name,content_type,collection_id,deleted_at,is_archived&limit=1`,
     );
     if (!bookmarkRes.ok) {
       return json({ error: 'Failed to load bookmark' }, bookmarkRes.status);
@@ -997,6 +997,24 @@ Deno.serve(async (req) => {
     const [bookmark] = (await bookmarkRes.json()) as BookmarkRow[];
     if (!bookmark) {
       return json({ error: 'Bookmark not found' }, 404);
+    }
+
+    // A pg_net dispatch can arrive after the owner trashes or archives the
+    // bookmark. Check the current DB row before context reads, quota, or model
+    // work. Manual calls retain the existing re-analysis of archives;
+    // trash is ineligible for every caller. Never trust metadata for state.
+    if (bookmark.deleted_at != null) {
+      return serverPath
+        ? json({ skipped: 'bookmark_deleted' })
+        : json({ error: 'Bookmark is in Trash' }, 409);
+    }
+    // Old app builds omit source; preserve their manual refresh contract.
+    // This is an eligibility hint, never an authorization credential.
+    const automatic = serverPath || (body.source !== undefined && body.source !== 'manual');
+    if (automatic && bookmark.is_archived === true) {
+      return serverPath
+        ? json({ skipped: 'bookmark_archived' })
+        : json({ error: 'Archived bookmark cannot be enriched automatically' }, 409);
     }
 
     // On the server path nothing has enriched this bookmark unless a prior

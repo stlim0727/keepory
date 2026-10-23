@@ -9,6 +9,25 @@ import { makeStoredBookmark } from './helpers/fake-repository';
 
 beforeEach(resetEnrichmentHarness);
 
+test('a server state conflict clears pending work without enqueueing or arming retry', async () => {
+  const store = await renderReady();
+  apiMock.__spies.requestEnrichment.mockRejectedValueOnce(
+    new SupabaseRequestError('Bookmark is in Trash', 409),
+  );
+  let message: string | null = null;
+  await act(async () => {
+    message = await store.current!.requestAiEnrichment(SYNCED_ID, 'auto');
+  });
+  expect(message).toBe('Bookmark is in Trash');
+  expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(SYNCED_ID, expect.anything(), 'en', 'auto');
+  expect(apiMock.__spies.enqueuePendingEnrichment).not.toHaveBeenCalled();
+  expect(store.current!.getEnrichment(SYNCED_ID)).toBeUndefined();
+  await waitFor(() => {
+    expect(JSON.parse(fakeRepo.__meta('ai_suggestion_retry') ?? '{}')[SYNCED_ID]).toBeUndefined();
+    expect(JSON.parse(fakeRepo.__meta('pending_ai_trigger') ?? '[]')).not.toContain(SYNCED_ID);
+  });
+});
+
 
 test('requestAiEnrichment fetches and surfaces the enrichment', async () => {
   const store = await renderReady();
@@ -28,6 +47,7 @@ test('requestAiEnrichment fetches and surfaces the enrichment', async () => {
     SYNCED_ID,
     expect.objectContaining({ title: 'Stored bookmark', content_type: 'url' }),
     'en',
+    'manual',
   );
   expect(store.current!.getEnrichment(SYNCED_ID)?.summary).toBe('Generated summary');
 });
@@ -289,6 +309,7 @@ test('the auto dispatch queue resumes once the quota cooldown elapses (STASH-4K 
         SECOND_SYNCED_ID,
         expect.anything(),
         'en',
+        'auto',
       ),
     );
   } finally {
@@ -326,6 +347,7 @@ test('an hourly-limit 429 uses the server-reported retry_after instead of the fi
         SECOND_SYNCED_ID,
         expect.anything(),
         'en',
+        'auto',
       ),
     );
   } finally {

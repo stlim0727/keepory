@@ -305,8 +305,9 @@ export class BookmarkApi {
     bookmarkId: string,
     metadata?: EnrichmentMetadataHint,
     locale?: string,
+    source: 'auto' | 'manual' | 'preview' = 'manual',
   ): Promise<AIEnrichment> {
-    return enrichment.requestEnrichment.call({ client: this.client, session: this.session }, bookmarkId, metadata, locale);
+    return enrichment.requestEnrichment.call({ client: this.client, session: this.session }, bookmarkId, metadata, locale, source);
   }
 
   /**
