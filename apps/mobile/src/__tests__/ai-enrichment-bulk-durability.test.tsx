@@ -443,7 +443,7 @@ test('AI dispatch stays suppressed while a bulk chunk reconcile follow-up is sti
   releaseWrite();
 
   await waitFor(() =>
-    expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(id, expect.anything(), 'en'),
+    expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(id, expect.anything(), 'en', 'auto'),
   );
 
   fakeRepo.repository.updateBookmark = originalUpdateBookmark;
@@ -515,7 +515,7 @@ test('AI dispatch stays suppressed during the coalesced AI-marker write itself, 
   releaseWrite();
 
   await waitFor(() =>
-    expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(id, expect.anything(), 'en'),
+    expect(apiMock.__spies.requestEnrichment).toHaveBeenCalledWith(id, expect.anything(), 'en', 'auto'),
   );
 
   fakeRepo.repository.setMeta = originalSetMeta;

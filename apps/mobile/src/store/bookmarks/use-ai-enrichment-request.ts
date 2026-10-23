@@ -232,6 +232,7 @@ export function useAiEnrichmentRequest({
             bookmarkId,
             metadata,
             activeLocale,
+            source,
           );
         } catch (error) {
           // If the server still rejects the token (rotation / clock skew),
@@ -260,6 +261,7 @@ export function useAiEnrichmentRequest({
               bookmarkId,
               metadata,
               activeLocale,
+              source,
             );
           } else {
             throw error;
@@ -331,6 +333,15 @@ export function useAiEnrichmentRequest({
           return error instanceof Error
             ? error.message
             : "Could not generate AI suggestions.";
+        }
+        // The server's current row can be newer than the local cache (trash
+        // or archive on another device). This state conflict is terminal for
+        // this attempt; do not queue a model call or arm an automatic retry.
+        if (error instanceof SupabaseRequestError && error.status === 409) {
+          clearAiRetry(bookmarkId);
+          clearAiServerQueued(bookmarkId);
+          await clearPendingAiTrigger(bookmarkId);
+          return error.message;
         }
         // Any failure here writes no ai_enrichments row: arm (or re-arm) this
         // bookmark's backoff-scheduled retry marker regardless of source, so a

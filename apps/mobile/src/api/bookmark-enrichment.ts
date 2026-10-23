@@ -161,6 +161,7 @@ export async function requestEnrichment(this: RequestEnrichmentDependencies,
   bookmarkId: string,
   metadata?: EnrichmentMetadataHint,
   locale?: string,
+  source: 'auto' | 'manual' | 'preview' = 'manual',
 ): Promise<AIEnrichment> {
   const row = await this.client.request<RemoteAIEnrichment>('/functions/v1/ai-enrich', {
     method: 'POST',
@@ -168,6 +169,7 @@ export async function requestEnrichment(this: RequestEnrichmentDependencies,
     timeoutMs: AI_ENRICH_REQUEST_TIMEOUT_MS,
     body: {
       bookmark_id: bookmarkId,
+      source,
       ...(metadata ? { metadata } : {}),
       ...(locale ? { locale } : {}),
     },

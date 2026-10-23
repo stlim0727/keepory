@@ -17,6 +17,15 @@ the summary and tags in it (defaults to English). `metadata` (optional) carries
 the device's freshest content fields so the model reasons about the real
 title/site even when the stored row still lags behind on-device enrichment.
 
+`source` is `manual` (default for older clients), `auto`, or `preview`. The
+current database row controls eligibility: trash returns `409` to app callers;
+archived bookmarks allow manual re-analysis but reject automatic/preview work
+with `409`. The app clears pending/retry work on this state conflict. A delayed
+server trigger returns `200 { "skipped": "bookmark_deleted" }` or
+`200 { "skipped": "bookmark_archived" }` before context reads, quota or model
+calls. Metadata hints cannot override these state fields. This initial-row
+check does not cancel a model call if trash/archive changes after that read.
+
 The caller's JWT is forwarded to PostgREST, so Row Level Security scopes every
 read and write to the bookmark's owner. On this app path the function holds no
 service-role key.
@@ -88,7 +97,9 @@ auto-trigger retry later.
 The limit is **only** enforced when `GEMINI_API_KEY` is set (a real, billable
 provider). With no key the network-free `DummyProvider` runs unthrottled (it
 does no work and costs nothing), and a missing/failing rate-limit function fails
-**open** so suggestions never break.
+**closed** when a billable model is configured (`503 rate_limit_unavailable`).
+An explicit quota denial returns `429`; the global budget must also explicitly
+approve a model call.
 
 ## Files
 
@@ -183,3 +194,23 @@ supabase functions serve ai-enrich
 ```
 
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` are provided by the Supabase runtime.
+
+## Security verification
+
+- `handler-auth-state.test.ts` tests handler boundaries with mocked PostgREST
+  and provider responses. It covers early denials, JWT forwarding, late-trigger
+  state checks, manual archive refresh, and successful user/trigger/worker work.
+  It does not validate JWT signatures or prove live RLS.
+- `supabase/tests/ai-enrichment-ownership.sql` runs against the actual target DB
+  in a rolled-back transaction. It checks own reads/upserts, foreign-parent
+  denial and RPC grants with anonymous and registered claim shapes. These are
+  SQL auth contexts, not actual signed session tokens.
+- `node scripts/verify-ai-enrichment-auth.mjs` probes the deployed endpoint using
+  the public URL/key and optional dedicated fixture session tokens. Missing
+  signed/expired-session fixtures are explicitly skipped. It never deliberately
+  calls the deployed model or worker's successful path; those need a controlled
+  non-billable deployment and dedicated fixtures.
+
+Keep `verify_jwt=false`: this endpoint authenticates both user JWTs through
+PostgREST/RLS and secret-authenticated server dispatches internally. Deploy the
+function separately; passing CI does not update the live function.

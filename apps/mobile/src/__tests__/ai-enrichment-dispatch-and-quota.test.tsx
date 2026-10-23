@@ -439,6 +439,7 @@ test('requestAiEnrichment forwards the device\'s freshest metadata', async () =>
     SYNCED_ID,
     expect.objectContaining({ title: 'Tender steak', site_name: 'YouTube', content_type: 'url' }),
     'en',
+    'manual',
   );
 });
 
@@ -471,6 +472,7 @@ test('a freshly captured bookmark gets AI suggestions automatically once it sync
       bookmarkId,
       expect.anything(),
       'en',
+      'auto',
     ),
   );
   await waitFor(() => expect(store.current!.getEnrichment(bookmarkId)).toBeDefined());

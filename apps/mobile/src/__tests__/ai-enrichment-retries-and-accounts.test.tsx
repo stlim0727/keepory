@@ -73,6 +73,7 @@ test("a rehomed bookmark still fires a fresh auto AI trigger under its new id, e
       ANON_REMOTE_ID,
       expect.anything(),
       'en',
+      'auto',
     ),
   );
 
@@ -103,6 +104,7 @@ test("a rehomed bookmark still fires a fresh auto AI trigger under its new id, e
       rehomedId,
       expect.anything(),
       'en',
+      'auto',
     ),
   );
 });
@@ -220,6 +222,7 @@ test('a foreground transition retries once the backoff has elapsed', async () =>
         SYNCED_ID,
         expect.anything(),
         'en',
+        'auto',
       ),
     );
     await waitFor(() => expect(store.current!.getEnrichment(SYNCED_ID)).toBeDefined());

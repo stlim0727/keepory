@@ -23,6 +23,24 @@ const SESSION: SupabaseAuthSession = {
   },
 };
 
+test('requestEnrichment forwards request source and the session token without changing metadata', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const client = { request: async (_path: string, options: Record<string, unknown>) => {
+    calls.push(options);
+    return { id: 'enrichment', bookmark_id: 'bookmark', user_id: SESSION.user.id, topics: [], suggested_tags: [] };
+  } };
+  const api = new BookmarkApi(SESSION, client as never);
+  await api.requestEnrichment('bookmark');
+  for (const source of ['auto', 'preview', 'manual'] as const) {
+    await api.requestEnrichment('bookmark', { title: 'Fresh title' }, 'ko', source);
+  }
+  assert.deepEqual(calls[0].body, { bookmark_id: 'bookmark', source: 'manual' });
+  for (const [index, source] of ['auto', 'preview', 'manual'].entries()) {
+    assert.equal(calls[index + 1].accessToken, SESSION.access_token);
+    assert.deepEqual(calls[index + 1].body, { bookmark_id: 'bookmark', source, locale: 'ko', metadata: { title: 'Fresh title' } });
+  }
+});
+
 test('single and bulk own-image retries persist replacement metadata and explicit title clears', async () => {
   for (const bulk of [false, true]) {
     for (const title of ['Replacement title', null, undefined]) {

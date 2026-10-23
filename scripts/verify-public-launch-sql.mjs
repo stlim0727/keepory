@@ -76,6 +76,7 @@ try {
   await db.exec(await sql('supabase/tests/ai-global-budget-retry-window.sql'));
   console.log('PASS: global budget retry deadlines, expiry recovery, zero caps and service-only access.');
   await db.exec(await sql('supabase/tests/public-launch-hardening.sql'));
+  await db.exec(await sql('supabase/tests/ai-enrichment-ownership.sql'));
   console.log('PASS: direct key CRUD/read denied, own enrichment update preserved, foreign reassignment denied, internal RPCs denied, global cap and kill switch enforced.');
   assert.equal((await db.query('select count(*)::int as count from auth.users')).rows[0].count, 0);
   assert.equal((await db.query('select count(*)::int as count from public.ai_budget_reservations')).rows[0].count, 0);
