@@ -15,21 +15,20 @@ name: Supabase live check
 #     Account -> Access Tokens — not the project anon/service key). Skips
 #     itself with a clear message if that secret isn't set yet.
 #   - verify-supabase: runs the existing `pnpm verify:supabase` E2E script
-#     (16 checks against the real project, including a Realtime channel-join
-#     check per account type) using the EXPO_PUBLIC_SUPABASE_* secrets already
-#     used by android-apk.yml. This alone would have caught the Realtime bug.
-#     Deliberately workflow_dispatch-only, NOT scheduled: it creates real
-#     anonymous + real accounts (and a bookmark) in production each run and
-#     only signs them out afterward, it doesn't delete them. The
-#     `cleanup_anonymous_users` pg_cron job (20260628062523_anon_user_cleanup)
-#     can't reap them either — its eligibility check requires zero rows in
-#     public.bookmarks for the user, but this app's delete is archive-by-default
-#     (the row's `deleted_at` gets set, the row itself doesn't disappear), so
-#     the leftover archived bookmark permanently disqualifies the account. A
-#     nightly run would accumulate orphaned auth.users + bookmarks rows in
-#     prod forever. Run it by hand when you want the live signal; don't wire
-#     it to a schedule without first giving verify-supabase.mjs a real
-#     teardown path (needs a service-role key it doesn't currently have).
+#     (auth + Realtime checks against the real project, including a
+#     channel-join check per account type) using the EXPO_PUBLIC_SUPABASE_*
+#     secrets plus SUPABASE_SECRET_KEY. This alone would have caught the
+#     Realtime bug.
+#     Deliberately workflow_dispatch-only, NOT scheduled. It creates throwaway
+#     anonymous + real accounts (and bookmarks, tags, collections) in production
+#     on every run, and the service-role key lets it delete exactly those accounts
+#     via the Admin API — cleanups run in a `finally`, so an aborted run still
+#     tidies up. What it cannot survive is a hard kill (the 10-minute job timeout
+#     or a runner loss), which leaves the auth users behind for
+#     `cleanup_anonymous_users` to reap only if the run died before creating any
+#     bookmark/collection/tag rows for them. So a scheduled run writes to prod
+#     auth daily and can leave residue; wire it to a schedule only as a deliberate
+#     decision, not as a side effect of this PR.
 #
 # migration-drift runs on a schedule (safety net) and right after anything
 # touching supabase/migrations/ merges to main (fast feedback), plus manual
@@ -76,8 +75,9 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          if [ -n "$EXPO_PUBLIC_SUPABASE_URL" ] && [ -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ]; then
+          if [ -n "$EXPO_PUBLIC_SUPABASE_URL" ] && [ -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ] && [ -n "$SUPABASE_SECRET_KEY" ]; then
             echo "has-secrets=true" >> "$GITHUB_OUTPUT"
           else
             echo "has-secrets=false" >> "$GITHUB_OUTPUT"
@@ -107,4 +107,5 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: pnpm verify:supabase
