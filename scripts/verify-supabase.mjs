@@ -114,99 +114,131 @@ async function probeRealtimeHandshake(endpointUrl, apiKey) {
   }
 }
 
-async function testRealtimeChannel(session, userId, expectSuccess) {
+// A CI run measured a 4.4s TLS + DNS handshake for the realtime socket. Budgets
+// here are therefore split: the socket gets its own open window, and the join
+// budget starts counting only once the transport is actually open, so a slow
+// handshake can never be reported as a policy result.
+const SOCKET_OPEN_TIMEOUT_MS = 10000;
+const JOIN_TIMEOUT_MS = 20000;
+
+// Opens a RealtimeClient and waits for the transport to be usable.
+// RealtimeClient exposes no socket-open hook (onOpen lives only on its internal
+// adapter), so poll the public connection state. Heartbeats run every 5s so a
+// liveness count exists to quote if a channel join goes unanswered.
+async function openRealtimeSocket(session) {
   const configState = getSupabaseConfigState();
   if (configState.status !== 'configured') {
     throw new Error('Supabase is not configured');
   }
-
+  const anonKey = configState.config.anonKey;
   const { RealtimeClient } = await import('@supabase/realtime-js');
   const rtUrl = configState.config.url.replace(/^http/, 'ws') + '/realtime/v1';
 
-  return new Promise((resolve, reject) => {
-    const rt = new RealtimeClient(rtUrl, {
-      params: {
-        apikey: configState.config.anonKey,
-      },
-    });
-
-    rt.setAuth(session.access_token);
-    rt.connect();
-
-    const channel = rt.channel(`sync:private:${userId}`, {
-      config: {
-        private: true,
-        broadcast: { self: false },
-      },
-    });
-
-    // Observed end to end in CI: the private-channel RLS reject took 4.5s to come
-    // back, so the original 5s budget failed against a healthy database. On a
-    // timeout, the handshake probe below reports whether Realtime is reachable at
-    // all, which is the distinction this message used to guess at.
-    const JOIN_TIMEOUT_MS = 15000;
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      rt.disconnect();
-      probeRealtimeHandshake(rt.endpointURL(), configState.config.anonKey).then((detail) => {
-        reject(
-          new Error(
-            `realtime join did not settle within ${JOIN_TIMEOUT_MS}ms ` +
-              `(${expectSuccess ? 'expected SUBSCRIBED' : 'expected CHANNEL_ERROR'}); ` +
-              `raw handshake to the same endpoint: ${detail}`,
-          ),
-        );
-      });
-    }, JOIN_TIMEOUT_MS);
-
-    channel.subscribe((status, err) => {
-      if (settled) return;
-      if (status === 'SUBSCRIBED') {
-        if (expectSuccess) {
-          channel
-            .send({
-              type: 'broadcast',
-              event: 'sync',
-              payload: { test: true },
-            })
-            .then((sendStatus) => {
-              if (settled) return;
-              settled = true;
-              clearTimeout(timeout);
-              rt.disconnect();
-              if (sendStatus === 'ok') {
-                resolve();
-              } else {
-                reject(new Error(`realtime broadcast send failed (status: ${sendStatus})`));
-              }
-            })
-            .catch((sendErr) => {
-              if (settled) return;
-              settled = true;
-              clearTimeout(timeout);
-              rt.disconnect();
-              reject(new Error(`realtime broadcast send threw error: ${sendErr}`));
-            });
-        } else {
-          settled = true;
-          clearTimeout(timeout);
-          rt.disconnect();
-          reject(new Error('anonymous user successfully joined private channel (expected rejection)'));
-        }
-      } else if (status === 'CHANNEL_ERROR') {
-        settled = true;
-        clearTimeout(timeout);
-        rt.disconnect();
-        if (!expectSuccess) {
-          resolve();
-        } else {
-          reject(new Error(`authenticated user failed to join private channel (status: ${status}, error: ${err})`));
-        }
-      }
-    });
+  const rt = new RealtimeClient(rtUrl, {
+    params: { apikey: anonKey },
+    heartbeatIntervalMs: 5000,
   });
+  let heartbeatAcks = 0;
+  rt.onHeartbeat((status) => {
+    if (status === 'ok') {
+      heartbeatAcks += 1;
+    }
+  });
+
+  await rt.setAuth(session.access_token);
+  const startedAt = Date.now();
+  rt.connect();
+  while (rt.connectionState() !== 'open') {
+    if (Date.now() - startedAt > SOCKET_OPEN_TIMEOUT_MS) {
+      const detail = await probeRealtimeHandshake(rt.endpointURL(), anonKey);
+      rt.disconnect();
+      throw new Error(
+        `realtime socket did not open within ${SOCKET_OPEN_TIMEOUT_MS}ms; ` +
+          `raw handshake to the same endpoint: ${detail}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return { rt, openMs: Date.now() - startedAt, heartbeatAcks: () => heartbeatAcks };
+}
+
+async function closeRealtimeSocket(harness) {
+  await harness.rt.removeAllChannels();
+  await harness.rt.disconnect();
+}
+
+// Joins `sync:private:<userId>` and settles on SUBSCRIBED (expectSuccess) or
+// CHANNEL_ERROR. TIMED_OUT and CLOSED are reported as themselves: neither is a
+// policy verdict, and the historical bug this check exists to catch (an
+// unapplied broadcast-policy migration) shows up as a successful join, not as
+// silence.
+async function joinPrivateChannel(harness, userId, expectSuccess) {
+  const { rt } = harness;
+  const channel = rt.channel(`sync:private:${userId}`, {
+    config: {
+      private: true,
+      broadcast: { self: false },
+    },
+  });
+  const startedAt = Date.now();
+  const context = () =>
+    `${Date.now() - startedAt}ms after subscribe (socket opened in ${harness.openMs}ms, ` +
+    `${harness.heartbeatAcks()} heartbeat acks, connection state ${rt.connectionState()})`;
+
+  const outcome = await new Promise((resolve, reject) => {
+    channel.subscribe((status, err) => {
+      if (status === 'SUBSCRIBED') {
+        if (!expectSuccess) {
+          reject(new Error(`joined private channel although the policy should reject it`));
+          return;
+        }
+        channel
+          .send({ type: 'broadcast', event: 'sync', payload: { test: true } })
+          .then((sendStatus) =>
+            sendStatus === 'ok'
+              ? resolve('subscribed and broadcast')
+              : reject(new Error(`broadcast send failed (status: ${sendStatus})`)),
+          )
+          .catch((sendErr) =>
+            reject(new Error(`broadcast send threw error: ${sendErr instanceof Error ? sendErr.message : sendErr}`)),
+          );
+      } else if (status === 'CHANNEL_ERROR') {
+        if (expectSuccess) {
+          reject(
+            new Error(
+              `rejected from its own private channel (error: ${err instanceof Error ? err.message : String(err)})`,
+            ),
+          );
+        } else {
+          resolve('rejected by the broadcast policy');
+        }
+      } else if (status === 'TIMED_OUT') {
+        reject(new Error(`server never answered phx_join (TIMED_OUT at the ${JOIN_TIMEOUT_MS}ms push budget)`));
+      } else {
+        reject(new Error(`subscribe settled with status ${status}`));
+      }
+    }, JOIN_TIMEOUT_MS);
+  }).finally(() => {
+    void rt.removeChannel(channel);
+  });
+
+  return `${outcome} in ${context()}`;
+}
+
+// Opens a socket for `session`, runs the checks in `body`, and closes the socket
+// whatever happened — a lingering Realtime connection keeps the event loop alive.
+async function withRealtimeSocket(name, session, body) {
+  let harness;
+  try {
+    harness = await openRealtimeSocket(session);
+    await body(harness);
+  } catch (error) {
+    fail(name, error);
+  } finally {
+    if (harness) {
+      await closeRealtimeSocket(harness);
+    }
+  }
 }
 
 function toSession(response) {
@@ -481,13 +513,13 @@ try {
   // --- realtime broadcast policy verification ---
   console.log('\nVerifying realtime broadcast policies...');
 
-  // Test 1: Anonymous user (User A) is denied subscription
-  try {
-    await testRealtimeChannel(session, session.user.id, false);
-    ok('Realtime RLS: anonymous subscription rejected');
-  } catch (error) {
-    fail('Realtime RLS: anonymous subscription check failed', error);
-  }
+  // Test 1: Anonymous user (User A) is denied subscription to its own channel.
+  await withRealtimeSocket('Realtime RLS: anonymous subscription rejected', session, async (harness) => {
+    ok(
+      'Realtime RLS: anonymous subscription rejected',
+      await joinPrivateChannel(harness, session.user.id, false),
+    );
+  });
 
   // Test 2: Real authenticated user is allowed subscription. The verifier has to be
   // a confirmed, non-anonymous user, so it is created through the Admin API and
@@ -514,20 +546,18 @@ try {
     fail('Realtime RLS: could not create and sign in a confirmed verifier user', error);
   }
 
-  try {
-    await testRealtimeChannel(realSession, realSession.user.id, true);
-    ok('Realtime RLS: authenticated subscription approved');
-  } catch (error) {
-    fail('Realtime RLS: authenticated subscription check failed', error);
-  }
-
-  // Test 3: Authenticated User A cannot subscribe to User B's channel
-  try {
-    await testRealtimeChannel(realSession, session.user.id, false);
-    ok("Realtime RLS: User A rejected from subscribing to User B's channel");
-  } catch (error) {
-    fail("Realtime RLS: User A cross-subscription security check failed", error);
-  }
+  // Tests 2 and 3 share one socket: the cross-user rejection only means anything
+  // on a transport that has just answered a join for the same account.
+  await withRealtimeSocket('Realtime RLS: authenticated user checks', realSession, async (harness) => {
+    ok(
+      'Realtime RLS: authenticated subscription approved',
+      await joinPrivateChannel(harness, realSession.user.id, true),
+    );
+    ok(
+      'Realtime RLS: cross-user subscription rejected',
+      await joinPrivateChannel(harness, session.user.id, false),
+    );
+  });
 
   cleanups.push(async () => {
     try {
