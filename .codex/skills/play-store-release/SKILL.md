@@ -30,7 +30,7 @@ Both agent mirrors use the shared helper `scripts/play-production-release.mjs`.
 
 ```sh
 node scripts/play-production-release.mjs inspect --credentials "$PLAY_KEY_PATH"
-gh run list --repo stlim0727/stash --workflow android-playstore.yml --limit 5 \
+gh run list --repo stlim0727/keepory --workflow android-playstore.yml --limit 5 \
   --json databaseId,status,conclusion,headSha,url
 ```
 
@@ -74,7 +74,7 @@ or tag refs. Check the selected branch SHA equals the intended tagged commit.
 ```sh
 git tag -a vX.Y.Z RELEASE_SHA -m 'Keepory vX.Y.Z'
 git push origin vX.Y.Z
-gh workflow run android-playstore.yml --repo stlim0727/stash --ref RELEASE_BRANCH -f version=vX.Y.Z
+gh workflow run android-playstore.yml --repo stlim0727/keepory --ref RELEASE_BRANCH -f version=vX.Y.Z
 ```
 
 Record the resulting run ID, head SHA, tag, and intended version immediately.
@@ -86,9 +86,9 @@ Poll at roughly one-minute intervals, use short waits that permit user steering,
 and give updates when stage/evidence changes without repeating empty status text.
 
 ```sh
-gh run view RUN_ID --repo stlim0727/stash --json status,conclusion,jobs
+gh run view RUN_ID --repo stlim0727/keepory --json status,conclusion,jobs
 # When logs are available; use --allow-escape-sequences only if gh requests it:
-gh run view RUN_ID --repo stlim0727/stash --log
+gh run view RUN_ID --repo stlim0727/keepory --log
 ```
 
 Do not dump full logs: filter for EAS build/submission URLs, versionCode,

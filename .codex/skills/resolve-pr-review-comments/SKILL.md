@@ -44,7 +44,7 @@ Passing a large suite is evidence for its covered transitions, not proof that ev
 For each addressed thread:
 1. **Post a reply**: Post a review comment reply referencing the fixing commit and clarifying the fix. Identify as Codex-authored by adding `(Codex-authored)` to the body:
    ```bash
-   gh api repos/stlim0727/stash/pulls/<pr_number>/comments \
+   gh api repos/stlim0727/keepory/pulls/<pr_number>/comments \
      -F in_reply_to=<comment_id_from_Comment_ID> \
      -F body="Addressed in <commit_sha>: <explanation> (Codex-authored)"
    ```

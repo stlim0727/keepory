@@ -2,7 +2,7 @@
 # Detail's field labels are non-interactive Card text (unreliable to assert), and
 # its action bar overflows at large fonts, so just navigate, let it settle, and
 # capture. This flow is best-effort (the job is gated on the Inbox screenshot).
-appId: com.stash.app
+appId: com.keepory.app
 ---
 - launchApp:
     clearState: true

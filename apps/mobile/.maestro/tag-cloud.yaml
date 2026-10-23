@@ -14,11 +14,11 @@
 #
 # NOTE: the screenshots runner invokes `maestro test ... || true`, so a selector
 # hiccup is VISIBLE in the logs but does not by itself gate the build.
-appId: com.stash.app
+appId: com.keepory.app
 ---
 - launchApp:
     clearState: true
-- assertVisible: 'Stash'
+- assertVisible: 'Keepory'
 # Open the dedicated tag-browse route from the header toggle. The route lands on
 # the word cloud, which renders each seed tag as "#name".
 - tapOn:

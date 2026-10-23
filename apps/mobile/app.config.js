@@ -81,7 +81,7 @@ module.exports = ({ config }) => {
       commitUrl:
         process.env.EXPO_PUBLIC_COMMIT_URL ||
         (process.env.EAS_BUILD_GIT_COMMIT_HASH
-          ? `https://github.com/stlim0727/stash/commit/${process.env.EAS_BUILD_GIT_COMMIT_HASH}`
+          ? `https://github.com/stlim0727/keepory/commit/${process.env.EAS_BUILD_GIT_COMMIT_HASH}`
           : null),
       eas: {
         ...((config.extra && config.extra.eas) || {}),

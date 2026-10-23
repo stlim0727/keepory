@@ -17,11 +17,11 @@ Top MCP Servers:
 ## Your Setup Checklist
 
 ### Codebases
-- [ ] stash — https://github.com/stlim0727/stash
+- [ ] keepory — https://github.com/stlim0727/keepory
 
 ### MCP Servers to Activate
 - [ ] Context7 — Pulls up-to-date library/framework/API docs on demand (used here to research the Firebase App Distribution REST API). Enable the Context7 MCP server in your Claude Code config; no special access needed.
-- [ ] github — Drives GitHub from Claude: open/review PRs, read CI/Actions status, post comments, manage releases. Configure the GitHub MCP server with a token scoped to `stlim0727/stash` (repo + actions).
+- [ ] github — Drives GitHub from Claude: open/review PRs, read CI/Actions status, post comments, manage releases. Configure the GitHub MCP server with a token scoped to `stlim0727/keepory` (repo + actions).
 
 ### Skills to Know About
 - `/review-pr` — Triage and review a GitHub PR for Stash; checks for superseded changes first, then gives a merge/close/changes-needed verdict.

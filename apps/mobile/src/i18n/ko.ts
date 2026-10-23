@@ -555,7 +555,7 @@ export const ko: Catalog = {
   'settings.pushNotifications.aiOff': '먼저 AI 추천을 켜주세요',
   'settings.pushNotifications.deniedTitle': '알림이 꺼져 있어요',
   'settings.pushNotifications.deniedBody':
-    '알림 권한이 없어 이 알림을 보낼 수 없어요. 기기 설정에서 Stash 알림을 허용한 뒤 다시 시도해주세요.',
+    '알림 권한이 없어 이 알림을 보낼 수 없어요. 기기 설정에서 Keepory 알림을 허용한 뒤 다시 시도해주세요.',
   'settings.pushNotifications.unavailableTitle': '지금은 알림을 켤 수 없어요',
   'settings.pushNotifications.unavailableBody': '이 기기에서 알림을 설정하는 중 문제가 발생했어요. 나중에 다시 시도해주세요.',
   "settings.diagnostics.current": "현재 동기화 상태",

@@ -1,5 +1,5 @@
 # Add Bookmark — opened from the Inbox FAB (accessibility label "Add bookmark").
-appId: com.stash.app
+appId: com.keepory.app
 ---
 - launchApp:
     clearState: true
