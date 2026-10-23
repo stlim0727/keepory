@@ -50,6 +50,42 @@ async function expectRejects(name, promise) {
   }
 }
 
+// When a realtime check fails, the operator's first question is whether Realtime
+// itself is unreachable or only this client's join failed. RealtimeClient reports
+// neither the transport error nor a close reason, so repeat the handshake with the
+// exact URL the client built and say which one it was.
+async function probeRealtimeHandshake(endpointUrl, apiKey) {
+  const redact = (text) => String(text).split(apiKey).join('<apikey>');
+  try {
+    return await new Promise((resolve) => {
+      const ws = new WebSocket(endpointUrl);
+      const timer = setTimeout(() => {
+        resolve('handshake produced no open/close event within 5000ms');
+        try {
+          ws.close();
+        } catch {
+          // already failed or closing
+        }
+      }, 5000);
+      ws.addEventListener('open', () => {
+        clearTimeout(timer);
+        resolve('opened');
+        ws.close();
+      });
+      ws.addEventListener('close', (event) => {
+        clearTimeout(timer);
+        resolve(`closed (code ${event.code})`);
+      });
+      ws.addEventListener('error', (event) => {
+        clearTimeout(timer);
+        resolve(`error (${redact(event.message || 'non-101 response')})`);
+      });
+    });
+  } catch (error) {
+    return `probe threw (${redact(error instanceof Error ? error.message : error)})`;
+  }
+}
+
 async function testRealtimeChannel(session, userId, expectSuccess) {
   const configState = getSupabaseConfigState();
   if (configState.status !== 'configured') {
@@ -83,14 +119,16 @@ async function testRealtimeChannel(session, userId, expectSuccess) {
     const timeout = setTimeout(() => {
       if (!settled) {
         settled = true;
+        const socketNeverOpened = !joinAcked && rt.connectionState() !== 'open';
         rt.disconnect();
-        if (!joinAcked && rt.connectionState() !== 'open') {
-          reject(new Error('WebSocket connection could not be opened (network offline or Realtime disabled)'));
-        } else if (expectSuccess) {
-          reject(new Error('realtime connection timed out (expected success)'));
-        } else {
-          reject(new Error('realtime connection timed out without receiving CHANNEL_ERROR (expected rejection)'));
-        }
+        probeRealtimeHandshake(rt.endpointURL(), configState.config.anonKey).then((detail) => {
+          const reason = socketNeverOpened
+            ? `WebSocket connection could not be opened (network offline or Realtime disabled) — raw handshake to the same endpoint: ${detail}`
+            : expectSuccess
+              ? 'realtime connection timed out (expected success)'
+              : 'realtime connection timed out without receiving CHANNEL_ERROR (expected rejection)';
+          reject(new Error(reason));
+        });
       }
     }, 5000);
 
