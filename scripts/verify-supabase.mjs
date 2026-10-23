@@ -76,17 +76,15 @@ async function testRealtimeChannel(session, userId, expectSuccess) {
       },
     });
 
-    let socketOpened = false;
-    rt.onOpen(() => {
-      socketOpened = true;
-    });
-
+    // RealtimeClient exposes no socket-open hook (onOpen lives only on its
+    // internal socket adapter), so read the connection state when deciding.
+    let joinAcked = false;
     let settled = false;
     const timeout = setTimeout(() => {
       if (!settled) {
         settled = true;
         rt.disconnect();
-        if (!socketOpened) {
+        if (!joinAcked && rt.connectionState() !== 'open') {
           reject(new Error('WebSocket connection could not be opened (network offline or Realtime disabled)'));
         } else if (expectSuccess) {
           reject(new Error('realtime connection timed out (expected success)'));
@@ -97,6 +95,7 @@ async function testRealtimeChannel(session, userId, expectSuccess) {
     }, 5000);
 
     channel.subscribe((status, err) => {
+      joinAcked = true;
       if (settled) return;
       if (status === 'SUBSCRIBED') {
         if (expectSuccess) {
