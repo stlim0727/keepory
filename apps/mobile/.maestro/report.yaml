@@ -1,6 +1,6 @@
 # Report a problem — reached from Settings. Scroll the row into view first since
 # it can sit below the fold at larger font sizes.
-appId: com.stash.app
+appId: com.keepory.app
 ---
 - launchApp:
     clearState: true

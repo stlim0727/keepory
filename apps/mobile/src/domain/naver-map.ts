@@ -11,7 +11,7 @@ const FETCH_TIMEOUT_MS = 8000;
 const MAX_JSON_BYTES = 512 * 1024;
 
 const BOT_USER_AGENT =
-  'Mozilla/5.0 (compatible; StashBot/1.0; +https://github.com/stlim0727/stash) link-preview fetcher';
+  'Mozilla/5.0 (compatible; StashBot/1.0; +https://github.com/stlim0727/keepory) link-preview fetcher';
 
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';

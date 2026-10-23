@@ -1,6 +1,6 @@
 {
-  "name": "Stash",
-  "short_name": "Stash",
+  "name": "Keepory",
+  "short_name": "Keepory",
   "description": "Save and organize bookmarks from anywhere.",
   "start_url": "/",
   "scope": "/",

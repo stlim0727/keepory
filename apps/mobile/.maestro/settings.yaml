@@ -2,7 +2,7 @@
 # The top "Account"/"App version" rows are non-interactive Card text that Maestro
 # doesn't reliably surface; scroll to the always-present "Report a problem" link
 # (same pattern the report flow uses successfully) to confirm we're on Settings.
-appId: com.stash.app
+appId: com.keepory.app
 ---
 - launchApp:
     clearState: true

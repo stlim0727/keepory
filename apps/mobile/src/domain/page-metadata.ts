@@ -93,7 +93,7 @@ const MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
  * admin can recognize — and, if they wish, block — the fetcher.
  */
 const BOT_USER_AGENT =
-  'Mozilla/5.0 (compatible; StashBot/1.0; +https://github.com/stlim0727/stash) link-preview fetcher';
+  'Mozilla/5.0 (compatible; StashBot/1.0; +https://github.com/stlim0727/keepory) link-preview fetcher';
 
 /**
  * A browser User-Agent used only as a fallback. Some portals (notably Naver and

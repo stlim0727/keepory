@@ -1,5 +1,5 @@
 # Archived / Library — reached from Settings. Scroll the row into view first.
-appId: com.stash.app
+appId: com.keepory.app
 ---
 - launchApp:
     clearState: true

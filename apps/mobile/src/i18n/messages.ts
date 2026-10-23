@@ -761,7 +761,7 @@ export const en = {
   'settings.pushNotifications.aiOff': 'Turn on AI suggestions first',
   'settings.pushNotifications.deniedTitle': 'Notifications are turned off',
   'settings.pushNotifications.deniedBody':
-    'Stash can’t send this notification without permission. Enable notifications for Stash in your device Settings, then try again.',
+    'Keepory can’t send this notification without permission. Enable notifications for Keepory in your device Settings, then try again.',
   'settings.pushNotifications.unavailableTitle': 'Can’t enable notifications right now',
   'settings.pushNotifications.unavailableBody':
     'Something went wrong setting up notifications on this device. Please try again later.',
