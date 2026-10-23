@@ -10,3 +10,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # React and its renderers require exactly matching versions at runtime.
+    groups:
+      react-runtime:
+        patterns:
+          - react
+          - react-dom
+          - react-test-renderer
