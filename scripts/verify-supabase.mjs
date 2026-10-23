@@ -5,10 +5,12 @@
  * Usage:
  *   EXPO_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co \
  *   EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon-or-publishable-key> \
+ *   SUPABASE_SECRET_KEY=<service-role-key> \
  *   pnpm verify:supabase
  *
  * Requires: the project's initial migration applied and anonymous sign-ins
- * enabled. Creates throwaway anonymous users; cleans up the rows it creates.
+ * enabled. Creates throwaway accounts and deletes them again through the Admin
+ * API, so SUPABASE_SECRET_KEY is required, not optional.
  */
 import { register } from 'node:module';
 
@@ -37,6 +39,21 @@ function fail(name, error) {
 }
 
 class VerificationAbort extends Error {}
+
+// Admin API access. Two things need it: creating the confirmed non-anonymous
+// verifier (the public sign-up endpoint returns no session while "Confirm email"
+// is enabled on the project), and deleting every account this run creates.
+// Without the delete path those accounts are permanent — cleanup_anonymous_users
+// only reaps a user with zero bookmark, collection, and tag rows, and this script
+// leaves collections behind.
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SECRET_KEY ?? '';
+
+function adminDeleteUser(client, userId) {
+  return client.request(`/auth/v1/admin/users/${userId}`, {
+    method: 'DELETE',
+    accessToken: SERVICE_ROLE_KEY,
+  });
+}
 
 async function expectRejects(name, promise) {
   try {
@@ -212,6 +229,14 @@ try {
   }
   ok('configuration', configState.config.url);
 
+  if (!SERVICE_ROLE_KEY) {
+    fail(
+      'service-role credential',
+      'SUPABASE_SECRET_KEY is not set; it is required to create the confirmed verifier user and to delete the accounts this run creates',
+    );
+  }
+  ok('service-role credential');
+
   const client = createSupabaseClient();
   let session;
   try {
@@ -225,6 +250,8 @@ try {
     }
     fail('anonymous sign-in', error);
   }
+  const anonUserId = session.user.id;
+  cleanups.push(() => adminDeleteUser(client, anonUserId));
   ok('anonymous sign-in', `user ${session.user.id}`);
 
   const refreshed = await client.refreshSession(session.refresh_token);
@@ -420,6 +447,7 @@ try {
   if (sessionB.user.id === session.user.id) {
     fail('second anonymous user', 'same user returned twice');
   }
+  cleanups.push(() => adminDeleteUser(client, sessionB.user.id));
   const apiB = createBookmarkApi(sessionB);
 
   const listedB = await apiB.listBookmarks({ is_archived: true });
@@ -450,36 +478,30 @@ try {
     fail('Realtime RLS: anonymous subscription check failed', error);
   }
 
-  // Test 2: Real authenticated user is allowed subscription
-  const testEmail = 'realtime-policy-verifier@keepory.app';
-  const testPass = 'verifier-password-91823';
+  // Test 2: Real authenticated user is allowed subscription. The verifier has to be
+  // a confirmed, non-anonymous user, so it is created through the Admin API and
+  // then signed in through the ordinary password grant — the public sign-up
+  // endpoint returns no session while "Confirm email" is enabled on the project.
+  // Identity is unique per run because the run deletes the account afterward: a
+  // fixed address plus a fixed password would survive a crashed run as a
+  // sign-in-able real user.
+  const verifierEmail = `realtime-policy-verifier+${Date.now()}@keepory.app`;
+  const verifierPassword = crypto.randomUUID();
   let realSession;
   try {
-    const signupResponse = await client.request('/auth/v1/signup', {
+    const verifier = await client.request('/auth/v1/admin/users', {
       method: 'POST',
-      body: { email: testEmail, password: testPass },
+      accessToken: SERVICE_ROLE_KEY,
+      body: { email: verifierEmail, password: verifierPassword, email_confirm: true },
     });
-    if (signupResponse && signupResponse.access_token) {
-      realSession = toSession(signupResponse);
-    }
+    cleanups.push(() => adminDeleteUser(client, verifier.id));
+    const loginResponse = await client.request('/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      body: { email: verifierEmail, password: verifierPassword },
+    });
+    realSession = toSession(loginResponse);
   } catch (error) {
-    // If signup fails (most likely user already exists), attempt login
-    try {
-      const loginResponse = await client.request('/auth/v1/token?grant_type=password', {
-        method: 'POST',
-        body: { email: testEmail, password: testPass },
-      });
-      realSession = toSession(loginResponse);
-    } catch (loginError) {
-      fail(
-        'Realtime RLS: real user authentication failed. If testing locally, ensure email confirmation is disabled on your Supabase project (Authentication -> Provider Settings).',
-        loginError
-      );
-    }
-  }
-
-  if (!realSession) {
-    fail('Realtime RLS: signup succeeded but did not return a session access token (email confirmation is likely enabled).');
+    fail('Realtime RLS: could not create and sign in a confirmed verifier user', error);
   }
 
   try {
