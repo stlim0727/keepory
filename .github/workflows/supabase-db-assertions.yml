@@ -179,6 +179,56 @@ jobs:
           done
           exit "$failed"
 
+      - name: Inventory the RPC surface client roles can execute
+        if: always()
+        env:
+          DB_HOST: ${{ steps.db.outputs.DB_HOST }}
+          DB_PORT: ${{ steps.db.outputs.DB_PORT }}
+          PGPASSWORD: postgres
+        run: |
+          # Supabase's bootstrap grants EXECUTE on every new public function to
+          # anon and authenticated through default privileges, and a later
+          # `revoke ... from public` does not remove those per-role grants. So
+          # each new RPC is client-callable unless a migration names the roles
+          # explicitly. This listing is the reachable surface after the whole
+          # migration history, which is the only version of the truth worth
+          # reading: production ACLs drift and grepping the files cannot resolve
+          # overlapping overloads.
+          #
+          # Deliberately a log, not a gate: no allowlist has been curated yet, so
+          # failing on this list would only encode today's guess. Once the list is
+          # reviewed and the remaining entries are intentional, this becomes an
+          # assertion.
+          psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d postgres -X <<'SQL'
+          \echo '---- client-callable function count ----'
+          select count(*) as client_callable_functions
+          from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public'
+            and (has_function_privilege('anon', p.oid, 'EXECUTE')
+              or has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+
+          \echo '---- client-callable SECURITY DEFINER functions ----'
+          -- These are the ones worth reading line by line. An ordinary function
+          -- runs as the calling role, so row-level security still arbitrates what it
+          -- can touch. A security-definer function runs as its owner — usually
+          -- postgres — so an EXECUTE grant on it hands an anonymous caller whatever
+          -- the body does with no RLS in the way.
+          select p.proname,
+            pg_get_function_arguments(p.oid) as arguments,
+            r.rolname as owner,
+            has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+            has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated
+          from pg_proc p
+          join pg_namespace n on n.oid = p.pronamespace
+          join pg_roles r on r.oid = p.proowner
+          where n.nspname = 'public'
+            and p.prosecdef
+            and (has_function_privilege('anon', p.oid, 'EXECUTE')
+              or has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+          order by 1, 2;
+          SQL
+
       - name: Dump the ACLs behind a privilege failure
         if: failure()
         env:

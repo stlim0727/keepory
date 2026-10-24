@@ -115,6 +115,16 @@ When `CI_PROVIDER` is set to `github`:
 > above and neither replaces the other. A green run here while `migration-drift`
 > is red is the #996 shape: the replayed database satisfies every invariant while
 > the live project is missing the migrations that provide them.
+>
+> The job also prints, on every run, the functions a client role can `EXECUTE`
+> after the whole migration history, and the subset that are `security definer`.
+> Supabase's bootstrap adds `alter default privileges ... grant all on functions
+> to anon/authenticated`, so a new RPC is client-callable until a migration names
+> those roles; `revoke ... from public` alone does not remove the per-role grants.
+> It is a log rather than a gate because no allowlist has been curated yet. Read
+> it from the rebuilt database, never by grepping the migration files: overlapping
+> overloads and multi-line revoke statements make the files unreadable this way,
+> and only the catalog shows the final state.
 
 Trigger a manual CircleCI workflow from the CircleCI UI (*Trigger Pipeline* → add
 the parameter) or the API, e.g.:
