@@ -1,10 +1,11 @@
 -- Offline regression fixture: callers cannot reserve/refund another user's quota.
--- UUID arguments are written as '...'::uuid on purpose. _ai_enrichment_slot and
--- request_ai_enrichment_slot_for each have a sibling overload whose extra argument
--- has a default, so an untyped literal is ambiguous and Postgres raises
--- "function is not unique" (42725) during resolution — before the privilege check
--- these statements exist to assert. PostgREST sends typed parameters, so this only
--- bites here.
+-- Every privileged call below spells out full arity with '...'::uuid arguments.
+-- _ai_enrichment_slot and request_ai_enrichment_slot_for each have a short
+-- delegating wrapper plus a sibling whose last argument defaults to false, so a
+-- short call matches two candidates and Postgres raises "function is not unique"
+-- (42725) while resolving — before the privilege check these statements exist to
+-- assert. Writing the widest signature is what keeps the assertion testing
+-- privileges, and keeps it valid whether or not the redundant wrappers exist.
 begin;
 insert into auth.users(id, is_anonymous) values
   ('00000000-0000-4000-8000-000000000011', true),
@@ -18,11 +19,11 @@ begin
     raise exception 'FAIL: authenticated self quota stopped working';
   end if;
   begin
-    perform public._ai_enrichment_slot('00000000-0000-4000-8000-000000000012'::uuid, false);
+    perform public._ai_enrichment_slot('00000000-0000-4000-8000-000000000012'::uuid, false, false);
     raise exception 'FAIL: client can reserve foreign quota';
   exception when insufficient_privilege then null; end;
   begin
-    perform public.request_ai_enrichment_slot_for('00000000-0000-4000-8000-000000000012'::uuid);
+    perform public.request_ai_enrichment_slot_for('00000000-0000-4000-8000-000000000012'::uuid, false);
     raise exception 'FAIL: client can reserve foreign server quota';
   exception when insufficient_privilege then null; end;
   begin
@@ -36,11 +37,11 @@ set local role anon;
 do $$
 begin
   begin
-    perform public._ai_enrichment_slot('00000000-0000-4000-8000-000000000012'::uuid, false);
+    perform public._ai_enrichment_slot('00000000-0000-4000-8000-000000000012'::uuid, false, false);
     raise exception 'FAIL: unauthenticated foreign quota reserve';
   exception when insufficient_privilege then null; end;
   begin
-    perform public.request_ai_enrichment_slot_for('00000000-0000-4000-8000-000000000012'::uuid);
+    perform public.request_ai_enrichment_slot_for('00000000-0000-4000-8000-000000000012'::uuid, false);
     raise exception 'FAIL: unauthenticated server quota reserve';
   exception when insufficient_privilege then null; end;
   begin
@@ -61,7 +62,7 @@ end $$;
 set local role service_role;
 do $$
 begin
-  if public.request_ai_enrichment_slot_for('00000000-0000-4000-8000-000000000012'::uuid)->>'allowed' <> 'true' then
+  if public.request_ai_enrichment_slot_for('00000000-0000-4000-8000-000000000012'::uuid, false)->>'allowed' <> 'true' then
     raise exception 'FAIL: server reserve stopped working';
   end if;
   perform public.refund_ai_enrichment_slot_for('00000000-0000-4000-8000-000000000012'::uuid);
