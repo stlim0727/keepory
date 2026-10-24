@@ -84,7 +84,7 @@ function localMigrations() {
     .map((name) => {
       const match = /^\d+_(.+)\.sql$/.exec(name);
       if (!match) throw new Error(`Migration file has no numeric version prefix: ${name}`);
-      return { name, slug: match[1] };
+      return { name, version: name.split('_', 1)[0], slug: match[1] };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -114,7 +114,7 @@ function warnOnDuplicateSlugs(local) {
   }
 }
 
-async function appliedMigrationNames(token, ref) {
+async function appliedMigrations(token, ref) {
   const response = await fetch(`${MANAGEMENT_API}/projects/${ref}/database/migrations`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -124,7 +124,13 @@ async function appliedMigrationNames(token, ref) {
     );
   }
   const body = await response.json();
-  return new Set(body.map((row) => row.name));
+  if (!Array.isArray(body) || body.some((row) =>
+    !row || typeof row.version !== 'string' || !/^\d+$/.test(row.version) ||
+    typeof row.name !== 'string' || !row.name
+  )) {
+    throw new Error('Management API returned a malformed migration ledger');
+  }
+  return body;
 }
 
 async function main() {
@@ -137,17 +143,33 @@ async function main() {
     );
     // Named explicitly rather than a generic "skipping": an unattended green
     // nightly job reads as "no drift" unless it says it verified nothing.
-    console.warn(
-      `::warning title=Migration drift not checked::Not set: ${missing.join(', ')}. ` +
+    console.error(
+      `::error title=Migration drift not checked::Not set: ${missing.join(', ')}. ` +
         'This job verified NOTHING; it is not evidence of an unapplied-free database.',
     );
+    process.exitCode = 1;
     return;
   }
 
   const ref = projectRefFromUrl(url);
   const local = localMigrations();
   warnOnDuplicateSlugs(local);
-  const applied = await appliedMigrationNames(token, ref);
+  const ledger = await appliedMigrations(token, ref);
+  const applied = new Set(ledger.map((row) => row.name));
+
+  // Read-only evidence for #996. Do not silently turn the existing production
+  // check red before a ledger reconciliation has been reviewed and approved.
+  // The report includes ambiguous mappings; it is not an executable repair.
+  if (process.argv.includes('--report-versions')) {
+    const versions = new Set(local.map((row) => row.version));
+    const orphaned = ledger.filter((row) => !versions.has(row.version)).map((row) => ({
+      version: row.version,
+      name: row.name,
+      candidates: local.filter((migration) => migration.slug === row.name)
+        .map((migration) => migration.name),
+    }));
+    console.log(JSON.stringify({ project: ref, orphaned }, null, 2));
+  }
 
   const pending = local.filter(
     (migration) => !applied.has(migration.slug) && !KNOWN_UNTRACKED_BUT_LIVE.has(migration.slug),

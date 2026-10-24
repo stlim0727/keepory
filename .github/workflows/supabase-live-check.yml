@@ -14,8 +14,8 @@ name: Supabase live check
 #     secret (a Supabase *account* personal access token, Dashboard ->
 #     Account -> Access Tokens — not the project anon/service key), scoped to
 #     this project with Migrations -> Read only; that permission unlocks the
-#     single GET this job makes and cannot execute SQL. Skips
-#     itself with a clear message if that secret isn't set yet.
+#     single GET this job makes and cannot execute SQL. Fails
+#     explicitly if credentials are missing, so green always means checked.
 #   - verify-supabase: runs the existing `pnpm verify:supabase` E2E script
 #     (auth + Realtime checks against the real project, including a
 #     channel-join check per account type) using the EXPO_PUBLIC_SUPABASE_*
