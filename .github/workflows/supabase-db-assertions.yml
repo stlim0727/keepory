@@ -7,8 +7,8 @@ name: Supabase DB assertions
 # different questions, and neither covers the other's blind spot:
 #   - migration-drift asks "does the LIVE project match the migration files?"
 #   - this asks "do the files, replayed from nothing, still satisfy the
-#     ownership / quota / capacity invariants?" So it catches a new migration
-#     that revokes a grant or adds an ambiguous RPC overload before it merges.
+#     ownership / quota / capacity invariants?" So it catches a new migration that
+#     revokes a grant or adds an ambiguous RPC overload before it merges.
 # Issue #996 proves the split matters: production had drifted from the files, so
 # a replayed-from-scratch database passes every assertion while the live project
 # silently no-op'd AI enrichment. A green run here is NOT evidence about
@@ -22,6 +22,24 @@ name: Supabase DB assertions
 # anon/authenticated/service_role`. psql with ON_ERROR_STOP is the matching
 # harness: the first FAIL aborts that file and exits non-zero, and the file's own
 # rollback (or the abort) leaves no rows behind.
+#
+# Why this does not let `supabase start` apply the migrations either. Its first
+# real execution failed twice, and both failures are defects in the tracked
+# history rather than in this job:
+#   - `duplicate key value violates unique constraint "schema_migrations_pkey"`
+#     — 20260620000000 is used by two files (ai_enrichment_degraded and
+#     ai_enrichment_rate_limit), and the CLI keys local history on the version
+#     alone.
+#   - `LOCK TABLE can only be used in transaction blocks (SQLSTATE 25P01)` —
+#     20261005113906_bookmark_capacity_limits.sql locks at the top of the file,
+#     which needs the whole file in one transaction. The Dashboard and the
+#     Management API send a file as a single statement, so production never saw
+#     either problem; the CLI splits statements and records versions.
+# So the job boots the CLI's bootstrap only (migrations staged aside), then
+# replays each file itself with psql --single-transaction — the same transport
+# shape production actually used. `supabase db reset` on a fresh volume still
+# hits both defects until the version is deduped and the lock is wrapped; that
+# history work belongs with #996, not to a CI job.
 #
 # Only the database container starts — the --exclude list below drops auth,
 # PostgREST, storage, Studio and the log/edge stack, so nothing here exercises
@@ -67,39 +85,21 @@ jobs:
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
-      - name: Give the colliding migration version a scratch number
-        # First CI run failed here: 20260620000000_ai_enrichment_degraded.sql and
-        # 20260620000000_ai_enrichment_rate_limit.sql share one version, and the
-        # local CLI records history keyed on that version alone, so replaying the
-        # second aborts with `duplicate key value violates unique constraint
-        # "schema_migrations_pkey"` after already running its SQL. Renaming only
-        # this sandbox copy keeps the existing filename order (…0000 < …0001) so
-        # dependencies are untouched, and leaves the repository alone: the drift
-        # check in supabase-live-check.yml matches by slug, not version.
-        #
-        # The real fix is a tracked one — dedupe the version in supabase/ and
-        # reconcile the live ledger, which is human-gated history work filed under
-        # #996 — not something a CI job should decide. Until then this step is the
-        # reason a green run here is a statement about the SQL, not the filenames.
+      - name: Start the bootstrap database with migrations staged aside
         run: |
-          mv supabase/migrations/20260620000000_ai_enrichment_rate_limit.sql \
-             supabase/migrations/20260620000001_ai_enrichment_rate_limit.sql
-          ls supabase/migrations/202606200000*.sql
-
-      - name: Start the database and replay supabase/migrations
-        run: |
+          mkdir -p /tmp/replay-migrations
+          mv supabase/migrations/*.sql /tmp/replay-migrations/
           supabase start \
             --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          mv /tmp/replay-migrations/*.sql supabase/migrations/
+          rmdir /tmp/replay-migrations
 
-      - name: Run the assertion scripts
-        env:
-          PGPASSWORD: postgres
+      - name: Resolve the local database address
+        id: db
         run: |
-          set -e
-
-          # Resolve the published host:port from the CLI rather than hardcoding
-          # a port, which changes between CLI versions and branches. The status
-          # line embeds a password placeholder, so take only the address.
+          # Resolved rather than hardcoded: the local database port moves between
+          # CLI versions, and the status line embeds a password placeholder, so
+          # only the address is taken from it.
           db_addr="$(supabase status -o env \
             | sed -n 's/^DB_URL=//p' | tr -d '"' \
             | grep -oE '(127\.0\.0\.1|localhost):[0-9]+' | head -n1)"
@@ -107,33 +107,68 @@ jobs:
             echo '::error::could not resolve the local database address from `supabase status`'
             exit 1
           fi
-          db_host="${db_addr%%:*}"
-          db_port="${db_addr##*:}"
+          {
+            echo "DB_HOST=${db_addr%%:*}"
+            echo "DB_PORT=${db_addr##*:}"
+          } >> "$GITHUB_OUTPUT"
 
+      - name: Wait for the database to accept connections
+        env:
+          DB_HOST: ${{ steps.db.outputs.DB_HOST }}
+          DB_PORT: ${{ steps.db.outputs.DB_PORT }}
+          PGPASSWORD: postgres
+        run: |
           for attempt in $(seq 1 30); do
-            if psql -h "$db_host" -p "$db_port" -U postgres -d postgres -X -c 'select 1' > /dev/null 2>&1; then
-              break
+            if psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d postgres -X -c 'select 1' > /dev/null 2>&1; then
+              exit 0
             fi
             if [ "$attempt" -eq 30 ]; then
-              echo "::error::local database never accepted connections on $db_addr"
+              echo "::error::local database never accepted connections on $DB_HOST:$DB_PORT"
               exit 1
             fi
             sleep 2
           done
 
+      - name: Replay supabase/migrations
+        env:
+          DB_HOST: ${{ steps.db.outputs.DB_HOST }}
+          DB_PORT: ${{ steps.db.outputs.DB_PORT }}
+          PGPASSWORD: postgres
+        run: |
+          shopt -s nullglob
+          files=(supabase/migrations/*.sql)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo '::error::no migration files found under supabase/migrations/'
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            echo "replaying $file"
+            # One transaction per file, which is what the Dashboard and the
+            # Management API do. Aborts at the first error: later files depend on
+            # earlier ones, so continuing would only add noise.
+            psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d postgres \
+              -X -q --single-transaction -v ON_ERROR_STOP=1 -f "$file"
+          done
+          echo "Replayed ${#files[@]} migration files."
+
+      - name: Run the assertion scripts
+        env:
+          DB_HOST: ${{ steps.db.outputs.DB_HOST }}
+          DB_PORT: ${{ steps.db.outputs.DB_PORT }}
+          PGPASSWORD: postgres
+        run: |
           shopt -s nullglob
           files=(supabase/tests/*.sql)
           if [ "${#files[@]}" -eq 0 ]; then
             echo '::error::no assertion scripts found under supabase/tests/'
             exit 1
           fi
-
           failed=0
           for file in "${files[@]}"; do
             echo "::group::$file"
             # Deliberately not --single-transaction: each script opens and rolls
             # back its own transaction already.
-            if psql -h "$db_host" -p "$db_port" -U postgres -d postgres \
+            if psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d postgres \
               -X -q -v ON_ERROR_STOP=1 -f "$file"; then
               echo "PASS $file"
             else
