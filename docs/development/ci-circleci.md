@@ -49,7 +49,7 @@ When `CI_PROVIDER` is set to `github`:
    | `FIREBASE_TEST_CASES` / `FIREBASE_TEST_DEVICES` | apk (post-distribution App Testing) | both required to run the agent after a release build; `FIREBASE_TEST_NON_BLOCKING` / `FIREBASE_TEST_USERNAME` / `FIREBASE_TEST_PASSWORD` / `*_RESOURCE` optional |
    | `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` | sentry release | release skips if token unset |
    | `GH_TOKEN` (or `GITHUB_TOKEN`) | apk | PAT with `contents:write`, used to publish the GitHub Release; the build still runs (APK in CircleCI artifacts) without it |
-   | `SUPABASE_ACCESS_TOKEN` | GitHub Actions `supabase-live-check.yml` (`migration-drift` job) only | a Supabase *account* personal access token (Dashboard → Account → Access Tokens, not the project anon/service key); used read-only via the Management API to list applied migrations. Job skips itself with a clear log message if unset. |
+   | `SUPABASE_ACCESS_TOKEN` | GitHub Actions `supabase-live-check.yml` (`migration-drift` job) only | a Supabase *account* personal access token (Dashboard → Account → Access Tokens, not the project anon/service key), scoped to project `stzutoejnhzxzhjsjtsi` with **Migrations → Read** only (`database_migrations_read`; scoped tokens are prefixed `sbp_fc`). Used read-only via the Management API to list applied migrations; that permission cannot execute SQL, so live-catalog verification needs a separate temporary **Database → Read** token rather than widening this one. Job skips itself with a clear log message if unset. |
 
 ## What runs when
 

@@ -25,7 +25,11 @@
  * SUPABASE_ACCESS_TOKEN is a Supabase *account* personal access token
  * (Dashboard -> Account -> Access Tokens), NOT the project anon/service key.
  * It's only used read-only here, to list applied migrations via the
- * Management API.
+ * Management API. Scope it to this project with the Migrations -> Read
+ * permission only (scope string database_migrations_read; scoped tokens are
+ * prefixed sbp_fc). That is sufficient for the one GET this script makes and
+ * deliberately cannot execute SQL - anything needing the live catalog wants a
+ * separate Database -> Read token, minted for the task and revoked after.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,6 +61,12 @@ const KNOWN_UNTRACKED_BUT_LIVE = new Set([
   // RLS already enabled + anon/authenticated grants already revoked on both
   // tidy_backup_totohero_* tables live.
   'secure_tidy_backup_totohero_tables',
+  // Superseded, not missing: this one was merged but never applied. Its intent
+  // is in effect via 20261024000100_clear_stale_ai_collection_move_suggestions
+  // (verified live 2026-10-24: the 269 rows older than this migration's own
+  // timestamp are cleared, 119 newer suggestions deliberately preserved). Kept
+  // as history rather than deleted so the ledger and this file stay truthful.
+  'clear_persisted_collection_move_suggestions',
 ]);
 
 function projectRefFromUrl(url) {

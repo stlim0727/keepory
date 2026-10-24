@@ -12,7 +12,9 @@ name: Supabase live check
 #     Management API says is actually applied. Read-only, no data created, so
 #     it's safe to run unattended on a schedule. Needs a SUPABASE_ACCESS_TOKEN
 #     secret (a Supabase *account* personal access token, Dashboard ->
-#     Account -> Access Tokens — not the project anon/service key). Skips
+#     Account -> Access Tokens — not the project anon/service key), scoped to
+#     this project with Migrations -> Read only; that permission unlocks the
+#     single GET this job makes and cannot execute SQL. Skips
 #     itself with a clear message if that secret isn't set yet.
 #   - verify-supabase: runs the existing `pnpm verify:supabase` E2E script
 #     (16 checks against the real project, including a Realtime channel-join

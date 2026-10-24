@@ -42,7 +42,8 @@ begin
     end if;
     if has_function_privilege(current_user, 'public.claim_pending_ai_enrichment_batch(integer)', 'EXECUTE')
       or has_function_privilege(current_user, 'public.reserve_ai_enrichment_budget()', 'EXECUTE')
-      or has_function_privilege(current_user, 'public.request_ai_enrichment_slot_for(uuid)', 'EXECUTE')
+      or has_function_privilege(current_user, 'public._ai_enrichment_slot(uuid, boolean, boolean)', 'EXECUTE')
+      or has_function_privilege(current_user, 'public.request_ai_enrichment_slot_for(uuid, boolean)', 'EXECUTE')
       or has_function_privilege(current_user, 'public.refund_ai_enrichment_slot_for(uuid)', 'EXECUTE') then
       raise exception 'FAIL: privileged AI RPC reachable by client';
     end if;
@@ -62,7 +63,8 @@ begin
     raise exception 'FAIL: unauthenticated quota allowed';
   end if;
   if has_function_privilege(current_user, 'public.claim_pending_ai_enrichment_batch(integer)', 'EXECUTE')
-    or has_function_privilege(current_user, 'public.reserve_ai_enrichment_budget()', 'EXECUTE') then
+    or has_function_privilege(current_user, 'public.reserve_ai_enrichment_budget()', 'EXECUTE')
+    or has_function_privilege(current_user, 'public._ai_enrichment_slot(uuid, boolean, boolean)', 'EXECUTE') then
     raise exception 'FAIL: anonymous privileged RPC access';
   end if;
 end $$;
@@ -74,7 +76,8 @@ begin
     raise exception 'FAIL: server cannot read fixture owners';
   end if;
   if not has_function_privilege(current_user, 'public.claim_pending_ai_enrichment_batch(integer)', 'EXECUTE')
-    or not has_function_privilege(current_user, 'public.reserve_ai_enrichment_budget()', 'EXECUTE') then
+    or not has_function_privilege(current_user, 'public.reserve_ai_enrichment_budget()', 'EXECUTE')
+    or not has_function_privilege(current_user, 'public._ai_enrichment_slot(uuid, boolean, boolean)', 'EXECUTE') then
     raise exception 'FAIL: server RPC access missing';
   end if;
 end $$;

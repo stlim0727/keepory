@@ -1,0 +1,27 @@
+-- Lock the internal AI slot engine out of client roles.
+--
+-- Supabase's database defaults run
+--   ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+--     GRANT ALL ON FUNCTIONS TO anon;   ... TO authenticated;
+-- so every function a migration creates as postgres is explicitly granted to both
+-- client roles. 20261016000000_trickle_ai_enrichment.sql ended with
+--   revoke all on function public._ai_enrichment_slot(uuid, boolean, boolean) from public;
+-- which removes only the PUBLIC pseudo-grant and leaves those per-role grants in
+-- place. The CI-rebuilt database shows proacl
+--   {postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}
+-- on this signature while its (uuid, boolean) sibling is {postgres,service_role},
+-- which is why supabase/tests/ai-quota-rpc-access.sql can call it as authenticated
+-- instead of being denied.
+--
+-- Impact in production: the anon key alone is enough to POST /rpc/_ai_enrichment_slot
+-- with an arbitrary p_user_id, p_is_anonymous and p_is_trickle. It is security
+-- definer as postgres, so it bypasses the ownership checks in
+-- request_ai_enrichment_slot_for that exist to stop one account spending another's
+-- enrichment quota — a client can consume or block a stranger's quota slots and read
+-- their quota verdict. No bookmark content is exposed.
+--
+-- No caller loses anything: the only references to this signature are the public
+-- wrappers, which are security definer and run the inner call as the owner, and the
+-- revoke lines themselves. Nothing in apps/mobile or supabase/functions calls it
+-- directly.
+revoke all on function public._ai_enrichment_slot(uuid, boolean, boolean) from public, anon, authenticated;
