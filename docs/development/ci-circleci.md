@@ -98,14 +98,18 @@ When `CI_PROVIDER` is set to `github`:
 > touching `supabase/migrations/**`, `supabase/tests/**`, `supabase/config.toml`,
 > or the workflow itself, because container boot costs minutes.
 >
-> One known wart, worked around inside the job: `20260620000000` is used by two
-> files (`ai_enrichment_degraded` and `ai_enrichment_rate_limit`), and the local
-> CLI keys its history on the version alone, so replaying the second aborts on a
-> `schema_migrations_pkey` duplicate. The job renames its own checkout copy to
-> `20260620000001` — same order, repository untouched — but the tracked fix is to
-> dedupe that version and reconcile the live ledger (#996). `supabase db reset`
-> replays through the same recorder, so expect a fresh local reset to stall here
-> too until the version is deduped.
+> One known wart, worked around inside the job: the CLI's own migration applier
+> cannot replay this repository's history. `20260620000000` is used by two files
+> (`ai_enrichment_degraded` and `ai_enrichment_rate_limit`) while local history is
+> keyed on the version alone (`schema_migrations_pkey` duplicate), and
+> `20261005113906_bookmark_capacity_limits.sql` issues a top-level `LOCK TABLE`
+> that the CLI's statement splitter runs outside a transaction block. Production
+> never hit either because the Dashboard and Management API send a whole file as
+> one statement. So the job boots the CLI's bootstrap with migrations staged aside,
+> then replays each file itself with `psql --single-transaction` — the transport
+> shape production actually used. Deduping that version and wrapping the lock is
+> tracked-history work that belongs with #996; `supabase db reset` on a fresh
+> volume will keep failing at those two points until then.
 >
 > It checks the **files**, not production, so it is the other half of the pair
 > above and neither replaces the other. A green run here while `migration-drift`
