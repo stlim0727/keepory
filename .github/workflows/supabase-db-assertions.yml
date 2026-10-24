@@ -23,23 +23,10 @@ name: Supabase DB assertions
 # harness: the first FAIL aborts that file and exits non-zero, and the file's own
 # rollback (or the abort) leaves no rows behind.
 #
-# Why this does not let `supabase start` apply the migrations either. Its first
-# real execution failed twice, and both failures are defects in the tracked
-# history rather than in this job:
-#   - `duplicate key value violates unique constraint "schema_migrations_pkey"`
-#     — 20260620000000 is used by two files (ai_enrichment_degraded and
-#     ai_enrichment_rate_limit), and the CLI keys local history on the version
-#     alone.
-#   - `LOCK TABLE can only be used in transaction blocks (SQLSTATE 25P01)` —
-#     20261005113906_bookmark_capacity_limits.sql locks at the top of the file,
-#     which needs the whole file in one transaction. The Dashboard and the
-#     Management API send a file as a single statement, so production never saw
-#     either problem; the CLI splits statements and records versions.
-# So the job boots the CLI's bootstrap only (migrations staged aside), then
-# replays each file itself with psql --single-transaction — the same transport
-# shape production actually used. `supabase db reset` on a fresh volume still
-# hits both defects until the version is deduped and the lock is wrapped; that
-# history work belongs with #996, not to a CI job.
+# Use the CLI's real migration applier, including its version ledger and statement
+# splitting. A per-file psql replay concealed the defects tracked by #1004.
+# Starting from the runner's fresh volume and then resetting verifies both entry
+# points used by local development. Never run this against a linked remote DB.
 #
 # Only the database container starts — the --exclude list below drops auth,
 # PostgREST, storage, Studio and the log/edge stack, so nothing here exercises
@@ -85,14 +72,10 @@ jobs:
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
-      - name: Start the bootstrap database with migrations staged aside
+      - name: Start a fresh local database with tracked migrations
         run: |
-          mkdir -p /tmp/replay-migrations
-          mv supabase/migrations/*.sql /tmp/replay-migrations/
           supabase start \
             --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
-          mv /tmp/replay-migrations/*.sql supabase/migrations/
-          rmdir /tmp/replay-migrations
 
       - name: Resolve the local database address
         id: db
@@ -129,27 +112,8 @@ jobs:
             sleep 2
           done
 
-      - name: Replay supabase/migrations
-        env:
-          DB_HOST: ${{ steps.db.outputs.DB_HOST }}
-          DB_PORT: ${{ steps.db.outputs.DB_PORT }}
-          PGPASSWORD: postgres
-        run: |
-          shopt -s nullglob
-          files=(supabase/migrations/*.sql)
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo '::error::no migration files found under supabase/migrations/'
-            exit 1
-          fi
-          for file in "${files[@]}"; do
-            echo "replaying $file"
-            # One transaction per file, which is what the Dashboard and the
-            # Management API do. Aborts at the first error: later files depend on
-            # earlier ones, so continuing would only add noise.
-            psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d postgres \
-              -X -q --single-transaction -v ON_ERROR_STOP=1 -f "$file"
-          done
-          echo "Replayed ${#files[@]} migration files."
+      - name: Reset the local database through the CLI migration applier
+        run: supabase db reset --local --no-seed
 
       - name: Run the assertion scripts
         env:

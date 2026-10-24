@@ -1,3 +1,7 @@
+-- One statement keeps the lock, counter seed, and triggers in one transaction
+-- even when the CLI applies statements separately. See issues #996 and #1004.
+do $capacity_migration$
+begin
 -- Starts disabled: configure measured account/project limits before enabling.
 -- Counts all bookmark rows, including trash. Permanent deletion releases space.
 -- Serialize writes while seeding the ledger; retain every existing bookmark.
@@ -88,3 +92,6 @@ as $$
 $$;
 revoke all on function public.get_bookmark_capacity() from public, anon, authenticated;
 grant execute on function public.get_bookmark_capacity() to authenticated, service_role;
+
+end;
+$capacity_migration$;
