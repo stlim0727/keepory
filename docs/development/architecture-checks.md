@@ -5,6 +5,11 @@ from the repository root. It is part of `pnpm lint` on both CI providers.
 The policy lives in `scripts/dependency-cruiser.config.mjs`; the runner adds
 platform selection, reporting, and the existing-violation baseline.
 
+The root TypeScript dependency stays pinned to 6.0.3 because dependency-cruiser
+18.5.0 requires the JavaScript compiler API and supports TypeScript versions below
+7. The mobile workspace uses TypeScript 7 for `tsc --noEmit`; keep these versions
+separate until dependency-cruiser supports the TypeScript 7 API.
+
 ## What blocks CI
 
 - Domain imports of non-domain modules, including routes, UI, features, store,
