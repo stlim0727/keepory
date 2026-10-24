@@ -178,3 +178,27 @@ jobs:
             echo "::endgroup::"
           done
           exit "$failed"
+
+      - name: Dump the ACLs behind a privilege failure
+        if: failure()
+        env:
+          DB_HOST: ${{ steps.db.outputs.DB_HOST }}
+          DB_PORT: ${{ steps.db.outputs.DB_PORT }}
+          PGPASSWORD: postgres
+        run: |
+          # Only runs when an assertion failed, and only reads catalogs. A
+          # privilege assertion can fail for two very different reasons — the
+          # grant really exists, or function resolution picked another overload —
+          # and proacl plus the exact argument list is what tells them apart.
+          psql -h "$DB_HOST" -p "$DB_PORT" -U postgres -d postgres -X -v ON_ERROR_STOP=1 <<'SQL'
+          select p.proname,
+            pg_get_function_arguments(p.oid) as arguments,
+            p.proacl,
+            has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+            has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated,
+            has_function_privilege('service_role', p.oid, 'EXECUTE') as service_role
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public'
+            and (p.proname like '%ai_enrichment_slot%' or p.proname like '%enrichment_budget%')
+          order by 1, 2;
+          SQL
