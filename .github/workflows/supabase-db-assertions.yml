@@ -67,6 +67,25 @@ jobs:
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
+      - name: Give the colliding migration version a scratch number
+        # First CI run failed here: 20260620000000_ai_enrichment_degraded.sql and
+        # 20260620000000_ai_enrichment_rate_limit.sql share one version, and the
+        # local CLI records history keyed on that version alone, so replaying the
+        # second aborts with `duplicate key value violates unique constraint
+        # "schema_migrations_pkey"` after already running its SQL. Renaming only
+        # this sandbox copy keeps the existing filename order (…0000 < …0001) so
+        # dependencies are untouched, and leaves the repository alone: the drift
+        # check in supabase-live-check.yml matches by slug, not version.
+        #
+        # The real fix is a tracked one — dedupe the version in supabase/ and
+        # reconcile the live ledger, which is human-gated history work filed under
+        # #996 — not something a CI job should decide. Until then this step is the
+        # reason a green run here is a statement about the SQL, not the filenames.
+        run: |
+          mv supabase/migrations/20260620000000_ai_enrichment_rate_limit.sql \
+             supabase/migrations/20260620000001_ai_enrichment_rate_limit.sql
+          ls supabase/migrations/202606200000*.sql
+
       - name: Start the database and replay supabase/migrations
         run: |
           supabase start \
