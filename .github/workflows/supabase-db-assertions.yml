@@ -1,0 +1,126 @@
+name: Supabase DB assertions
+
+# Rebuilds a throwaway Supabase Postgres from supabase/migrations/ and runs the
+# assertion scripts under supabase/tests/ against it.
+#
+# Complements supabase-live-check.yml instead of duplicating it — the two answer
+# different questions, and neither covers the other's blind spot:
+#   - migration-drift asks "does the LIVE project match the migration files?"
+#   - this asks "do the files, replayed from nothing, still satisfy the
+#     ownership / quota / capacity invariants?" So it catches a new migration
+#     that revokes a grant or adds an ambiguous RPC overload before it merges.
+# Issue #996 proves the split matters: production had drifted from the files, so
+# a replayed-from-scratch database passes every assertion while the live project
+# silently no-op'd AI enrichment. A green run here is NOT evidence about
+# production state, and never will be.
+#
+# Why this does not use `supabase test db`: supabase/tests/*.sql are not pgTAP.
+# None of them creates the pgtap extension or emits a TAP plan, so pg_prove
+# would have nothing to assert on. Each file is a hand-rolled `begin; ...
+# rollback;` script that reports failure with `raise exception 'FAIL: ...'` and
+# needs the postgres superuser because it does `set local role
+# anon/authenticated/service_role`. psql with ON_ERROR_STOP is the matching
+# harness: the first FAIL aborts that file and exits non-zero, and the file's own
+# rollback (or the abort) leaves no rows behind.
+#
+# Only the database container starts — the --exclude list below drops auth,
+# PostgREST, storage, Studio and the log/edge stack, so nothing here exercises
+# Edge Functions or `verify_jwt`. Container boot costs minutes, so triggering is
+# deliberately narrow: PRs and post-merge pushes touching migrations, the
+# assertion scripts, the local bootstrap config, or this file.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/supabase-db-assertions.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/supabase-db-assertions.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  assertions:
+    name: Assertion scripts on a rebuilt database
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Pinned to the CLI whose `supabase start --exclude` surface this workflow
+      # was written against. Bump deliberately: a newer CLI can change the
+      # bundled database bootstrap, which surfaces here as a replay failure.
+      SUPABASE_CLI_VERSION: 2.122.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Start the database and replay supabase/migrations
+        run: |
+          supabase start \
+            --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Run the assertion scripts
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -e
+
+          # Resolve the published host:port from the CLI rather than hardcoding
+          # a port, which changes between CLI versions and branches. The status
+          # line embeds a password placeholder, so take only the address.
+          db_addr="$(supabase status -o env \
+            | sed -n 's/^DB_URL=//p' | tr -d '"' \
+            | grep -oE '(127\.0\.0\.1|localhost):[0-9]+' | head -n1)"
+          if [ -z "$db_addr" ]; then
+            echo '::error::could not resolve the local database address from `supabase status`'
+            exit 1
+          fi
+          db_host="${db_addr%%:*}"
+          db_port="${db_addr##*:}"
+
+          for attempt in $(seq 1 30); do
+            if psql -h "$db_host" -p "$db_port" -U postgres -d postgres -X -c 'select 1' > /dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "::error::local database never accepted connections on $db_addr"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          shopt -s nullglob
+          files=(supabase/tests/*.sql)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo '::error::no assertion scripts found under supabase/tests/'
+            exit 1
+          fi
+
+          failed=0
+          for file in "${files[@]}"; do
+            echo "::group::$file"
+            # Deliberately not --single-transaction: each script opens and rolls
+            # back its own transaction already.
+            if psql -h "$db_host" -p "$db_port" -U postgres -d postgres \
+              -X -q -v ON_ERROR_STOP=1 -f "$file"; then
+              echo "PASS $file"
+            else
+              echo "::error::assertion script failed: $file"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"

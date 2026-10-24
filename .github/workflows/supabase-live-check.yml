@@ -38,6 +38,10 @@ name: Supabase live check
 # dispatch. Independent of the CI_PROVIDER gate switch — this isn't ported to
 # CircleCI (whose scheduler doesn't work for this project; see
 # docs/development/ci-circleci.md).
+#
+# This is the "does production match the files" half. The other half,
+# supabase-db-assertions.yml, rebuilds a database from those files and checks the
+# invariants in supabase/tests/ against it; neither covers the other's blind spot.
 
 on:
   schedule:
