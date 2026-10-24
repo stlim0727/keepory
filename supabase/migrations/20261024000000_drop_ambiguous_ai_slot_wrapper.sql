@@ -1,0 +1,17 @@
+-- Resolve the ambiguous request_ai_enrichment_slot_for overload (#996 follow-up).
+--
+-- 20261016000000_trickle_ai_enrichment created
+-- request_ai_enrichment_slot_for(p_user_id uuid, p_is_trickle boolean default false)
+-- and, for backward compatibility, also a 1-arg wrapper. Two live candidates mean
+-- PostgREST cannot resolve a call that passes only p_user_id:
+--
+--   PGRST203 Could not choose the best candidate function
+--
+-- The ai-enrich server path calls it that way (supabase/functions/ai-enrich/index.ts),
+-- so its quota check failed, `verdictObtained` stayed false, and enrichment returned
+-- 503 rate_limit_unavailable. The 2-arg function's own default already serves 1-arg
+-- callers, so the wrapper is what removes the ambiguity.
+--
+-- Written as `if exists` so a Preview branch that replays both files in order still
+-- ends in this state.
+drop function if exists public.request_ai_enrichment_slot_for(uuid);

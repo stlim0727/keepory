@@ -42,7 +42,7 @@ begin
     end if;
     if has_function_privilege(current_user, 'public.claim_pending_ai_enrichment_batch(integer)', 'EXECUTE')
       or has_function_privilege(current_user, 'public.reserve_ai_enrichment_budget()', 'EXECUTE')
-      or has_function_privilege(current_user, 'public.request_ai_enrichment_slot_for(uuid)', 'EXECUTE')
+      or has_function_privilege(current_user, 'public.request_ai_enrichment_slot_for(uuid, boolean)', 'EXECUTE')
       or has_function_privilege(current_user, 'public.refund_ai_enrichment_slot_for(uuid)', 'EXECUTE') then
       raise exception 'FAIL: privileged AI RPC reachable by client';
     end if;
