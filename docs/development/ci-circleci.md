@@ -98,6 +98,15 @@ When `CI_PROVIDER` is set to `github`:
 > touching `supabase/migrations/**`, `supabase/tests/**`, `supabase/config.toml`,
 > or the workflow itself, because container boot costs minutes.
 >
+> One known wart, worked around inside the job: `20260620000000` is used by two
+> files (`ai_enrichment_degraded` and `ai_enrichment_rate_limit`), and the local
+> CLI keys its history on the version alone, so replaying the second aborts on a
+> `schema_migrations_pkey` duplicate. The job renames its own checkout copy to
+> `20260620000001` — same order, repository untouched — but the tracked fix is to
+> dedupe that version and reconcile the live ledger (#996). `supabase db reset`
+> replays through the same recorder, so expect a fresh local reset to stall here
+> too until the version is deduped.
+>
 > It checks the **files**, not production, so it is the other half of the pair
 > above and neither replaces the other. A green run here while `migration-drift`
 > is red is the #996 shape: the replayed database satisfies every invariant while
