@@ -375,6 +375,11 @@ preparation, grouped review fixes, handoff evidence, and completion checks.
 - If CI is green, all review threads are resolved, no merge conflicts exist, and no new review activity appears for 5 minutes, either ask
   the user to merge or merge directly for small, well-tested, low-risk changes.
   **Crucial timing trap:** Never merge immediately after CI passes if less than 5 minutes have elapsed since PR creation or last push. Automated reviewers (such as Codex) routinely take 2–4 minutes to run and comment. Merging prematurely results in actionable review catches landing post-merge directly into trunk (as occurred on #796).
+- If an automated reviewer fails to complete, record the failure and distinguish
+  it from a passing review. Keep CI, conflict, and unresolved-thread gates intact.
+  Report the review gap to the owner and obtain an explicit decision to use human
+  review before merging; a failed bot is never implicit approval. PR #1005 used
+  this path after the owner explicitly approved the disclosed review gap.
 - Do not auto-merge PRs that change Supabase migrations/functions,
   auth/session/sync deletion behavior, Cloudflare deploy config, or release
   workflows. Report status and ask. **Never declare a PR containing Supabase migrations ready to merge until the migration is confirmed applied to the target database** — CI/CD does not apply migrations automatically, so merging code ahead of its migration breaks production immediately on deploy (PR #881 / Issue #882). When reporting status to the user, explicitly state whether the migration is already live or blocked on manual execution.

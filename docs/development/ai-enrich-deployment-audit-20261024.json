@@ -1,0 +1,63 @@
+{
+  "version": 34,
+  "artifactSha256": "0b2b932906408df41d245e0456f3e4229726e798cfda954b764b5d9aed30361f",
+  "files": [
+    {
+      "file": "ai-enrich/index.ts",
+      "matches": true,
+      "deployedSha256": "828a660ed6ded37c7dd779ce585ea3839cce10da5786c00b346abe0556a5a9f3",
+      "localSha256": "828a660ed6ded37c7dd779ce585ea3839cce10da5786c00b346abe0556a5a9f3"
+    },
+    {
+      "file": "ai-enrich/dummy-provider.ts",
+      "matches": true,
+      "deployedSha256": "05249ec8ddbad89f8a08a210bdf2ead54f02be4ec1ff6e55a52a9152061bd434",
+      "localSha256": "05249ec8ddbad89f8a08a210bdf2ead54f02be4ec1ff6e55a52a9152061bd434"
+    },
+    {
+      "file": "ai-enrich/gemini-provider.ts",
+      "matches": true,
+      "deployedSha256": "aefb6ae22bd1d8a6679f627212ce0c20f1cc6c576621a87ef9b108154e4c1c1e",
+      "localSha256": "aefb6ae22bd1d8a6679f627212ce0c20f1cc6c576621a87ef9b108154e4c1c1e"
+    },
+    {
+      "file": "ai-enrich/collection-match.ts",
+      "matches": true,
+      "deployedSha256": "664f62307aa17b84cf745ffb557958defe98ff6a031cdfbc0d06ff301e280e2f",
+      "localSha256": "664f62307aa17b84cf745ffb557958defe98ff6a031cdfbc0d06ff301e280e2f"
+    },
+    {
+      "file": "ai-enrich/request-auth.ts",
+      "matches": true,
+      "deployedSha256": "78075bab703b9a696c0637653f6761fed2aeb3097b848386b6d07289c092636d",
+      "localSha256": "78075bab703b9a696c0637653f6761fed2aeb3097b848386b6d07289c092636d"
+    },
+    {
+      "file": "ai-enrich/quota.ts",
+      "matches": true,
+      "deployedSha256": "afa0ce3100f63285647394e5c84ce44ccbc6de197820c9bfc35c607c4fc6d99c",
+      "localSha256": "afa0ce3100f63285647394e5c84ce44ccbc6de197820c9bfc35c607c4fc6d99c"
+    },
+    {
+      "file": "_shared/http.ts",
+      "matches": true,
+      "deployedSha256": "3246e60ab45818be65e1c4320f799009f0aa737b0c06b12fa9d861de9e7f2785",
+      "localSha256": "3246e60ab45818be65e1c4320f799009f0aa737b0c06b12fa9d861de9e7f2785"
+    },
+    {
+      "file": "ai-enrich/validation.ts",
+      "matches": true,
+      "deployedSha256": "6f81ebabbfd1bc9cdc811257dc38b2a8dc1b5779f6162df49d80d5f5ba827a0b",
+      "localSha256": "6f81ebabbfd1bc9cdc811257dc38b2a8dc1b5779f6162df49d80d5f5ba827a0b"
+    },
+    {
+      "file": "ai-enrich/batch-worker.ts",
+      "matches": true,
+      "deployedSha256": "590f4dfec00f4917bbf4a952f067969fa24ee7445cd2e59d57624b9d32c71e80",
+      "localSha256": "590f4dfec00f4917bbf4a952f067969fa24ee7445cd2e59d57624b9d32c71e80"
+    }
+  ],
+  "sourceCommit": "56146d4",
+  "identicalFunctionSourcesTestedAt": "ee982344e223b025b06979e7aecaa28c7b358f35",
+  "unauthenticatedPostStatus": 401
+}

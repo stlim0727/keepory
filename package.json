@@ -25,7 +25,7 @@
     "lint:overlay": "node scripts/check-overlay-elevation.mjs",
     "lint:architecture": "node scripts/check-architecture-boundaries.mjs",
     "lint:agent-efficiency": "node scripts/check-agent-efficiency.mjs",
-    "test": "pnpm --filter mobile test && node --test scripts/user-bookmark-summary.test.mjs && node --test scripts/check-migration-drift.test.mjs && node --test scripts/prepare-eas-release.test.mjs && node --test scripts/play-production-release.test.mjs && pnpm test:functions && pnpm test:dependency-architecture",
+    "test": "pnpm --filter mobile test && node --test scripts/user-bookmark-summary.test.mjs && node --test scripts/check-migration-drift.test.mjs scripts/audit-migration-ledger.test.mjs && node --test scripts/prepare-eas-release.test.mjs && node --test scripts/play-production-release.test.mjs && pnpm test:functions && pnpm test:dependency-architecture",
     "test:functions": "node --no-warnings --experimental-transform-types --test \"supabase/functions/**/*.test.ts\"",
     "typecheck": "pnpm --filter mobile typecheck",
     "verify:supabase": "node --no-warnings --experimental-transform-types scripts/verify-supabase.mjs",

@@ -1,7 +1,8 @@
 # Migration history reconciliation: #996, #1000, #1004
 
-Observed 2026-10-24 by Codex (AI coding assistant). This is a read-only plan;
-no production ledger rows, schema, user data, or deployed functions were changed.
+Initial observation 2026-10-24 by Codex (AI coding assistant). The original plan
+was read-only. The follow-up below records a rolled-back DB probe and a verified
+AI function deployment; production migration bookkeeping remains untouched.
 
 ## Current evidence
 
@@ -50,6 +51,78 @@ anonymous cleanup after the seven-day idle cutoff. No accounts were created by
 these read-only checks. The Nov 1 automation mentioned in #1000 is not a tracked
 repository file; changing it requires the scheduler that owns b21cfa62. Play
 production promotion remains a separate explicit authorization.
+
+## Follow-up observed 2026-10-24 after #1005
+
+- #1005 merged as a5a5d18. Fresh CLI start/reset and all six existing SQL
+  assertions passed before merge; #1004 is resolved.
+- Ran `supabase/tests/preferences-trickle-import.sql` against production inside
+  a transaction, then rolled back. It passed owner preference insert/update/read,
+  foreign-owner denial, and a pending-metadata -> complete import transition
+  producing exactly one pending queue row with priority 50 and locale ko.
+  An ordinary retry update did not duplicate work. A subsequent read found zero
+  fixture bookmarks or preferences. This verifies the DB path, not a device
+  sign-in or actual HTML/CSV parsing/upload.
+- Anonymous cleanup has 120 logged runs and 484 total deletions. The 2026-10-24
+  00:17 UTC run deleted two accounts; the current cleanup predicate finds zero
+  eligible empty anonymous accounts. Cron run history reports 118 successful
+  scheduled cleanup runs. The log count includes other invocations, so these
+  counts need not match. The particular 2026-10-23 verifier cohort is still too
+  young for its seven-day acceptance check.
+- Read back the deployed ai-enrich v33 source. Seven runtime files matched main;
+  index.ts and gemini-provider.ts did not. The deployed worker omitted
+  p_is_trickle and quota retry_after handling, and the provider omitted the
+  generic error/social-platform label filtering already merged in main.
+- Deployed the existing, CI-tested main function sources (all ten input files
+  verified byte-for-byte against passing CI ee982344) as ai-enrich v34. Kept
+  verify_jwt=false, matching the existing handler-owned authentication. Source
+  readback confirmed all nine returned runtime files match the repository (the
+  type-only provider.ts is not returned by the bundle API). Artifact SHA-256:
+  0b2b932906408df41d245e0456f3e4229726e798cfda954b764b5d9aed30361f.
+  An unauthenticated POST returned 401 without model work. The source hash
+  evidence is in [ai-enrich-deployment-audit-20261024.json](ai-enrich-deployment-audit-20261024.json).
+  Previous v33 source is retained privately for rollback. No function source was
+  modified in this follow-up PR. This is source/readback and auth-rejection
+  evidence, not a successful authenticated model invocation.
+- Realtime run 40067297691 still awaits protected-environment approval; this
+  session has no local Supabase credentials and did not bypass the approval.
+- No accessible scheduler tool exposes b21cfa62, and this user's crontab is empty.
+  Its stale equality guard cannot be changed from this session. No build was
+  dispatched or promoted.
+
+### SQL-content audit before any ledger repair
+
+All 62 ledger rows were exported with their SQL statements to a private local
+snapshot (outside git, mode 0600). The hash-only report is checked in as
+[migration-ledger-audit-20261024.json](migration-ledger-audit-20261024.json).
+Reproduce from a new private snapshot with:
+
+```sh
+node scripts/audit-migration-ledger.mjs /private/ledger-snapshot.json
+```
+
+The audit reads an array of full ledger rows, compares exact slugs and hashes,
+prints no SQL, and never creates repair statements or touches a database.
+Hashes ignore only outer whitespace and the final semicolon. A mismatch can be
+formatting/comments and does not by itself establish a semantic difference.
+
+- 36 of 62 ledger rows match at least one local file's SQL content.
+- 23 rows have local slug candidates but no exact content match. These require
+  inspection before a ledger repair; name matching alone is insufficient.
+- Three rows have no exact slug candidate: admin_ai_quota_hourly_v2,
+  admin_ai_quota_hourly_v2_pacific_reset_drop, and the misnamed
+  20261024000200_revoke_internal_ai_slot_from_client_roles.
+- The SQL statement arrays for the misnamed row 20261024050502 and correctly
+  named row 20261024050549 are exactly identical. This resolves the content
+  question, but does not itself authorize deleting either record.
+- The two missing admin rows are historical revisions of
+  public.admin_google_quota_hourly: the first adds a cumulative trailing count;
+  the second drops/recreates it with Pacific-reset totals. Preserve these
+  historical statements in the reconciliation design rather than mapping them
+  by a similar name or silently discarding them.
+
+The original 37 orphan versions remain. Content equality is evidence about
+recorded SQL only, not proof of present catalog state or permission to repair.
 
 ## Proposed decision for #996
 
