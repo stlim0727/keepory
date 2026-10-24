@@ -1,0 +1,29 @@
+-- Lock the chat quota RPC out of client roles.
+--
+-- 20260623120000_chat_rate_limit.sql documents the intent outright: the function
+-- "takes the user id as an argument and is callable only by the service role", so
+-- that "a client cannot spend another user's quota by forging the argument". The
+-- grant block at the end of that migration never delivered it.
+--
+--   revoke all on function public.request_chat_slot_for(uuid) from public;
+--   grant execute on function public.request_chat_slot_for(uuid) to service_role;
+--
+-- Removing PUBLIC does not touch the per-role grants Supabase's default privileges
+-- put there for anon and authenticated when the function was created as postgres, so
+-- both client roles kept EXECUTE. The CI RPC inventory on 2026-10-24 lists this
+-- signature as anon=t authenticated=t, owner=postgres, security definer.
+--
+-- Impact in production: the anon key alone is enough to POST
+-- /rpc/request_chat_slot_for with any p_user_id. The function is security definer as
+-- postgres, so it runs past the row-level security that otherwise makes
+-- public.chat_requests unreadable and unwritable, and it has no auth.uid() check to
+-- compensate. An anonymous caller can append slots to any user's sliding window and
+-- delete that user's rows older than one day, which is exactly the forged-argument
+-- write the source comment says cannot happen.
+--
+-- No caller loses anything. The chat edge function this was written for is gone:
+-- supabase/functions now contains _shared, admin-dashboard, ai-enrich, api-keys,
+-- feedback-bridge and public-api, and request_chat_slot_for has no reference anywhere
+-- in apps/mobile, supabase/functions or scripts. Service-role EXECUTE is untouched,
+-- so revoking the client roles cannot strand a live server path.
+revoke all on function public.request_chat_slot_for(uuid) from public, anon, authenticated;
