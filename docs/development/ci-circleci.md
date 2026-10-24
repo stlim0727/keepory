@@ -85,6 +85,24 @@ When `CI_PROVIDER` is set to `github`:
 > main but never applied live for weeks, silently breaking Realtime for every
 > user — nothing caught it until users hit the failure (STASH-5V/5T/5W).
 
+> **Database assertion scripts run on GitHub Actions only**
+> (`.github/workflows/supabase-db-assertions.yml`). Starts a throwaway Supabase
+> Postgres container on an `ubuntu-latest` runner — which has Docker, unlike the
+> dev machines here — replays `supabase/migrations/`, then runs each
+> `supabase/tests/*.sql` with `psql -v ON_ERROR_STOP=1`. Needs no secrets. It is
+> deliberately *not* `supabase test db`: those files are not pgTAP (no extension,
+> no TAP plan, so `pg_prove` finds nothing to assert on); each is a
+> `begin; ... rollback;` script that reports failure by raising
+> `FAIL: ...`, and each needs the `postgres` superuser to `set local role
+> anon/authenticated/service_role`. Triggers on PRs and post-merge pushes
+> touching `supabase/migrations/**`, `supabase/tests/**`, `supabase/config.toml`,
+> or the workflow itself, because container boot costs minutes.
+>
+> It checks the **files**, not production, so it is the other half of the pair
+> above and neither replaces the other. A green run here while `migration-drift`
+> is red is the #996 shape: the replayed database satisfies every invariant while
+> the live project is missing the migrations that provide them.
+
 Trigger a manual CircleCI workflow from the CircleCI UI (*Trigger Pipeline* → add
 the parameter) or the API, e.g.:
 
