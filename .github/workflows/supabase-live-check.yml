@@ -17,8 +17,9 @@ name: Supabase live check
 #   - verify-supabase: runs the existing `pnpm verify:supabase` E2E script
 #     (auth + Realtime checks against the real project, including a
 #     channel-join check per account type) using the EXPO_PUBLIC_SUPABASE_*
-#     secrets plus SUPABASE_SECRET_KEY. This alone would have caught the
-#     Realtime bug.
+#     secrets plus SUPABASE_SECRET_KEY, which is an environment secret on
+#     `supabase-live` and therefore needs a human approval per run. This alone
+#     would have caught the Realtime bug.
 #     Deliberately workflow_dispatch-only, NOT scheduled. It creates throwaway
 #     anonymous + real accounts (and bookmarks, tags, collections) in production
 #     on every run, and the service-role key lets it delete exactly those accounts
@@ -66,6 +67,12 @@ jobs:
     # there — GitHub rejects the whole workflow file with a parse error, which
     # silently failed every run, on every branch, regardless of trigger).
     # Do the check in a step instead and expose it via `needs` for the real job.
+    #
+    # SUPABASE_SECRET_KEY is deliberately NOT checked here: it lives in the
+    # `supabase-live` environment, and environment secrets are only exposed to
+    # jobs that declare that environment, so this job would always see it empty
+    # and gate the real job off. A missing key is caught instead by the script's
+    # own first check (`✗ service-role credential`), which fails loudly.
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
@@ -75,9 +82,8 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          if [ -n "$EXPO_PUBLIC_SUPABASE_URL" ] && [ -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ] && [ -n "$SUPABASE_SECRET_KEY" ]; then
+          if [ -n "$EXPO_PUBLIC_SUPABASE_URL" ] && [ -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ]; then
             echo "has-secrets=true" >> "$GITHUB_OUTPUT"
           else
             echo "has-secrets=false" >> "$GITHUB_OUTPUT"
@@ -89,6 +95,11 @@ jobs:
     needs: check-verify-secrets
     if: needs.check-verify-secrets.outputs.has-secrets == 'true'
     runs-on: ubuntu-latest
+    # The service-role key bypasses RLS for every user's rows, so it is not a
+    # repository secret: it exists only in this environment, and the environment
+    # requires an explicit approval before the job starts. A pushed branch or a
+    # fork PR therefore cannot read it, and the job cannot run unattended.
+    environment: supabase-live
     # The script normally finishes in well under a minute; without this,
     # a hang (e.g. a lingering Realtime socket keeping Node's event loop
     # alive) burns a runner for up to GitHub's 6h default job timeout.
