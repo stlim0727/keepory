@@ -191,6 +191,7 @@ export const en = {
   'inbox.scopeClearA11y': 'Clear filter and show all bookmarks',
   'inbox.scopeClearSearchA11y': 'Clear the search',
   'inbox.emptyView': 'Nothing in this view yet.',
+  'inbox.supportingPaneEmpty': 'Select a bookmark to view details',
   'inbox.emptyTitle': 'Keep something worth revisiting',
   'inbox.emptySignInAction': 'Sign in to sync',
   'inbox.emptySave': 'Save your first link',
