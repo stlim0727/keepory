@@ -7,17 +7,32 @@ interface CardProps {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   elevated?: boolean;
+  bordered?: boolean;
+  selected?: boolean;
   testID?: string;
 }
 
-export function Card({ children, style, elevated = false, testID }: CardProps) {
+export function Card({
+  children,
+  style,
+  elevated = false,
+  bordered = false,
+  selected = false,
+  testID,
+}: CardProps) {
   const palette = usePalette();
+  const showBorder = bordered || elevated || selected;
+
   return (
     <View
       testID={testID}
       style={[
         styles.card,
-        { backgroundColor: palette.surfaceElevated, borderColor: palette.border },
+        {
+          backgroundColor: selected ? palette.accentSoft : palette.card,
+          borderColor: selected ? palette.accent : palette.border,
+          borderWidth: selected ? 2 : showBorder ? 1 : 0,
+        },
         elevated && palette.shadow.card,
         style,
       ]}
@@ -29,7 +44,7 @@ export function Card({ children, style, elevated = false, testID }: CardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: uiMetrics.radius,
   },
 });
