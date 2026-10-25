@@ -7,153 +7,489 @@ import { PostHogMaskView } from 'posthog-react-native';
 import { usePalette } from '@/theme';
 import { overlayLayer } from '@/ui/layering';
 
-// A plain confirmation auto-dismisses quickly; one carrying a tap target stays
-// up longer so there's actually time to reach for it before it slides away.
-const TOAST_VISIBLE_MS = 2200;
-const TOAST_WITH_ACTION_VISIBLE_MS = 5000;
+// A plain confirmation auto-dismisses quickly; one carrying tap targets stays
+// up longer so there is ample time to reach for them before it slides away.
+const TOAST_VISIBLE_MS = 2500;
+const TOAST_WITH_ACTION_VISIBLE_MS = 6000;
+const AUTO_ADVANCE_DELAY_MS = 1400;
 
-/** An optional inline tap target (e.g. "View" → jump to the Inbox). */
+// Google M3 Expressive Sparkle tokens
+const SPARKLE_PURPLE_LIGHT = '#7c4dff';
+const SPARKLE_PURPLE_DARK = '#b388ff';
+const SPARKLE_SOFT_LIGHT = '#f3e8ff';
+const SPARKLE_SOFT_DARK = '#311b92';
+
+/** An optional inline tap target or action chip (e.g. "[ 📂 Move to Folder ]", "[ ✎ Add Note ]", "[ View ↗ ]"). */
 export interface CaptureToastAction {
   label: string;
   onPress: () => void;
+  icon?: string;
+  trailingIcon?: string;
+  testID?: string;
 }
 
-interface CaptureToastContextValue {
+export type CaptureToastPhase = 'saved' | 'enriching' | 'idle';
+
+export interface CaptureToastOptions {
+  action?: CaptureToastAction;
+  actions?: CaptureToastAction[];
+  phase?: CaptureToastPhase;
+  status?: CaptureToastPhase;
+  /** Whether to auto-advance from 'saved' to 'enriching' */
+  autoAdvance?: boolean;
+  /** Delay in ms before advancing to 'enriching' (default: 1400) */
+  enrichDelayMs?: number;
+  /** Custom duration in ms */
+  durationMs?: number;
+  /** Quick action shortcuts */
+  onMoveToFolder?: () => void;
+  onAddNote?: () => void;
+  onView?: () => void;
   /**
-   * Show a short, non-blocking confirmation (e.g. "Saved to Stash"). Pass an
-   * `action` to add an inline button — used by the share flow's "View" shortcut.
+   * Critical Invariant: "Capture is sacred".
+   * Dismissal or toast animation must NEVER discard or interrupt optimistic
+   * durable SQLite persistence. Passing `persisted` allows UI tracking without
+   * ever disrupting the underlying write.
    */
-  show: (message: string, action?: CaptureToastAction) => void;
+  persisted?: Promise<boolean>;
+}
+
+export interface CaptureToastContextValue {
   /**
-   * Whether a toast is currently up. The toast itself stays pass-through
-   * (`pointerEvents: 'none'`/`'box-none'`) so it never blocks the screen
-   * underneath — but that means anything absolutely positioned in its footprint
-   * still receives touches straight through it. Consumers whose own floating
-   * controls overlap the toast's resting corner (the report button) use this to
-   * go inert for the moment, instead of relying on the toast to intercept taps.
+   * Show a short confirmation toast. Pass `action` or `options` to add inline
+   * action chips, customize 3-phase capture status, or provide quick actions.
    */
+  show: (message: string, actionOrOptions?: CaptureToastAction | CaptureToastOptions) => void;
+  /**
+   * Refined 3-phase status UI helper:
+   * - Saved state: `✓ Saved locally` (green checkmark, peace of mind)
+   * - Enriching state: `✨ AI Analyzing...` (soft purple progress indicator)
+   * - Action chips: Quick actions `[ 📂 Move to Folder ]`, `[ ✎ Add Note ]`, `[ View ↗ ]`
+   */
+  showCapturePhase: (
+    phase: 'saved' | 'enriching',
+    options?: {
+      message?: string;
+      actions?: CaptureToastAction[];
+      onMoveToFolder?: () => void;
+      onAddNote?: () => void;
+      onView?: () => void;
+      autoAdvance?: boolean;
+      persisted?: Promise<boolean>;
+    },
+  ) => void;
+  /** Dismiss the toast overlay. Never disrupts background persistence. */
+  dismiss: () => void;
+  /** Whether a toast is currently visible. */
   isVisible: boolean;
 }
 
 const CaptureToastContext = createContext<CaptureToastContextValue | null>(null);
 
 interface ToastState {
+  id: number;
   message: string;
-  action?: CaptureToastAction;
+  phase: CaptureToastPhase;
+  actions: CaptureToastAction[];
+  hasMultipleActions: boolean;
+  autoAdvance?: boolean;
+  enrichDelayMs?: number;
+  durationMs?: number;
+}
+
+function normalizeAction(action: CaptureToastAction): CaptureToastAction {
+  // If label is "View", add default trailing "↗" if no icons specified
+  if (action.label === 'View' && !action.icon && !action.trailingIcon) {
+    return { ...action, trailingIcon: '↗' };
+  }
+  if (action.label === 'Move to Folder' && !action.icon) {
+    return { ...action, icon: '📂' };
+  }
+  if (action.label === 'Add Note' && !action.icon) {
+    return { ...action, icon: '✎' };
+  }
+  return action;
+}
+
+function normalizeActions(actionOrOptions?: CaptureToastAction | CaptureToastOptions): CaptureToastAction[] {
+  if (!actionOrOptions) {
+    return [];
+  }
+  if ('onPress' in actionOrOptions && typeof actionOrOptions.onPress === 'function') {
+    return [normalizeAction(actionOrOptions)];
+  }
+  const opts = actionOrOptions as CaptureToastOptions;
+  const list: CaptureToastAction[] = [];
+  if (opts.actions && opts.actions.length > 0) {
+    list.push(...opts.actions.map(normalizeAction));
+  } else if (opts.action) {
+    list.push(normalizeAction(opts.action));
+  }
+  if (opts.onMoveToFolder) {
+    list.push(normalizeAction({ label: 'Move to Folder', icon: '📂', onPress: opts.onMoveToFolder }));
+  }
+  if (opts.onAddNote) {
+    list.push(normalizeAction({ label: 'Add Note', icon: '✎', onPress: opts.onAddNote }));
+  }
+  if (opts.onView) {
+    list.push(normalizeAction({ label: 'View', trailingIcon: '↗', onPress: opts.onView }));
+  }
+  return list;
+}
+
+function inferPhase(message: string, explicitPhase?: CaptureToastPhase): CaptureToastPhase {
+  if (explicitPhase && explicitPhase !== 'idle') {
+    return explicitPhase;
+  }
+  const lower = message.toLowerCase();
+  if (message.includes('✨') || lower.includes('analyzing') || lower.includes('분석')) {
+    return 'enriching';
+  }
+  if (message.includes('✓') || lower.includes('saved') || lower.includes('저장')) {
+    return 'saved';
+  }
+  return 'idle';
 }
 
 /**
- * A single app-wide capture toast, rendered above the navigator so it survives
- * the screen change a capture triggers. Both fast-capture paths use it — the
- * OS share intake and the manual Add screen — so a duplicate, a save, or a
- * miss reads the same wherever it came from. Never blocks; auto-dismisses.
+ * M3 Expressive Capture Toast Provider:
  *
- * It can also carry a single inline action (the share flow's "View" shortcut),
- * letting a curious user jump to the Inbox to confirm a capture without the
- * toast ever stealing focus or hijacking navigation on its own.
+ * Renders a floating pill snackbar (`radius: 999` or `radius: 16` rounded container)
+ * floating above the screen bottom with smooth spring motion.
+ *
+ * Features 3-phase status UI:
+ * 1. Saved state: `✓ Saved locally` (green checkmark, peace of mind)
+ * 2. Enriching state: `✨ AI Analyzing...` (soft purple progress indicator)
+ * 3. Action chips: Quick actions `[ 📂 Move to Folder ]`, `[ ✎ Add Note ]`, `[ View ↗ ]`
+ *
+ * Critical Invariant: "Capture is sacred" — dismissal, auto-advance, or action chip taps
+ * must NEVER discard, abort, or interrupt optimistic durable SQLite persistence.
  */
 export function CaptureToastProvider({ children }: { children: ReactNode }) {
   const palette = usePalette();
   const insets = useSafeAreaInsets();
+  const isDark = palette.text === '#f7f6f2';
 
   const [toast, setToast] = useState<ToastState | null>(null);
-  const opacity = useRef(new Animated.Value(0)).current;
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastRef = useRef<ToastState | null>(null);
+  toastRef.current = toast;
 
-  const show = useCallback(
-    (message: string, action?: CaptureToastAction) => setToast({ message, action }),
-    [],
-  );
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(18)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextToastId = useRef(1);
 
   const dismiss = useCallback(() => {
     if (hideTimer.current) {
       clearTimeout(hideTimer.current);
       hideTimer.current = null;
     }
-    Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(
-      ({ finished }) => {
-        if (finished) {
-          setToast(null);
-        }
+    if (advanceTimer.current) {
+      clearTimeout(advanceTimer.current);
+      advanceTimer.current = null;
+    }
+    const dismissId = toastRef.current?.id;
+    opacity.stopAnimation();
+    translateY.stopAnimation();
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 14, duration: 180, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished && dismissId !== undefined) {
+        setToast((current) => (current && current.id === dismissId ? null : current));
+      }
+    });
+  }, [opacity, translateY]);
+
+  const show = useCallback(
+    (message: string, actionOrOptions?: CaptureToastAction | CaptureToastOptions) => {
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+        hideTimer.current = null;
+      }
+      if (advanceTimer.current) {
+        clearTimeout(advanceTimer.current);
+        advanceTimer.current = null;
+      }
+      opacity.stopAnimation();
+      translateY.stopAnimation();
+
+      const actions = normalizeActions(actionOrOptions);
+      const isOptions =
+        actionOrOptions && !('onPress' in actionOrOptions && typeof actionOrOptions.onPress === 'function');
+      const opts = isOptions ? (actionOrOptions as CaptureToastOptions) : undefined;
+      const phase = inferPhase(message, opts?.phase ?? opts?.status);
+      const hasMultipleActions = actions.length > 1;
+
+      // Invariant: "Capture is sacred" — monitor persistence safely if provided
+      if (opts?.persisted) {
+        void opts.persisted.catch(() => false);
+      }
+
+      setToast({
+        id: nextToastId.current++,
+        message,
+        phase,
+        actions,
+        hasMultipleActions,
+        autoAdvance: opts?.autoAdvance,
+        enrichDelayMs: opts?.enrichDelayMs,
+        durationMs: opts?.durationMs,
+      });
+    },
+    [opacity, translateY],
+  );
+
+  const showCapturePhase = useCallback(
+    (
+      phase: 'saved' | 'enriching',
+      options?: {
+        message?: string;
+        actions?: CaptureToastAction[];
+        onMoveToFolder?: () => void;
+        onAddNote?: () => void;
+        onView?: () => void;
+        autoAdvance?: boolean;
+        persisted?: Promise<boolean>;
       },
-    );
-  }, [opacity]);
+    ) => {
+      const defaultMessage = phase === 'saved' ? 'Saved locally' : 'AI Analyzing...';
+      const message = options?.message ?? defaultMessage;
+      show(message, {
+        phase,
+        actions: options?.actions,
+        onMoveToFolder: options?.onMoveToFolder,
+        onAddNote: options?.onAddNote,
+        onView: options?.onView,
+        autoAdvance: options?.autoAdvance ?? (phase === 'saved'),
+        persisted: options?.persisted,
+      });
+    },
+    [show],
+  );
 
   useEffect(() => {
     if (!toast) {
       return;
     }
-    Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }).start();
-    const visibleFor = toast.action ? TOAST_WITH_ACTION_VISIBLE_MS : TOAST_VISIBLE_MS;
-    hideTimer.current = setTimeout(() => {
-      Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(
-        ({ finished }) => {
-          if (finished) {
-            setToast(null);
+
+    opacity.setValue(0);
+    translateY.setValue(18);
+
+    // Smooth spring entrance motion
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, tension: 75, friction: 8, useNativeDriver: true }),
+    ]).start();
+
+    // Enriching progress indicator animation
+    if (toast.phase === 'enriching') {
+      progressAnim.setValue(0);
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(progressAnim, { toValue: 1, duration: 1800, useNativeDriver: false }),
+          Animated.timing(progressAnim, { toValue: 0, duration: 0, useNativeDriver: false }),
+        ]),
+      ).start();
+    }
+
+    // Auto-advance from 'saved' to 'enriching' if requested
+    if (toast.phase === 'saved' && toast.autoAdvance) {
+      advanceTimer.current = setTimeout(() => {
+        setToast((current) => {
+          if (!current || current.id !== toast.id) {
+            return current;
           }
-        },
-      );
+          return {
+            ...current,
+            phase: 'enriching',
+            message:
+              current.message === 'Saved locally' || current.message.includes('저장')
+                ? 'AI Analyzing...'
+                : current.message,
+          };
+        });
+      }, toast.enrichDelayMs ?? AUTO_ADVANCE_DELAY_MS);
+    }
+
+    // Auto-dismiss schedule
+    const hasActions = toast.actions.length > 0;
+    const defaultVisibleTime = hasActions ? TOAST_WITH_ACTION_VISIBLE_MS : TOAST_VISIBLE_MS;
+    const visibleFor = toast.durationMs ?? defaultVisibleTime;
+    const currentToastId = toast.id;
+
+    hideTimer.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: 14, duration: 180, useNativeDriver: true }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setToast((current) => (current && current.id === currentToastId ? null : current));
+        }
+      });
     }, visibleFor);
 
     return () => {
       if (hideTimer.current) {
         clearTimeout(hideTimer.current);
       }
+      if (advanceTimer.current) {
+        clearTimeout(advanceTimer.current);
+      }
     };
-  }, [toast, opacity]);
+  }, [toast?.id, toast?.phase, opacity, translateY, progressAnim, toast?.autoAdvance, toast?.actions.length, toast?.durationMs, toast?.enrichDelayMs]);
 
-  const action = toast?.action;
-  const handleActionPress = useCallback(() => {
-    // Run first, then tear the toast down, so the tap always lands even if the
-    // navigation it triggers unmounts us.
-    action?.onPress();
-    dismiss();
-  }, [action, dismiss]);
+  const handleActionPress = useCallback(
+    (action: CaptureToastAction) => {
+      // Critical Invariant: "Capture is sacred" — action execution must never abort persistence
+      action.onPress();
+      dismiss();
+    },
+    [dismiss],
+  );
+
+  const hasMultipleActions = toast?.hasMultipleActions ?? false;
+  const singleAction = !hasMultipleActions && toast?.actions.length === 1 ? toast.actions[0] : null;
+  const sparkleColor = isDark ? SPARKLE_PURPLE_DARK : SPARKLE_PURPLE_LIGHT;
+  const sparkleSoft = isDark ? SPARKLE_SOFT_DARK : SPARKLE_SOFT_LIGHT;
 
   return (
-    <CaptureToastContext.Provider value={{ show, isVisible: toast !== null }}>
+    <CaptureToastContext.Provider value={{ show, showCapturePhase, dismiss, isVisible: toast !== null }}>
       {children}
       {toast ? (
         <Animated.View
           // Only an actionable toast needs to catch touches; a plain one stays
           // fully pass-through so it can never block the screen underneath.
-          pointerEvents={toast.action ? 'box-none' : 'none'}
+          pointerEvents={toast.actions.length > 0 ? 'box-none' : 'none'}
           style={[
             styles.toast,
             {
               opacity,
-              bottom: insets.bottom + 24,
+              transform: [{ translateY }],
+              bottom: hasMultipleActions ? insets.bottom + 84 : insets.bottom + 20,
+              right: hasMultipleActions ? 16 : 88,
+              borderRadius: hasMultipleActions ? 16 : 999,
               backgroundColor: palette.card,
               borderColor: palette.border,
             },
           ]}
         >
-          {/* This provider renders every toast message app-wide, most of
-              which are generic fixed UI copy, but some interpolate
-              user-authored content (e.g. a collection name in "Moved to
-              {name}") — masked unconditionally rather than requiring every
-              future call site to remember to opt in. `accessible` +
-              `accessibilityLabel` on the outer View keep the real message
-              available to VoiceOver/TalkBack (standalone, no Pressable
-              ancestor of its own). `flexShrink: 1` lets this wrapper shrink
-              to share the toast's horizontal row with the action button
-              instead of overflowing at its unwrapped intrinsic width, the
-              way a direct Text child implicitly would have. */}
-          <View accessible accessibilityLabel={toast.message} style={styles.toastTextWrap}>
-            <PostHogMaskView>
-              <Text style={[styles.toastText, { color: palette.text }]}>{toast.message}</Text>
-            </PostHogMaskView>
+          {/* Main Status Row */}
+          <View style={styles.statusRow}>
+            {toast.phase === 'saved' ? (
+              <View style={[styles.statusBadge, { backgroundColor: palette.successSoft }]} testID="toast-checkmark">
+                <Text style={[styles.statusIcon, { color: palette.success }]}>✓</Text>
+              </View>
+            ) : null}
+
+            {toast.phase === 'enriching' ? (
+              <View style={[styles.statusBadge, { backgroundColor: sparkleSoft }]} testID="toast-sparkle">
+                <Text style={[styles.statusIcon, { color: sparkleColor }]}>✨</Text>
+              </View>
+            ) : null}
+
+            <View accessible accessibilityLabel={toast.message} style={styles.toastTextWrap}>
+              <PostHogMaskView>
+                <Text style={[styles.toastText, { color: palette.text }]}>{toast.message}</Text>
+              </PostHogMaskView>
+            </View>
+
+            {/* Single Action Chip (inline in status row) */}
+            {singleAction ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={singleAction.label}
+                onPress={() => handleActionPress(singleAction)}
+                hitSlop={8}
+                style={({ pressed }) => [
+                  styles.singleActionChip,
+                  {
+                    backgroundColor: palette.accentSoft,
+                    borderColor: palette.accentSoft,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+                testID={singleAction.testID ?? 'toast-action-view'}
+              >
+                {singleAction.icon ? (
+                  <Text style={[styles.chipIcon, { color: palette.accentText }]}>{singleAction.icon} </Text>
+                ) : null}
+                <Text style={[styles.chipText, { color: palette.accentText }]}>{singleAction.label}</Text>
+                {singleAction.trailingIcon ? (
+                  <Text style={[styles.chipIcon, { color: palette.accentText }]}>
+                    {' '}{singleAction.trailingIcon}
+                  </Text>
+                ) : null}
+              </Pressable>
+            ) : null}
           </View>
-          {toast.action ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={toast.action.label}
-              onPress={handleActionPress}
-              hitSlop={8}
-              style={({ pressed }) => [styles.action, { opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Text style={[styles.actionText, { color: palette.accent }]}>{toast.action.label}</Text>
-            </Pressable>
+
+          {/* Multiple Quick Action Chips Row */}
+          {hasMultipleActions ? (
+            <View style={styles.actionChipsRow}>
+              {toast.actions.map((act, index) => {
+                const isView = act.label === 'View' || act.trailingIcon === '↗';
+                return (
+                  <Pressable
+                    key={`${act.label}-${index}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={act.label}
+                    onPress={() => handleActionPress(act)}
+                    hitSlop={6}
+                    style={({ pressed }) => [
+                      styles.actionChip,
+                      {
+                        backgroundColor: isView ? palette.accentSoft : palette.surface,
+                        borderColor: isView ? palette.accentSoft : palette.border,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                    testID={act.testID ?? `toast-action-chip-${index}`}
+                  >
+                    {act.icon ? <Text style={styles.chipIcon}>{act.icon} </Text> : null}
+                    <Text
+                      style={[
+                        styles.chipText,
+                        { color: isView ? palette.accentText : palette.text },
+                      ]}
+                    >
+                      {act.label}
+                    </Text>
+                    {act.trailingIcon ? (
+                      <Text
+                        style={[
+                          styles.chipIcon,
+                          { color: isView ? palette.accentText : palette.text },
+                        ]}
+                      >
+                        {' '}{act.trailingIcon}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {/* Soft Purple Progress Indicator for AI Enriching State */}
+          {toast.phase === 'enriching' ? (
+            <View style={[styles.progressTrack, { backgroundColor: sparkleSoft }]}>
+              <Animated.View
+                style={[
+                  styles.progressFill,
+                  {
+                    backgroundColor: sparkleColor,
+                    width: progressAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0%', '100%'],
+                    }),
+                  },
+                ]}
+                testID="toast-enriching-progress"
+              />
+            </View>
           ) : null}
         </Animated.View>
       ) : null}
@@ -175,57 +511,97 @@ export function useOptionalCaptureToast(): CaptureToastContextValue | null {
 
 const styles = StyleSheet.create({
   toast: {
-    // Above the floating report button/nub: that button sits bottom-left at
-    // the same row as the "+" FAB, so its corner can fall under this toast's
-    // resting position — the ephemeral confirmation must win over the
-    // persistent button.
     ...overlayLayer(60),
     position: 'absolute',
-    left: 24,
-    // STASH-66: the Inbox "+" FAB (app/index.tsx) sits at `right: 20`, 60
-    // wide, i.e. it occupies the last 80px from the screen edge. A plain 24px
-    // right inset let the toast rest directly on top of it, hiding the app's
-    // primary action button for the toast's whole visible duration. This
-    // provider is app-wide (rendered above every screen, not just Inbox), so
-    // the wider clearance applies everywhere rather than special-casing the
-    // one route that has the FAB.
-    right: 88,
-    paddingVertical: 12,
+    left: 16,
+    // On phones with FAB (STASH-66), single-action right clearance leaves 88px;
+    // multi-action floating pills float comfortably above the FAB at insets.bottom + 84.
+    maxWidth: 480,
+    alignSelf: 'center',
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
+        shadowOpacity: 0.16,
+        shadowRadius: 14,
         shadowOffset: { width: 0, height: 4 },
       },
-      // No Android elevation here: overlayLayer(60) above already sets it for
-      // stacking (paint AND touch dispatch — see ui/layering.ts). Re-setting a
-      // lower value here after that spread would silently claw it back down
-      // and hand touch priority to anything with a higher elevation
-      // underneath, e.g. the report button/nub's overlayLayer(50).
+      web: {
+        boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.14)',
+      } as any,
       default: {},
     }),
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  statusIcon: {
+    fontSize: 13,
+    fontWeight: '800',
   },
   toastTextWrap: {
     flexShrink: 1,
   },
   toastText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
-  action: {
+  singleActionChip: {
     marginLeft: 'auto',
-    paddingLeft: 16,
+    paddingLeft: 10,
+    paddingRight: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  actionText: {
-    fontSize: 15,
+  actionChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  actionChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipIcon: {
+    fontSize: 13,
+  },
+  chipText: {
+    fontSize: 13,
     fontWeight: '700',
+  },
+  progressTrack: {
+    height: 3,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginTop: 8,
+    width: '100%',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
   },
 });
