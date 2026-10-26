@@ -374,7 +374,7 @@ export default function InboxScreen() {
   // to 1 and the content cap falls back to the fixed 720px column — the current
   // phone behavior is preserved exactly with no Platform.OS branch.
   const { width: winWidth } = useWindowDimensions();
-  const isSupportingPane = winWidth >= SUPPORTING_PANE_BREAKPOINT;
+  const isSupportingPane = Platform.OS === 'web' && winWidth >= SUPPORTING_PANE_BREAKPOINT;
   const feedWidth = isSupportingPane ? Math.round(winWidth * 0.6) : winWidth;
   const columns = viewMode === 'card'
     ? Math.min(3, Math.max(1, Math.floor(winWidth / 380)))

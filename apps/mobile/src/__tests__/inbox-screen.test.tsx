@@ -1802,60 +1802,70 @@ test('web list inline detail keeps the detail preview hero', async () => {
 });
 
 test('web wide viewport provides supporting pane dual-view without intrusive inline row', async () => {
-  Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'web' });
-  mockWindowSize.width = 1280;
-  fakeRepo.__reset([
-    makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d1', title: 'Card one' }),
-    makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d2', title: 'Card two' }),
-    makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d3', title: 'Card three' }),
-    makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d4', title: 'Card four' }),
-  ]);
+  const originalOS = Platform.OS;
+  try {
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'web' });
+    mockWindowSize.width = 1280;
+    fakeRepo.__reset([
+      makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d1', title: 'Card one' }),
+      makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d2', title: 'Card two' }),
+      makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d3', title: 'Card three' }),
+      makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d4', title: 'Card four' }),
+    ]);
 
-  const screen = await renderInbox();
-  await waitFor(() => expect(screen.getByText('Card one')).toBeTruthy());
-  // Right supporting pane is present with placeholder when no bookmark is active
-  expect(screen.getByTestId('inbox-supporting-pane')).toBeTruthy();
-  expect(screen.getByTestId('inbox-supporting-pane-placeholder')).toBeTruthy();
-  expect(screen.getAllByTestId('inbox-grid-filler')).toHaveLength(2);
+    const screen = await renderInbox();
+    await waitFor(() => expect(screen.getByText('Card one')).toBeTruthy());
+    // Right supporting pane is present with placeholder when no bookmark is active
+    expect(screen.getByTestId('inbox-supporting-pane')).toBeTruthy();
+    expect(screen.getByTestId('inbox-supporting-pane-placeholder')).toBeTruthy();
+    expect(screen.getAllByTestId('inbox-grid-filler')).toHaveLength(2);
 
-  await fireEvent.press(screen.getByRole('button', { name: 'Card two' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Card two' }));
 
-  // The supporting pane renders the active bookmark's detail without inserting an intrusive inline row into the grid
-  await waitFor(() => expect(screen.getByTestId('bookmark-inline-detail')).toBeTruthy());
-  expect(screen.queryByTestId('inbox-inline-detail-row')).toBeNull();
-  expect(screen.queryByTestId('inbox-grid-selected-row-filler')).toBeNull();
-  // Card grid remains completely stable with unchanged filler count
-  expect(screen.getAllByTestId('inbox-grid-filler')).toHaveLength(2);
+    // The supporting pane renders the active bookmark's detail without inserting an intrusive inline row into the grid
+    await waitFor(() => expect(screen.getByTestId('bookmark-inline-detail')).toBeTruthy());
+    expect(screen.queryByTestId('inbox-inline-detail-row')).toBeNull();
+    expect(screen.queryByTestId('inbox-grid-selected-row-filler')).toBeNull();
+    // Card grid remains completely stable with unchanged filler count
+    expect(screen.getAllByTestId('inbox-grid-filler')).toHaveLength(2);
 
-  await fireEvent.press(screen.getByRole('button', { name: 'Card four' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Card four' }));
 
-  await waitFor(() => expect(screen.getByTestId('bookmark-inline-detail')).toBeTruthy());
-  expect(screen.queryByTestId('inbox-inline-detail-row')).toBeNull();
-  expect(screen.getAllByTestId('inbox-grid-filler')).toHaveLength(2);
+    await waitFor(() => expect(screen.getByTestId('bookmark-inline-detail')).toBeTruthy());
+    expect(screen.queryByTestId('inbox-inline-detail-row')).toBeNull();
+    expect(screen.getAllByTestId('inbox-grid-filler')).toHaveLength(2);
 
-  // Closing the supporting pane returns to the placeholder
-  await fireEvent.press(screen.getByTestId('bookmark-inline-detail-close'));
-  await waitFor(() => expect(screen.getByTestId('inbox-supporting-pane-placeholder')).toBeTruthy());
-  expect(screen.queryByTestId('bookmark-inline-detail')).toBeNull();
+    // Closing the supporting pane returns to the placeholder
+    await fireEvent.press(screen.getByTestId('bookmark-inline-detail-close'));
+    await waitFor(() => expect(screen.getByTestId('inbox-supporting-pane-placeholder')).toBeTruthy());
+    expect(screen.queryByTestId('bookmark-inline-detail')).toBeNull();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => originalOS });
+  }
 });
 
 test('web narrow viewport (< 1024px) inserts inline detail row into the card grid', async () => {
-  Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'web' });
-  mockWindowSize.width = 800;
-  fakeRepo.__reset([
-    makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d1', title: 'Card one' }),
-    makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d2', title: 'Card two' }),
-    makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d3', title: 'Card three' }),
-    makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d4', title: 'Card four' }),
-  ]);
+  const originalOS = Platform.OS;
+  try {
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'web' });
+    mockWindowSize.width = 800;
+    fakeRepo.__reset([
+      makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d1', title: 'Card one' }),
+      makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d2', title: 'Card two' }),
+      makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d3', title: 'Card three' }),
+      makeStoredBookmark({ id: '7e64cf1e-0000-4000-8000-0000000000d4', title: 'Card four' }),
+    ]);
 
-  const screen = await renderInbox();
-  await waitFor(() => expect(screen.getByText('Card one')).toBeTruthy());
-  expect(screen.queryByTestId('inbox-supporting-pane')).toBeNull();
+    const screen = await renderInbox();
+    await waitFor(() => expect(screen.getByText('Card one')).toBeTruthy());
+    expect(screen.queryByTestId('inbox-supporting-pane')).toBeNull();
 
-  await fireEvent.press(screen.getByRole('button', { name: 'Card two' }));
-  await waitFor(() => expect(screen.getByTestId('bookmark-inline-detail')).toBeTruthy());
-  expect(screen.getByTestId('inbox-inline-detail-row')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Card two' }));
+    await waitFor(() => expect(screen.getByTestId('bookmark-inline-detail')).toBeTruthy());
+    expect(screen.getByTestId('inbox-inline-detail-row')).toBeTruthy();
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => originalOS });
+  }
 });
 
 test('the Home Tags menu action navigates to the dedicated tag-browse route', async () => {
