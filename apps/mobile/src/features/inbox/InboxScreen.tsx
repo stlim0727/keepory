@@ -1,6 +1,6 @@
 import { AccountLibraryNotice } from '@/ui/AccountLibraryNotice';
 import { useNetworkOffline } from '@/ui/use-network-offline';
-import { createInboxItemRenderer } from '@/features/inbox/InboxItemRenderer';
+import { BookmarkDetailScreen, createInboxItemRenderer } from '@/features/inbox/InboxItemRenderer';
 import { AnimatedFlatList, CONTENT_MAX_WIDTH, FOLDER_SORT_ICON, FOLDER_SORT_LABEL_KEY, SETTINGS_PANEL_WIDTH, SETTINGS_SHEET_MIN_WIDTH, SORT_ICON, SORT_LABEL_KEY, VIEW_MODE_ICON, VIEW_MODE_LABEL_KEY, WEB_CARD_GRID_COLUMN_GAP, WEB_CARD_GRID_TOP_GAP, preventMouseDownFocusSteal, styles } from '@/features/inbox/layout';
 import { InboxRootSurface, WebCrispAnimatedSurface, queryTerms } from '@/features/inbox/presentation';
 import { type GridPlaceholder, type InboxListItem } from '@/features/inbox/types';
@@ -29,7 +29,9 @@ import {
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   Share,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -120,6 +122,47 @@ import { SearchSuggestionShelf } from '@/ui/SearchSuggestionShelf';
 import { splashCoordinator } from '@/ui/splash-coordinator';
 import { TutorialModal } from '@/ui/TutorialModal';
 
+
+const SUPPORTING_PANE_BREAKPOINT = 1024;
+
+const paneStyles = StyleSheet.create({
+  dualPaneContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    width: '100%',
+    height: '100%',
+  },
+  leftPane: {
+    flex: 6,
+    width: '60%',
+    height: '100%',
+    position: 'relative',
+  },
+  rightPane: {
+    flex: 4,
+    width: '40%',
+    height: '100%',
+    position: 'relative',
+    borderLeftWidth: StyleSheet.hairlineWidth,
+  },
+  supportingPaneScroll: {
+    flex: 1,
+  },
+  supportingPaneContent: {
+    padding: 16,
+  },
+  supportingPanePlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    gap: 12,
+  },
+  supportingPanePlaceholderText: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+});
 
 export default function InboxScreen() {
   usePreviewImageFailuresVersion();
@@ -331,6 +374,8 @@ export default function InboxScreen() {
   // to 1 and the content cap falls back to the fixed 720px column — the current
   // phone behavior is preserved exactly with no Platform.OS branch.
   const { width: winWidth } = useWindowDimensions();
+  const isSupportingPane = Platform.OS === 'web' && winWidth >= SUPPORTING_PANE_BREAKPOINT;
+  const feedWidth = isSupportingPane ? Math.round(winWidth * 0.6) : winWidth;
   const columns = viewMode === 'card'
     ? Math.min(3, Math.max(1, Math.floor(winWidth / 380)))
     // Folder View is always a fixed 2-column grid of tiles (phone and web
@@ -339,14 +384,17 @@ export default function InboxScreen() {
     : viewMode === 'folder'
       ? 2
       : 1;
-  const contentMaxWidth =
-    viewMode === 'card' && columns > 1 ? columns * 372 : CONTENT_MAX_WIDTH;
+  const contentMaxWidth = isSupportingPane
+    ? feedWidth
+    : viewMode === 'card' && columns > 1
+      ? columns * 372
+      : CONTENT_MAX_WIDTH;
   // The suggest/session banners are cards carrying a 16px horizontal margin
   // (styles.suggestBanner), so capping them with `width: '100%'` would lay out
   // as full width PLUS 32px of margin and overflow the row on phones. Give them
   // an explicit width that already subtracts that gutter, then cap to the shared
   // content column so they align with the other centered header rows.
-  const bannerWidth = Math.min(winWidth - 32, contentMaxWidth);
+  const bannerWidth = Math.min(feedWidth - 32, contentMaxWidth);
 
   // Slide the Inbox aside for the wide-screen Settings sheet. Settings is a
   // separate route presented as a transparent modal on top, so the Inbox stays
@@ -810,6 +858,7 @@ export default function InboxScreen() {
       setInlineDetailId(null);
     }
   }, [getBookmark, inlineDetailId, visible]);
+  const activeBookmark = inlineDetailId ? getBookmark(inlineDetailId) : undefined;
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const {
     exitSelectionMode,
@@ -899,12 +948,13 @@ export default function InboxScreen() {
     addTagsToBookmarks,
   });
   // In a multi-column card grid, pad rows with lightweight placeholders so real
-  // cards keep their column width (flex: 1). When an inline detail is open on
-  // web, finish the clicked card row, then insert a synthetic full-width detail
-  // row before appending the remaining cards.
+  // cards keep their column width (flex: 1). On wide supporting-pane viewports,
+  // the supporting pane is docked side-by-side so no inline row is inserted.
+  // When an inline detail is open on narrow web, finish the clicked card row,
+  // then insert a synthetic full-width detail row before appending remaining cards.
   const gridData = useMemo<InboxListItem[]>(() => {
     const withInlineDetail = (() => {
-      if (Platform.OS !== 'web' || !inlineDetailId) {
+      if (Platform.OS !== 'web' || !inlineDetailId || isSupportingPane) {
         return visible;
       }
       const resolvedInlineDetailId = getBookmark(inlineDetailId)?.id ?? inlineDetailId;
@@ -958,7 +1008,7 @@ export default function InboxScreen() {
       (_, i) => ({ id: `__ph-${i}`, __placeholder: true }),
     );
     return [...withInlineDetail, ...placeholders];
-  }, [visible, columns, inlineDetailId, getBookmark]);
+  }, [visible, columns, inlineDetailId, getBookmark, isSupportingPane]);
   // Normalized terms of the settled query, used to surface WHY each result
   // matched (site-name chip, promoting a matched tag) when searching.
   const searchTerms = useMemo(
@@ -1463,8 +1513,10 @@ export default function InboxScreen() {
       shift={settingsShift}
       sliding={sliding}
     >
-      <WebCrispAnimatedSurface
-        testID="inbox-header-surface"
+      <View style={isSupportingPane ? paneStyles.dualPaneContainer : styles.container}>
+        <View style={isSupportingPane ? paneStyles.leftPane : styles.container}>
+          <WebCrispAnimatedSurface
+            testID="inbox-header-surface"
         // The cluster is absolutely positioned so it floats over the list and
         // can translate out of view. It needs an opaque background so list rows
         // sliding underneath stay hidden while it is partly collapsed.
@@ -2149,9 +2201,11 @@ export default function InboxScreen() {
             </View>
           )
         }
-        extraData={`${viewMode}|${searching}|${debouncedQuery}`}
+        extraData={`${viewMode}|${searching}|${debouncedQuery}|${inlineDetailId}`}
         renderItem={createInboxItemRenderer({
           readOnly: !!startupPreview,
+          isSupportingPane,
+          activeBookmarkId: inlineDetailId,
           setInlineDetailId,
           viewMode,
           contentMaxWidth,
@@ -2242,6 +2296,42 @@ export default function InboxScreen() {
           bottomInset={insets.bottom}
         />
       )}
+        </View>
+        {isSupportingPane ? (
+          <View
+            testID="inbox-supporting-pane"
+            style={[
+              paneStyles.rightPane,
+              { borderLeftColor: palette.border, backgroundColor: palette.background },
+            ]}
+          >
+            {activeBookmark ? (
+              <ScrollView
+                style={paneStyles.supportingPaneScroll}
+                contentContainerStyle={[
+                  paneStyles.supportingPaneContent,
+                  { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 },
+                ]}
+                keyboardShouldPersistTaps="handled"
+              >
+                <BookmarkDetailScreen
+                  inlineId={activeBookmark.id}
+                  onInlineClose={() => setInlineDetailId(null)}
+                  markAccessOnMount={false}
+                  hidePreviewHero={false}
+                />
+              </ScrollView>
+            ) : (
+              <View testID="inbox-supporting-pane-placeholder" style={paneStyles.supportingPanePlaceholder}>
+                <Ionicons name="reader-outline" size={48} color={palette.textSecondary} />
+                <Text style={[paneStyles.supportingPanePlaceholderText, { color: palette.textSecondary }]}>
+                  {t('inbox.supportingPaneEmpty')}
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : null}
+      </View>
       <ActionSheet
         visible={homeMenuOpen}
         title={t('inbox.menuA11y')}

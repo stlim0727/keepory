@@ -1,5 +1,6 @@
 import { ProtectedImage } from '@/ui/ProtectedImage';
 import BookmarkDetailScreen from '@/app/bookmark/[id]';
+export { default as BookmarkDetailScreen } from '@/app/bookmark/[id]';
 import { pendingSuggestedFolder, pendingSuggestions, pendingSummary } from '@/domain/ai-suggestions';
 import {
   type InboxFilter
@@ -41,6 +42,8 @@ import {
 } from 'react-native';
 interface Props {
   readOnly?: boolean;
+  isSupportingPane?: boolean;
+  activeBookmarkId?: string | null;
   setInlineDetailId: Dispatch<SetStateAction<string | null>>;
   viewMode: ViewMode;
   contentMaxWidth: number;
@@ -80,6 +83,8 @@ interface Props {
 
 export function createInboxItemRenderer({
   readOnly = false,
+  isSupportingPane = false,
+  activeBookmarkId = null,
   setInlineDetailId,
   viewMode,
   contentMaxWidth,
@@ -299,7 +304,7 @@ export function createInboxItemRenderer({
         ? 1
         : 0);
     const openDetail = () => {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' || isSupportingPane) {
         setInlineDetailId((current) => (current === item.id ? null : item.id));
         return;
       }
@@ -386,9 +391,12 @@ export function createInboxItemRenderer({
             styles.listRow,
             styles.compactRow,
             {
-              backgroundColor: isSelected ? palette.accentSoft : 'transparent',
-              borderColor: isSelected ? palette.accent : palette.border,
-              borderBottomWidth: isSelected ? 1.5 : StyleSheet.hairlineWidth,
+              backgroundColor:
+                isSelected || activeBookmarkId === item.id ? palette.accentSoft : 'transparent',
+              borderColor:
+                isSelected || activeBookmarkId === item.id ? palette.accent : palette.border,
+              borderBottomWidth:
+                isSelected || activeBookmarkId === item.id ? 1.5 : StyleSheet.hairlineWidth,
               opacity: pressed ? 0.78 : 1,
             },
           ]}
@@ -582,7 +590,12 @@ export function createInboxItemRenderer({
               borderWidth: 2,
               backgroundColor: palette.accentSoft,
             }
-            : null,
+            : activeBookmarkId === item.id
+              ? {
+                borderColor: palette.accent,
+                borderWidth: 2,
+              }
+              : null,
         ]}
       >
         <Pressable
