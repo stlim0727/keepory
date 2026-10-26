@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import type { InboxFilter } from '@/domain/filter';
 import type { ViewMode } from '@/domain/view-mode';
-import { VIEW_MODE_ICON, VIEW_MODE_LABEL_KEY } from '@/features/inbox/layout';
+import { VIEW_MODE_ICON, VIEW_MODE_LABEL_KEY, styles } from '@/features/inbox/layout';
 import type { TFunction } from '@/i18n/translate';
-import { uiMetrics, usePalette } from '@/theme';
+import { usePalette } from '@/theme';
 
 export interface InboxFilterRailProps {
   filter: InboxFilter;
@@ -128,56 +128,3 @@ export function InboxFilterRail({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  filterOptionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: uiMetrics.screenGutter,
-    paddingVertical: 8,
-    gap: 8,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  scopePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 34,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  viewOptionsLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    flexShrink: 1,
-  },
-  viewActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexShrink: 0,
-    gap: 4,
-  },
-  viewModeControl: {
-    flexDirection: 'row',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 999,
-    padding: 3,
-  },
-  viewModeButton: {
-    width: 38,
-    minHeight: 34,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  viewOptions: {
-    width: 40,
-    minHeight: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
