@@ -1581,9 +1581,17 @@ export default function BookmarkDetailScreen({
         <ProposedSummary
           summary={enrichment?.summary ?? ''}
           noteEmpty={notesValue.trim() === ''}
+          existingNote={notesValue}
           busy={busy}
           onUse={handleUseSummary}
           onDismiss={handleDismissSummary}
+          metadata={{
+            degraded: enrichment?.degraded,
+            model: enrichment?.model,
+            source: enrichment?.degraded ? 'domain_heuristic' : 'content_h2',
+          }}
+          tags={pending}
+          onAdoptTag={handleAcceptSuggestion}
         />
       ) : null}
 
