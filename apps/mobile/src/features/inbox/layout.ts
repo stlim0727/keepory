@@ -360,7 +360,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: uiMetrics.radius,
+    borderRadius: 999,
     minHeight: 48,
   },
   searchAction: {

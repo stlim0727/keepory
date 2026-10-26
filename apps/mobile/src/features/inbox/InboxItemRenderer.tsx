@@ -520,17 +520,21 @@ export function createInboxItemRenderer({
                     accessibilityLabel={part.label}
                     style={[
                       styles.metaChip,
-                      Platform.OS === 'web'
-                        ? { backgroundColor: palette.surface, borderColor: palette.border }
-                        : { backgroundColor: palette.mutedSurface },
+                      {
+                        backgroundColor: part.type === 'collection' ? palette.accentSoft : palette.surfaceContainer,
+                      },
                     ]}
                   >
-                    {part.type === 'collection' ? <Ionicons name="folder-outline" size={12} color={palette.textSecondary} /> : null}
+                    {part.type === 'collection' ? (
+                      <Ionicons name="folder-outline" size={12} color={palette.accentText} />
+                    ) : null}
                     <PostHogMaskView style={{ flexShrink: 1 }}>
                       <Text
                         style={[
                           styles.metaChipLabel,
-                          { color: Platform.OS === 'web' ? palette.textSecondary : palette.accentText },
+                          {
+                            color: part.type === 'collection' ? palette.accentText : palette.textSecondary,
+                          },
                         ]}
                         numberOfLines={1}
                       >
@@ -581,6 +585,7 @@ export function createInboxItemRenderer({
     const cardElement = (
       <Card
         testID={`inbox-card-${item.id}`}
+        elevated
         style={[
           styles.card,
           isOpening ? { borderColor: palette.accent } : null,
@@ -653,9 +658,16 @@ export function createInboxItemRenderer({
               {suggestionCount > 0 ? (
                 <View
                   accessibilityLabel={t('inbox.aiSuggestionsA11y', { count: suggestionCount })}
-                  style={[styles.suggestBadge, { backgroundColor: palette.accentSoft, borderColor: palette.accent }]}
+                  style={[
+                    styles.suggestBadge,
+                    {
+                      backgroundColor: '#f3e8ff',
+                      borderColor: '#e9d5ff',
+                      borderRadius: 999,
+                    },
+                  ]}
                 >
-                  <Text style={[styles.suggestBadgeLabel, { color: palette.accentText }]}>
+                  <Text style={[styles.suggestBadgeLabel, { color: '#6b21a8' }]}>
                     ✨ {suggestionCount}
                   </Text>
                 </View>
@@ -796,17 +808,21 @@ export function createInboxItemRenderer({
                     accessibilityLabel={part.label}
                     style={[
                       styles.metaChip,
-                      Platform.OS === 'web'
-                        ? { backgroundColor: palette.surface, borderColor: palette.border }
-                        : { backgroundColor: palette.mutedSurface },
+                      {
+                        backgroundColor: part.type === 'collection' ? palette.accentSoft : palette.surfaceContainer,
+                      },
                     ]}
                   >
-                    {part.type === 'collection' ? <Ionicons name="folder-outline" size={12} color={palette.textSecondary} /> : null}
+                    {part.type === 'collection' ? (
+                      <Ionicons name="folder-outline" size={12} color={palette.accentText} />
+                    ) : null}
                     <PostHogMaskView style={{ flexShrink: 1 }}>
                       <Text
                         style={[
                           styles.metaChipLabel,
-                          { color: Platform.OS === 'web' ? palette.textSecondary : palette.accentText },
+                          {
+                            color: part.type === 'collection' ? palette.accentText : palette.textSecondary,
+                          },
                         ]}
                         numberOfLines={1}
                       >

@@ -37,6 +37,7 @@ import { CollectionPicker } from '@/ui/CollectionPicker';
 import { KeyboardAvoidingScreen } from '@/ui/KeyboardAvoidingScreen';
 import { MemoEditor, type MemoDraft } from '@/ui/MemoEditor';
 import { memoBodyFormat, notesFormat } from '@/domain/text-format';
+import { formatRelativeTime } from '@/domain/item-display';
 import type { TextFormat } from '@/domain/types';
 import { SuggestionSkeleton } from '@/ui/SuggestionSkeleton';
 import { TagField } from '@/ui/TagField';
@@ -84,6 +85,7 @@ interface BookmarkDetailScreenProps {
   onInlineClose?: () => void;
   markAccessOnMount?: boolean;
   hidePreviewHero?: boolean;
+  isSupportingPane?: boolean;
 }
 
 function useOptionalNavigation(): any {
@@ -102,6 +104,7 @@ export default function BookmarkDetailScreen({
   onInlineClose,
   markAccessOnMount = true,
   hidePreviewHero = false,
+  isSupportingPane = false,
 }: BookmarkDetailScreenProps = {}) {
   const palette = usePalette();
   const { t, formatDate } = useI18n();
@@ -1250,19 +1253,74 @@ export default function BookmarkDetailScreen({
   const content = (
     <>
       {inline && onInlineClose ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('common.close')}
-          testID="bookmark-inline-detail-close"
-          hitSlop={8}
-          onPress={onInlineClose}
-          style={({ pressed }) => [
-            styles.inlineClose,
-            { opacity: pressed ? 0.6 : 1 },
-          ]}
-        >
-          <Ionicons name="close" size={18} color={palette.textSecondary} />
-        </Pressable>
+        isSupportingPane ? (
+          <View style={styles.paneActionRow}>
+            {bookmark.url ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('common.openLink')}
+                onPress={() => {
+                  void Linking.openURL(bookmark.url!);
+                }}
+                style={({ pressed }) => [
+                  styles.paneActionButton,
+                  { borderColor: palette.border, opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <Ionicons name="open-outline" size={16} color={palette.textSecondary} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('common.copyLink')}
+              onPress={handleCopyLink}
+              style={({ pressed }) => [
+                styles.paneActionButton,
+                { borderColor: palette.border, opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Ionicons name="copy-outline" size={16} color={palette.textSecondary} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('common.trash')}
+              onPress={handleTrash}
+              style={({ pressed }) => [
+                styles.paneActionButton,
+                { borderColor: palette.border, opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Ionicons name="trash-outline" size={16} color={palette.danger} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close')}
+              testID="bookmark-inline-detail-close"
+              hitSlop={8}
+              onPress={onInlineClose}
+              style={({ pressed }) => [
+                styles.paneActionButton,
+                { borderColor: palette.border, opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Ionicons name="close" size={16} color={palette.textSecondary} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
+            testID="bookmark-inline-detail-close"
+            hitSlop={8}
+            onPress={onInlineClose}
+            style={({ pressed }) => [
+              styles.inlineClose,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Ionicons name="close" size={18} color={palette.textSecondary} />
+          </Pressable>
+        )
       ) : null}
       {/* Compact byline: favicon · host · status, instead of a header card. */}
       <View style={styles.byline}>
@@ -1734,14 +1792,23 @@ export default function BookmarkDetailScreen({
         style={[
           styles.container,
           styles.inlineContainer,
+          isSupportingPane ? { borderWidth: 0, paddingHorizontal: 0, marginTop: 0 } : null,
           {
-            backgroundColor: palette.surfaceElevated,
+            backgroundColor: isSupportingPane ? 'transparent' : palette.surfaceElevated,
             borderColor: palette.border,
             paddingBottom: 16,
           },
         ]}
       >
         {content}
+        {isSupportingPane && bookmark ? (
+          <View style={[styles.supportingPaneSyncBar, { borderColor: palette.border, backgroundColor: palette.surface }]}>
+            <View style={[styles.supportingPaneSyncDot, { backgroundColor: palette.success }]} />
+            <Text style={[styles.supportingPaneSyncText, { color: palette.textSecondary }]}>
+              {`Synced to Local SQLite · ${formatRelativeTime(bookmark.updated_at)}`}
+            </Text>
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -1770,6 +1837,26 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 10,
   },
+  supportingPaneSyncBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignSelf: 'center',
+    marginTop: 16,
+  },
+  supportingPaneSyncDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  supportingPaneSyncText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   inlineClose: {
     alignSelf: 'flex-end',
     width: 32,
@@ -1778,6 +1865,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: -8,
+  },
+  paneActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginBottom: 8,
+  },
+  paneActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   previewContainer: {
     position: 'relative',

@@ -1,6 +1,7 @@
 import { AccountLibraryNotice } from '@/ui/AccountLibraryNotice';
 import { useNetworkOffline } from '@/ui/use-network-offline';
 import { BookmarkDetailScreen, createInboxItemRenderer } from '@/features/inbox/InboxItemRenderer';
+import { InboxFilterRail } from '@/features/inbox/InboxFilterRail';
 import { AnimatedFlatList, CONTENT_MAX_WIDTH, FOLDER_SORT_ICON, FOLDER_SORT_LABEL_KEY, SETTINGS_PANEL_WIDTH, SETTINGS_SHEET_MIN_WIDTH, SORT_ICON, SORT_LABEL_KEY, VIEW_MODE_ICON, VIEW_MODE_LABEL_KEY, WEB_CARD_GRID_COLUMN_GAP, WEB_CARD_GRID_TOP_GAP, preventMouseDownFocusSteal, styles } from '@/features/inbox/layout';
 import { InboxRootSurface, WebCrispAnimatedSurface, queryTerms } from '@/features/inbox/presentation';
 import { type GridPlaceholder, type InboxListItem } from '@/features/inbox/types';
@@ -1754,7 +1755,7 @@ export default function InboxScreen() {
             </Pressable>
           ) : null}
           <View style={[styles.searchWrap, { maxWidth: contentMaxWidth }]}>
-            <View style={[styles.searchField, { backgroundColor: palette.card, borderColor: palette.controlBorder }]}>
+            <View style={[styles.searchField, { backgroundColor: palette.card, borderColor: searchFocused ? palette.accent : palette.border }]}>
               <Pressable
                 testID="inbox-search-open"
                 accessibilityRole="button"
@@ -1764,14 +1765,14 @@ export default function InboxScreen() {
                 style={styles.searchAction}
                 {...preventMouseDownFocusSteal}
               >
-                <Ionicons name={searchOpen ? 'close' : 'search'} size={20} color={palette.textSecondary} />
+                <Ionicons name={searchOpen ? 'close' : 'search'} size={18} color={searchFocused ? palette.accent : palette.textSecondary} />
               </Pressable>
               <TextInput
                 ref={searchRef}
                 testID="inbox-search-input"
                 accessibilityLabel={searchPlaceholder}
                 editable={!selectionMode && recentsReady}
-                style={[styles.searchInput, { backgroundColor: palette.card, color: palette.text }]}
+                style={[styles.searchInput, { backgroundColor: 'transparent', color: palette.text }]}
                 placeholder={searchPlaceholder}
                 placeholderTextColor={palette.textSecondary}
                 autoCapitalize="none"
@@ -1822,6 +1823,29 @@ export default function InboxScreen() {
                 onSubmitEditing={(event) => recordRecent(event.nativeEvent.text)}
                 clearButtonMode="while-editing"
               />
+              {Platform.OS === 'web' && query.length === 0 ? (
+                <View
+                  style={{
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 6,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    backgroundColor: palette.mutedSurface,
+                    borderColor: palette.border,
+                    marginRight: 6,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: '600',
+                      color: palette.textSecondary,
+                    }}
+                  >
+                    ⌘ K
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
           {showSuggestions ? (
@@ -1834,50 +1858,23 @@ export default function InboxScreen() {
             />
           ) : null}
           {(isLoading || showControls || collections.length > 0) && !selectionMode && !folderSelectionMode && !searchFocused && !searchOpen ? (
-            <View testID="inbox-filter-options-row" style={[styles.filterOptionsRow, { maxWidth: contentMaxWidth }]}>
-              <Pressable testID="inbox-scope-picker" accessibilityRole="button"
-                accessibilityLabel={t('inbox.scopePickerA11y')}
-                accessibilityState={{ expanded: viewMode === 'folder' ? false : scopeMenuOpen, disabled: viewMode === 'folder' || isLoading }}
-                disabled={viewMode === 'folder' || isLoading}
-                onPress={() => setScopeMenuOpen(true)}
-                style={[styles.scopePicker, { borderColor: palette.controlBorder, opacity: viewMode === 'folder' || isLoading ? 0.5 : 1 }]}>
-                <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.viewOptionsLabel, { color: palette.text }]}>
-                  {viewMode === 'folder' || filter.kind === 'all' ? t('inbox.filterAll') : filter.kind === 'uncollected' ? t('inbox.filterNoCollection') : activeChip?.label ?? t('inbox.filterAll')}
-                </Text>
-                {viewMode !== 'folder' ? <Ionicons name="chevron-down" size={14} color={palette.textSecondary} /> : null}
-              </Pressable>
-              <View testID="inbox-view-actions" style={styles.viewActions}>
-                <View testID="inbox-view-mode-control" style={[styles.viewModeControl, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-                  {(['card', 'list', 'folder'] as const).map((mode) => (
-                    <Pressable
-                      key={mode}
-                      testID={`inbox-view-${mode}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={t(VIEW_MODE_LABEL_KEY[mode])}
-                      accessibilityState={{ selected: viewMode === mode, disabled: isLoading || !viewOptionsReady }}
-                      disabled={isLoading || !viewOptionsReady}
-                      onPress={() => {
-                        setViewMode(mode);
-                        void setPreference(INBOX_VIEW_PREF_KEY, serializeViewMode(mode)).catch(() => { });
-                        setSortMenuOpen(false);
-                      }}
-                      style={({ pressed }) => [styles.viewModeButton, {
-                        backgroundColor: viewMode === mode ? palette.mutedSurface : 'transparent',
-                        opacity: pressed || isLoading || !viewOptionsReady ? 0.6 : 1,
-                      }]}
-                    >
-                      <Ionicons name={VIEW_MODE_ICON[mode]} size={20} color={viewMode === mode ? palette.text : palette.textSecondary} />
-                    </Pressable>
-                  ))}
-                </View>
-                <Pressable testID="inbox-view-options" accessibilityRole="button"
-                  accessibilityLabel={t('inbox.viewOptions')}
-                  accessibilityState={{ disabled: isLoading || !viewOptionsReady }} disabled={isLoading || !viewOptionsReady}
-                  onPress={() => setSortMenuOpen(true)} style={styles.viewOptions}>
-                  <Ionicons name="ellipsis-horizontal" size={18} color={palette.textSecondary} />
-                </Pressable>
-              </View>
-            </View>
+            <InboxFilterRail
+              filter={filter}
+              activeChip={activeChip}
+              scopeMenuOpen={scopeMenuOpen}
+              setScopeMenuOpen={setScopeMenuOpen}
+              setSortMenuOpen={setSortMenuOpen}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              isLoading={isLoading}
+              viewOptionsReady={viewOptionsReady}
+              contentMaxWidth={contentMaxWidth}
+              t={t}
+              onViewModeChange={(mode) => {
+                void setPreference(INBOX_VIEW_PREF_KEY, serializeViewMode(mode)).catch(() => {});
+                setSortMenuOpen(false);
+              }}
+            />
           ) : null}
         </View>
       </WebCrispAnimatedSurface>
@@ -2319,6 +2316,7 @@ export default function InboxScreen() {
                   onInlineClose={() => setInlineDetailId(null)}
                   markAccessOnMount={false}
                   hidePreviewHero={false}
+                  isSupportingPane
                 />
               </ScrollView>
             ) : (
