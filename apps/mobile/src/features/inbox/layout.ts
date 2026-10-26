@@ -632,6 +632,7 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: WEB_SEMIBOLD_WEIGHT,
     letterSpacing: -0.2,
+    ...(Platform.OS === 'web' ? ({ wordBreak: 'keep-all', overflowWrap: 'break-word' } as any) : {}),
   },
   memoPreviewText: {
     fontSize: 14,

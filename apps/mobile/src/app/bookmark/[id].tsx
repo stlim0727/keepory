@@ -1968,6 +1968,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.5,
     lineHeight: 32,
+    ...(Platform.OS === 'web' ? ({ wordBreak: 'keep-all', overflowWrap: 'break-word' } as any) : {}),
   },
   titleToggle: {
     fontSize: 14,
