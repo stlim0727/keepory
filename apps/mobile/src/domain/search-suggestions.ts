@@ -65,7 +65,7 @@ export interface SuggestionTagCount {
 }
 
 /** The kinds of chip the shelf can render, in their row order. */
-export type SuggestionKind = 'recent' | 'tag' | 'folder';
+export type SuggestionKind = 'recent' | 'tag' | 'folder' | 'assist' | 'status';
 
 /**
  * One shelf chip. `filter` is the facet a tag/folder chip applies when tapped
@@ -83,6 +83,10 @@ export interface SearchSuggestion {
   filter?: { kind: 'tag' | 'collection'; id: string };
   /** Present for recent chips: the raw query to fill / remove. */
   query?: string;
+  /** Explicit chip family override ('filter' | 'assist' | 'suggestion') */
+  family?: 'filter' | 'assist' | 'suggestion';
+  /** Optional count badge (e.g. unread summaries or folder items) */
+  count?: number;
 }
 
 export interface BuildSearchSuggestionsInput {
