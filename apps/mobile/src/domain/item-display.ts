@@ -94,3 +94,51 @@ function truncateForSpeech(text: string): string {
   }
   return `${trimmed.slice(0, 79).trimEnd()}…`;
 }
+
+/**
+ * A concise relative time string for bookmark headers (e.g. "just now", "5m ago",
+ * "2h ago", "yesterday", "3d ago", "2w ago", "3mo ago", "1y ago").
+ *
+ * Pure and dependency-free so it is unit-testable.
+ */
+export function formatRelativeTime(
+  dateString: string | null | undefined,
+  nowMs: number = Date.now(),
+): string {
+  if (!dateString) {
+    return '';
+  }
+  const dateMs = new Date(dateString).getTime();
+  if (Number.isNaN(dateMs)) {
+    return '';
+  }
+  const diffSec = Math.max(0, Math.floor((nowMs - dateMs) / 1000));
+  if (diffSec < 60) {
+    return 'just now';
+  }
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) {
+    return `${diffMin}m ago`;
+  }
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) {
+    return 'yesterday';
+  }
+  if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  }
+  const diffWeeks = Math.floor(diffDays / 7);
+  if (diffWeeks < 5) {
+    return `${diffWeeks}w ago`;
+  }
+  const diffMonths = Math.floor(diffDays / 30);
+  if (diffMonths < 12) {
+    return `${diffMonths}mo ago`;
+  }
+  const diffYears = Math.floor(diffDays / 365);
+  return `${diffYears}y ago`;
+}
