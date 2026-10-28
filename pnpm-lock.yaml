@@ -91,8 +91,8 @@ importers:
         specifier: ~58.0.3
         version: 58.0.3(expo@58.0.7)(react@19.3.1)
       expo-network:
-        specifier: 58.0.3
-        version: 58.0.3(expo@58.0.7)(react@19.3.1)
+        specifier: 58.0.4
+        version: 58.0.4(expo@58.0.7)(react@19.3.1)
       expo-notifications:
         specifier: ~58.1.1
         version: 58.1.1(expo@58.0.7)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1)(typescript@7.0.2)
@@ -2860,8 +2860,8 @@ packages:
   expo-modules-macros@0.15.0:
     resolution: {integrity: sha512-SPNpejC1GTb5g519PQXRHnwNjC3NJE/IP8yvuwwKJ9cfel7g7gQk/11qsvlNQBdk/AOnu2uhsmBMpTVit2WMfA==}
 
-  expo-network@58.0.3:
-    resolution: {integrity: sha512-0WfFHUKt08Zk7ajaFzVDcZ4iNF3ywPVhGtxo7kDSiNQI4XO3MAqB6jYvpqf0D7+KQ28o/BIEkFdwkZl6AynIvw==}
+  expo-network@58.0.4:
+    resolution: {integrity: sha512-E3dYtnku+LDal+4OtKdxGotX7DLjaq+GOvrtN0RiYDTNum8lhMB7dK4GqGgBqHjwsC0awEds5DhTkm+w7O1TtQ==}
     peerDependencies:
       expo: '*'
       react: '*'
@@ -7946,7 +7946,7 @@ snapshots:
 
   expo-modules-macros@0.15.0: {}
 
-  expo-network@58.0.3(expo@58.0.7)(react@19.3.1):
+  expo-network@58.0.4(expo@58.0.7)(react@19.3.1):
     dependencies:
       expo: 58.0.7(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.13)(expo-router@58.0.16)(react-dom@19.3.1(react@19.3.1))(react-native-web@0.21.4(patch_hash=42c0ecfde3a564935bf83cf98d54297551d21cfb59db72d9424478a6ee1b4ecf)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-native-worklets@0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.7))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1)(typescript@7.0.2)
       react: 19.3.1
