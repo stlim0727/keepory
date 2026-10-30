@@ -38,7 +38,14 @@ export async function copyImageToLibrary(sourceUri: string, fileName: string): P
   if (destination.exists) {
     destination.delete();
   }
-  await new File(sourceUri).copy(destination);
+  // Android share providers (including Google Photos) can supply a bare
+  // absolute cache path. Expo's native copy requires a URI with a scheme.
+  // Encode path segments so literal %, #, ? and spaces remain filename data;
+  // existing file/content URIs must retain their provider's encoding.
+  const uri = sourceUri.startsWith('/')
+    ? `file://${sourceUri.split('/').map(encodeURIComponent).join('/')}`
+    : sourceUri;
+  await new File(uri).copy(destination);
   return destination.uri;
 }
 
