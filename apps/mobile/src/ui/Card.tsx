@@ -21,7 +21,7 @@ export function Card({
   testID,
 }: CardProps) {
   const palette = usePalette();
-  const showBorder = bordered || elevated || selected;
+  const showBorder = bordered || selected;
 
   return (
     <View
