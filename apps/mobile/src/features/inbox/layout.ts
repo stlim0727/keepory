@@ -666,14 +666,15 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    borderRadius: 999,
-    borderWidth: Platform.select({ web: StyleSheet.hairlineWidth, default: 0 }),
+    borderRadius: 6,
+    borderWidth: 1,
     paddingVertical: Platform.select({ web: 2, default: 4 }),
-    paddingHorizontal: Platform.select({ web: 8, default: 9 }),
+    paddingHorizontal: Platform.select({ web: 6, default: 8 }),
   },
   metaChipLabel: {
     fontSize: Platform.select({ web: 11, default: 12 }),
     fontWeight: Platform.select({ web: WEB_MEDIUM_WEIGHT, default: WEB_SEMIBOLD_WEIGHT }),
+    fontFamily: MONO_FONT,
   },
   cardStatus: {
     fontSize: 12,
