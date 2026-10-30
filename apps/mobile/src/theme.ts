@@ -1,10 +1,67 @@
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
+
+export const monoFont = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
 export const uiMetrics = {
   touchTarget: 48,
   screenGutter: 16,
   radius: 16,
 } as const;
+
+// Android expresses shadowColor/Offset/Radius as a single integer elevation, so the zero-blur
+// letterpress edge is a web-only affordance and native keeps the soft ambient separation.
+type ShadowTier = {
+  shadowColor: string;
+  shadowOffset: { width: number; height: number };
+  shadowOpacity: number;
+  shadowRadius: number;
+  elevation: number;
+};
+
+type ShadowTokens = { card: ShadowTier; soft: ShadowTier };
+
+const ambientShadow: ShadowTokens = {
+  card: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.28,
+    shadowRadius: 32,
+    elevation: 3,
+  },
+  soft: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 24,
+    elevation: 2,
+  },
+};
+
+const letterpressShadow: ShadowTokens = {
+  card: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  soft: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 1, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 0,
+    elevation: 1,
+  },
+};
+
+// The 2,2 hairline edge disappears against #151b26 at light-mode opacity.
+const letterpressShadowDark: ShadowTokens = {
+  card: { ...letterpressShadow.card, shadowOpacity: 0.6 },
+  soft: { ...letterpressShadow.soft, shadowOpacity: 0.45 },
+};
+
+const shadow: ShadowTokens = Platform.OS === 'web' ? letterpressShadow : ambientShadow;
+const shadowDark: ShadowTokens = Platform.OS === 'web' ? letterpressShadowDark : ambientShadow;
 
 const shared = {
   radius: {
@@ -22,27 +79,12 @@ const shared = {
     xl: 24,
     xxl: 32,
   },
-  shadow: {
-    card: {
-      shadowColor: '#000000',
-      shadowOffset: { width: 2, height: 2 },
-      shadowOpacity: 0.16,
-      shadowRadius: 0,
-      elevation: 2,
-    },
-    soft: {
-      shadowColor: '#000000',
-      shadowOffset: { width: 1, height: 1 },
-      shadowOpacity: 0.12,
-      shadowRadius: 0,
-      elevation: 1,
-    },
-  },
 } as const;
 
 export const palettes = {
   light: {
     ...shared,
+    shadow,
     text: '#151b26',
     textSecondary: '#5a6070',
     background: '#f7f6f2',
@@ -76,6 +118,7 @@ export const palettes = {
   },
   dark: {
     ...shared,
+    shadow: shadowDark,
     text: '#f7f6f2',
     textSecondary: '#aaaeb8',
     background: '#151b26',

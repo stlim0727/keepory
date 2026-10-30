@@ -2,7 +2,7 @@ import type { FolderSortOption } from '@/domain/folder-sort';
 import type { SortOption } from '@/domain/sort';
 import type { ViewMode } from '@/domain/view-mode';
 import type { MessageKey } from '@/i18n/messages';
-import { uiMetrics } from '@/theme';
+import { monoFont, uiMetrics } from '@/theme';
 import { overlayLayer } from '@/ui/layering';
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
@@ -39,8 +39,6 @@ export const SORT_ICON: Record<SortOption['field'], ComponentProps<typeof Ionico
   accessed: 'time-outline',
   name: 'text-outline',
 };
-
-export const MONO_FONT = Platform.select({ ios: 'Menlo', default: 'monospace' });
 
 // Folder View's own sort menu (Collection tiles, not bookmarks) — a separate
 // small set of labels/icons since its field union (name/count) doesn't
@@ -540,12 +538,12 @@ export const styles = StyleSheet.create({
   cardMetaDomain: {
     fontSize: 12,
     fontWeight: WEB_SEMIBOLD_WEIGHT,
-    fontFamily: MONO_FONT,
+    fontFamily: monoFont,
   },
   cardMetaTime: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: WEB_MEDIUM_WEIGHT,
-    fontFamily: MONO_FONT,
+    fontFamily: monoFont,
     flexShrink: 0,
   },
   cardMetaHeaderRight: {
@@ -561,7 +559,7 @@ export const styles = StyleSheet.create({
     height: CARD_PREVIEW_HEIGHT,
     borderRadius: 12,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   cardPreviewPressable: {
     width: '100%',
@@ -643,19 +641,21 @@ export const styles = StyleSheet.create({
     lineHeight: 20,
   },
   suggestBadge: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
+    borderWidth: 1,
+    borderRadius: 8,
     paddingVertical: 2,
     paddingHorizontal: 8,
   },
   suggestBadgeLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: WEB_SEMIBOLD_WEIGHT,
+    fontFamily: monoFont,
   },
   cardUrl: {
     flexShrink: 1,
     fontSize: Platform.select({ web: 12, default: 13 }),
     lineHeight: Platform.select({ web: 16, default: undefined }),
+    fontFamily: monoFont,
   },
   metaChipRow: {
     flexDirection: 'row',
@@ -674,11 +674,12 @@ export const styles = StyleSheet.create({
   metaChipLabel: {
     fontSize: Platform.select({ web: 11, default: 12 }),
     fontWeight: Platform.select({ web: WEB_MEDIUM_WEIGHT, default: WEB_SEMIBOLD_WEIGHT }),
-    fontFamily: MONO_FONT,
+    fontFamily: monoFont,
   },
   cardStatus: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: WEB_MEDIUM_WEIGHT,
+    fontFamily: monoFont,
   },
   folderTile: {
     flex: 1,

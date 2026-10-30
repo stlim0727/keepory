@@ -30,7 +30,7 @@ import {
   syncStatusLabel,
   videoUnavailableLabel,
 } from '@/i18n/status';
-import { usePalette } from '@/theme';
+import { monoFont, usePalette } from '@/theme';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { CollectionPicker } from '@/ui/CollectionPicker';
@@ -1262,10 +1262,7 @@ export default function BookmarkDetailScreen({
                 onPress={() => {
                   void Linking.openURL(bookmark.url!);
                 }}
-                style={({ pressed }) => [
-                  styles.paneActionButton,
-                  { borderColor: palette.border, opacity: pressed ? 0.6 : 1 },
-                ]}
+                style={({ pressed }) => paneActionChrome(palette, pressed)}
               >
                 <Ionicons name="open-outline" size={16} color={palette.textSecondary} />
               </Pressable>
@@ -1274,10 +1271,7 @@ export default function BookmarkDetailScreen({
               accessibilityRole="button"
               accessibilityLabel={t('common.copyLink')}
               onPress={handleCopyLink}
-              style={({ pressed }) => [
-                styles.paneActionButton,
-                { borderColor: palette.border, opacity: pressed ? 0.6 : 1 },
-              ]}
+              style={({ pressed }) => paneActionChrome(palette, pressed)}
             >
               <Ionicons name="copy-outline" size={16} color={palette.textSecondary} />
             </Pressable>
@@ -1285,10 +1279,7 @@ export default function BookmarkDetailScreen({
               accessibilityRole="button"
               accessibilityLabel={t('common.trash')}
               onPress={handleTrash}
-              style={({ pressed }) => [
-                styles.paneActionButton,
-                { borderColor: palette.border, opacity: pressed ? 0.6 : 1 },
-              ]}
+              style={({ pressed }) => paneActionChrome(palette, pressed)}
             >
               <Ionicons name="trash-outline" size={16} color={palette.danger} />
             </Pressable>
@@ -1298,10 +1289,7 @@ export default function BookmarkDetailScreen({
               testID="bookmark-inline-detail-close"
               hitSlop={8}
               onPress={onInlineClose}
-              style={({ pressed }) => [
-                styles.paneActionButton,
-                { borderColor: palette.border, opacity: pressed ? 0.6 : 1 },
-              ]}
+              style={({ pressed }) => paneActionChrome(palette, pressed)}
             >
               <Ionicons name="close" size={16} color={palette.textSecondary} />
             </Pressable>
@@ -1841,21 +1829,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     alignSelf: 'center',
     marginTop: 16,
   },
   supportingPaneSyncDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   supportingPaneSyncText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
+    fontFamily: monoFont,
   },
   inlineClose: {
     alignSelf: 'flex-end',
@@ -1876,8 +1865,8 @@ const styles = StyleSheet.create({
   paneActionButton: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1959,6 +1948,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '600',
+    fontFamily: monoFont,
   },
   titleBlock: {
     gap: 6,
@@ -2190,3 +2180,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+// One chrome for the supporting pane's four square actions: tonal fill, 1px edge,
+// soft shadow, and a 1px press offset so the letterpress edge reads as giving way.
+function paneActionChrome(palette: ReturnType<typeof usePalette>, pressed: boolean) {
+  return [
+    styles.paneActionButton,
+    { backgroundColor: palette.surface, borderColor: palette.border },
+    palette.shadow.soft,
+    { transform: pressed ? [{ translateY: 1 }, { translateX: 1 }] : undefined },
+  ];
+}

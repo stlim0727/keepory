@@ -54,9 +54,10 @@ export function InboxFilterRail({
           styles.scopePicker,
           {
             backgroundColor: palette.card,
-            borderColor: palette.controlBorder,
+            borderColor: palette.border,
             opacity: viewMode === 'folder' || isLoading ? 0.5 : 1,
           },
+          palette.shadow.soft,
         ]}
       >
         <Ionicons
@@ -83,7 +84,7 @@ export function InboxFilterRail({
       <View testID="inbox-view-actions" style={styles.viewActions}>
         <View
           testID="inbox-view-mode-control"
-          style={[styles.viewModeControl, { backgroundColor: palette.surface, borderColor: palette.border }]}
+          style={[styles.viewModeControl, { backgroundColor: palette.surface, borderColor: palette.border }, palette.shadow.soft]}
         >
           {(['card', 'list', 'folder'] as const).map((mode) => (
             <Pressable
@@ -102,6 +103,7 @@ export function InboxFilterRail({
                 {
                   backgroundColor: viewMode === mode ? palette.mutedSurface : 'transparent',
                   opacity: pressed || isLoading || !viewOptionsReady ? 0.6 : 1,
+                  transform: pressed ? [{ translateY: 1 }, { translateX: 1 }] : undefined,
                 },
               ]}
             >

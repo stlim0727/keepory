@@ -104,7 +104,7 @@ import { trackBreadcrumb } from '@/observability/sentry';
 import { getPreference, setPreference } from '@/storage/preferences';
 import { useBookmarks } from '@/store/bookmarks';
 import { useSupabaseAuth } from '@/supabase/auth-provider';
-import { usePalette } from '@/theme';
+import { monoFont, usePalette } from '@/theme';
 import { ActionSheet, type SheetAction } from '@/ui/ActionSheet';
 import { AnonymousNudgeBanner } from '@/ui/AnonymousNudgeBanner';
 import { BulkActionBar } from '@/ui/BulkActionBar';
@@ -1755,7 +1755,13 @@ export default function InboxScreen() {
             </Pressable>
           ) : null}
           <View style={[styles.searchWrap, { maxWidth: contentMaxWidth }]}>
-            <View style={[styles.searchField, { backgroundColor: palette.card, borderColor: searchFocused ? palette.accent : palette.border }]}>
+            <View
+              style={[
+                styles.searchField,
+                { backgroundColor: palette.card, borderColor: searchFocused ? palette.accent : palette.border },
+                palette.shadow.soft,
+              ]}
+            >
               <Pressable
                 testID="inbox-search-open"
                 accessibilityRole="button"
@@ -1825,20 +1831,24 @@ export default function InboxScreen() {
               />
               {Platform.OS === 'web' && query.length === 0 ? (
                 <View
-                  style={{
-                    paddingHorizontal: 6,
-                    paddingVertical: 2,
-                    borderRadius: 6,
-                    borderWidth: StyleSheet.hairlineWidth,
-                    backgroundColor: palette.mutedSurface,
-                    borderColor: palette.border,
-                    marginRight: 6,
-                  }}
+                  style={[
+                    {
+                      paddingHorizontal: 7,
+                      paddingVertical: 3,
+                      borderRadius: 6,
+                      borderWidth: 1,
+                      backgroundColor: palette.surface,
+                      borderColor: palette.border,
+                      marginRight: 8,
+                    },
+                    palette.shadow.soft,
+                  ]}
                 >
                   <Text
                     style={{
                       fontSize: 11,
-                      fontWeight: '600',
+                      fontWeight: '700',
+                      fontFamily: monoFont,
                       color: palette.textSecondary,
                     }}
                   >

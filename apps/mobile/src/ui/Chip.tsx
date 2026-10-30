@@ -3,7 +3,7 @@ import { PixelRatio, Platform, Pressable, StyleSheet, Text, type PressableProps,
 import { Ionicons } from '@expo/vector-icons';
 import { PostHogMaskView } from 'posthog-react-native';
 
-import { usePalette, uiMetrics } from '@/theme';
+import { monoFont, usePalette, uiMetrics } from '@/theme';
 
 type ChipVariant =
   | 'default'
@@ -128,7 +128,13 @@ export function Chip({
       style={({ pressed }) => [
         styles.base,
         props.onPress ? { minHeight: uiMetrics.touchTarget, minWidth: uiMetrics.touchTarget } : null,
-        { backgroundColor: colors.backgroundColor, borderColor: colors.borderColor, opacity: disabled ? 0.5 : pressed ? 0.78 : 1 },
+        {
+          backgroundColor: colors.backgroundColor,
+          borderColor: colors.borderColor,
+          borderWidth: 1,
+          opacity: disabled ? 0.5 : pressed ? 0.88 : 1,
+          transform: pressed ? [{ translateY: 1 }, { translateX: 1 }] : undefined,
+        },
         style,
       ]}
       {...props}
@@ -158,7 +164,7 @@ export function Chip({
 
 const styles = StyleSheet.create({
   base: {
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderRadius: 999,
     // The clip only reproduces on real Samsung One UI devices, never on the
     // emulator's Roboto: Samsung's default system font renders bold text with
@@ -191,6 +197,7 @@ const styles = StyleSheet.create({
   count: {
     fontSize: LABEL_FONT_SIZE,
     fontWeight: COUNT_WEIGHT,
+    fontFamily: monoFont,
     marginLeft: 5,
   },
   countQuiet: {
