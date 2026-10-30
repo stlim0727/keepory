@@ -40,6 +40,8 @@ export const SORT_ICON: Record<SortOption['field'], ComponentProps<typeof Ionico
   name: 'text-outline',
 };
 
+export const MONO_FONT = Platform.select({ ios: 'Menlo', default: 'monospace' });
+
 // Folder View's own sort menu (Collection tiles, not bookmarks) — a separate
 // small set of labels/icons since its field union (name/count) doesn't
 // overlap with the bookmark-level SORT_LABEL_KEY/SORT_ICON above.
@@ -538,10 +540,12 @@ export const styles = StyleSheet.create({
   cardMetaDomain: {
     fontSize: 12,
     fontWeight: WEB_SEMIBOLD_WEIGHT,
+    fontFamily: MONO_FONT,
   },
   cardMetaTime: {
     fontSize: 12,
     fontWeight: WEB_MEDIUM_WEIGHT,
+    fontFamily: MONO_FONT,
     flexShrink: 0,
   },
   cardMetaHeaderRight: {

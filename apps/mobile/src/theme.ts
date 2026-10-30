@@ -25,17 +25,17 @@ const shared = {
   shadow: {
     card: {
       shadowColor: '#000000',
-      shadowOffset: { width: 0, height: 18 },
-      shadowOpacity: 0.28,
-      shadowRadius: 32,
-      elevation: 3,
+      shadowOffset: { width: 2, height: 2 },
+      shadowOpacity: 0.16,
+      shadowRadius: 0,
+      elevation: 2,
     },
     soft: {
       shadowColor: '#000000',
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.22,
-      shadowRadius: 24,
-      elevation: 2,
+      shadowOffset: { width: 1, height: 1 },
+      shadowOpacity: 0.12,
+      shadowRadius: 0,
+      elevation: 1,
     },
   },
 } as const;
