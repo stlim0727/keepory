@@ -674,6 +674,7 @@ export const styles = StyleSheet.create({
   metaChipLabel: {
     fontSize: Platform.select({ web: 11, default: 12 }),
     fontWeight: Platform.select({ web: WEB_MEDIUM_WEIGHT, default: WEB_SEMIBOLD_WEIGHT }),
+    fontFamily: MONO_FONT,
   },
   cardStatus: {
     fontSize: 12,
