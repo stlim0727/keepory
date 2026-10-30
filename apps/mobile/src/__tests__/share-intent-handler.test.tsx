@@ -1,5 +1,14 @@
 import { act, render, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
+import { Platform } from 'react-native';
+import type { PendingShareRecord } from '@/share/native-pending-shares';
+
+const mockConsumeNativePendingShares = jest.fn(async (): Promise<PendingShareRecord[]> => []);
+const mockDeleteNativePendingShare = jest.fn(async (_filename: string) => {});
+jest.mock('@/share/native-pending-shares', () => ({
+  consumeNativePendingShares: () => mockConsumeNativePendingShares(),
+  deleteNativePendingShare: (filename: string) => mockDeleteNativePendingShare(filename),
+}));
 
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaProvider: ({ children }: { children: ReactNode }) => children,
@@ -141,6 +150,7 @@ async function readLastShareAttempt(getMeta: (key: string) => Promise<string | n
 import { ShareIntentHandler } from '@/share/share-intent-handler';
 import { BookmarksProvider } from '@/store/bookmarks';
 import { CaptureToastProvider } from '@/ui/capture-toast';
+import { DUPLICATE_SHARE_NOTICE_KEY } from '@/share/duplicate-notice';
 import type { FakeRepositoryModule } from './helpers/fake-repository';
 import { makeStoredBookmark } from './helpers/fake-repository';
 
@@ -159,6 +169,9 @@ function renderHandler() {
 }
 
 beforeEach(async () => {
+  mockConsumeNativePendingShares.mockReset().mockResolvedValue([]);
+  mockDeleteNativePendingShare.mockClear();
+  await fakeRepo.repository.setMeta(DUPLICATE_SHARE_NOTICE_KEY, '');
   mockLoadGate.hold = false;
   mockLoadGate.release = null;
   mockRouter.push.mockClear();
@@ -200,6 +213,31 @@ describe('ShareIntentHandler', () => {
   // async-heavy suite more headroom so contention can't flake it.
   jest.setTimeout(15000);
 
+  it('confirms a duplicate consumed from the lightweight Android receiver', async () => {
+    const platform = jest.replaceProperty(Platform, 'OS', 'android');
+    const existing = makeStoredBookmark({ url: 'https://example.com/offline-duplicate' });
+    fakeRepo.__reset([existing]);
+    mockConsumeNativePendingShares.mockResolvedValueOnce([{
+      filename: 'share_duplicate.json',
+      payload: { id: 'native-duplicate', timestamp: Date.now(), type: 'text', text: existing.url! },
+    }]);
+    let unmount: (() => Promise<void>) | undefined;
+    try {
+      const screen = await renderHandler();
+      unmount = screen.unmount;
+      await screen.findByText('Already in Keepory');
+      await waitFor(async () => expect(JSON.parse(
+        (await fakeRepo.repository.getMeta(DUPLICATE_SHARE_NOTICE_KEY))!,
+      ).bookmarkId).toBe(existing.id));
+      await waitFor(() => expect(mockDeleteNativePendingShare).toHaveBeenCalledWith('share_duplicate.json'));
+      expect(fakeRepo.__bookmarks()).toHaveLength(1);
+      expect(fakeRepo.__queue()).toHaveLength(0);
+    } finally {
+      await unmount?.();
+      platform.restore();
+    }
+  });
+
   it('does not duplicate a URL already stashed when shared on cold start', async () => {
     // The store starts empty in memory and loads this row asynchronously —
     // exactly the cold-start window in which a share used to dedupe against an
@@ -217,6 +255,9 @@ describe('ShareIntentHandler', () => {
     // It waits for the store to load, finds the existing bookmark, and reports a
     // duplicate instead of enqueuing a new create.
     await findByText('Already in Keepory');
+    await waitFor(async () => expect(JSON.parse(
+      (await fakeRepo.repository.getMeta(DUPLICATE_SHARE_NOTICE_KEY))!,
+    ).bookmarkId).toBe(fakeRepo.__bookmarks()[0].id));
     await waitFor(() => expect(mockShareIntent.resetShareIntent).toHaveBeenCalled());
     expect(fakeRepo.__queue()).toHaveLength(0);
     unmount();
