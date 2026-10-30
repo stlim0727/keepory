@@ -1,26 +1,12 @@
-import {
-  type FolderSortOption
-} from '@/domain/folder-sort';
-import {
-  type SortOption
-} from '@/domain/sort';
-import {
-  type ViewMode
-} from '@/domain/view-mode';
+import type { FolderSortOption } from '@/domain/folder-sort';
+import type { SortOption } from '@/domain/sort';
+import type { ViewMode } from '@/domain/view-mode';
 import type { MessageKey } from '@/i18n/messages';
-import { uiMetrics } from '@/theme';
+import { monoFont, uiMetrics } from '@/theme';
 import { overlayLayer } from '@/ui/layering';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  type ComponentProps
-} from 'react';
-import {
-  Animated,
-  FlatList,
-  Platform,
-  StyleSheet,
-  type ViewStyle
-} from 'react-native';
+import type { ComponentProps } from 'react';
+import { Animated, FlatList, Platform, StyleSheet, type ViewStyle } from 'react-native';
 
 // Glyph for each layout in the view-mode segmented control.
 export const VIEW_MODE_ICON: Record<ViewMode, ComponentProps<typeof Ionicons>['name']> = {
@@ -104,20 +90,8 @@ export const LIST_PADDING = 16;
 
 export const CARD_PREVIEW_HEIGHT = 140;
 
-// Root cause of the reported "desktop browser: tap ✕, the field doesn't
-// close" bug: a mousedown on this button blurs the still-focused search
-// input *before* the click fires. That blur's own deferred empty-query
-// auto-close (see the TextInput's onBlur below) had time to run first
-// whenever there was any real gap between mouse-down and mouse-up (i.e. any
-// actual human click, not a zero-delay synthetic one) — closing the field
-// and flipping this same button back to its "search" icon so the click that
-// followed reopened it instead of closing it. Only reproduced with a real
-// held-then-released click, never with an instant synthetic one, which is
-// why earlier Playwright repros (instant `.click()`) missed it. Web-only:
-// preventing mousedown's default here stops the browser from shifting focus
-// (and thus blurring) at all, so the click's own onPress deterministically
-// decides open vs close. react-native-web's Pressable forwards unrecognized
-// props like this straight to the underlying DOM node.
+// Web: preventing mousedown's default stops the browser from shifting focus (and blurring)
+// before click fires, ensuring onPress deterministically handles open vs close.
 export const preventMouseDownFocusSteal =
   Platform.OS === 'web' ? { onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault() } : null;
 
@@ -386,7 +360,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: uiMetrics.radius,
+    borderRadius: 999,
     minHeight: 48,
   },
   searchAction: {
@@ -540,51 +514,68 @@ export const styles = StyleSheet.create({
   cardMoreButton: {
     marginLeft: 'auto',
   },
+  cardMetaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  cardMetaHeaderLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+  },
+  cardMetaDomainPressable: {
+    flexShrink: 1,
+    minHeight: 24,
+    justifyContent: 'center',
+  },
+  cardMetaDomain: {
+    fontSize: 12,
+    fontWeight: WEB_SEMIBOLD_WEIGHT,
+    fontFamily: monoFont,
+  },
+  cardMetaTime: {
+    fontSize: 11,
+    fontWeight: WEB_MEDIUM_WEIGHT,
+    fontFamily: monoFont,
+    flexShrink: 0,
+  },
+  cardMetaHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
   cardPreviewContainer: {
     position: 'relative',
-    width: '100%',
+    marginHorizontal: 12,
+    marginBottom: 8,
     height: CARD_PREVIEW_HEIGHT,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  cardPreviewPressable: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   cardPreview: {
     width: '100%',
-    height: CARD_PREVIEW_HEIGHT,
-  },
-  cardPreviewBadgeWrap: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    minHeight: uiMetrics.touchTarget,
-    minWidth: uiMetrics.touchTarget,
-    justifyContent: 'flex-end',
-    alignItems: 'flex-start',
-    paddingLeft: 8,
-    paddingBottom: 8,
-    maxWidth: '85%',
-    ...overlayLayer(3),
-  },
-  cardPreviewBadge: {
-    maxWidth: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    borderRadius: 999,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    ...Platform.select({
-      web: {
-        backdropFilter: 'blur(8px)',
-      },
-    }),
-  },
-  cardPreviewBadgeText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '600',
-    flexShrink: 1,
+    height: '100%',
+    borderRadius: 12,
   },
   cardBody: {
-    padding: 12,
-    gap: 4,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    gap: 6,
   },
   cardBodyTextOnlyWeb: {
     paddingVertical: 13,
@@ -643,25 +634,28 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: WEB_SEMIBOLD_WEIGHT,
     letterSpacing: -0.2,
+    ...(Platform.OS === 'web' ? ({ wordBreak: 'keep-all', overflowWrap: 'break-word' } as any) : {}),
   },
   memoPreviewText: {
     fontSize: 14,
     lineHeight: 20,
   },
   suggestBadge: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
+    borderWidth: 1,
+    borderRadius: 8,
     paddingVertical: 2,
     paddingHorizontal: 8,
   },
   suggestBadgeLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: WEB_SEMIBOLD_WEIGHT,
+    fontFamily: monoFont,
   },
   cardUrl: {
     flexShrink: 1,
     fontSize: Platform.select({ web: 12, default: 13 }),
     lineHeight: Platform.select({ web: 16, default: undefined }),
+    fontFamily: monoFont,
   },
   metaChipRow: {
     flexDirection: 'row',
@@ -672,18 +666,20 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    borderRadius: 999,
-    borderWidth: Platform.select({ web: StyleSheet.hairlineWidth, default: 0 }),
+    borderRadius: 6,
+    borderWidth: 1,
     paddingVertical: Platform.select({ web: 2, default: 4 }),
-    paddingHorizontal: Platform.select({ web: 8, default: 9 }),
+    paddingHorizontal: Platform.select({ web: 6, default: 8 }),
   },
   metaChipLabel: {
     fontSize: Platform.select({ web: 11, default: 12 }),
     fontWeight: Platform.select({ web: WEB_MEDIUM_WEIGHT, default: WEB_SEMIBOLD_WEIGHT }),
+    fontFamily: monoFont,
   },
   cardStatus: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: WEB_MEDIUM_WEIGHT,
+    fontFamily: monoFont,
   },
   folderTile: {
     flex: 1,

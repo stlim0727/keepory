@@ -1,10 +1,11 @@
 import { ProtectedImage } from '@/ui/ProtectedImage';
 import BookmarkDetailScreen from '@/app/bookmark/[id]';
+export { default as BookmarkDetailScreen } from '@/app/bookmark/[id]';
 import { pendingSuggestedFolder, pendingSuggestions, pendingSummary } from '@/domain/ai-suggestions';
 import {
   type InboxFilter
 } from '@/domain/filter';
-import { accessibilityTitle, displayTitle, isTitleDerived, siteLabel } from '@/domain/item-display';
+import { accessibilityTitle, displayTitle, formatRelativeTime, isTitleDerived, siteLabel } from '@/domain/item-display';
 import {
   didPreviewImageLoad,
   markPreviewImageFailed,
@@ -41,6 +42,8 @@ import {
 } from 'react-native';
 interface Props {
   readOnly?: boolean;
+  isSupportingPane?: boolean;
+  activeBookmarkId?: string | null;
   setInlineDetailId: Dispatch<SetStateAction<string | null>>;
   viewMode: ViewMode;
   contentMaxWidth: number;
@@ -80,6 +83,8 @@ interface Props {
 
 export function createInboxItemRenderer({
   readOnly = false,
+  isSupportingPane = false,
+  activeBookmarkId = null,
   setInlineDetailId,
   viewMode,
   contentMaxWidth,
@@ -299,7 +304,7 @@ export function createInboxItemRenderer({
         ? 1
         : 0);
     const openDetail = () => {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' || isSupportingPane) {
         setInlineDetailId((current) => (current === item.id ? null : item.id));
         return;
       }
@@ -347,6 +352,7 @@ export function createInboxItemRenderer({
       ...(orderedTags.length > 2 ? [{ key: 'tags-overflow', type: 'overflow' as const, label: `+${orderedTags.length - 2}` }] : []),
     ];
     const siteLabelText = siteLabel(item);
+    const relativeTime = formatRelativeTime(item.created_at);
     const memoPreview =
       item.content_type === 'text' && item.title?.trim() && item.description?.trim()
         ? textForDisplay(item.description, memoBodyFormat(item))
@@ -385,9 +391,12 @@ export function createInboxItemRenderer({
             styles.listRow,
             styles.compactRow,
             {
-              backgroundColor: isSelected ? palette.accentSoft : 'transparent',
-              borderColor: isSelected ? palette.accent : palette.border,
-              borderBottomWidth: isSelected ? 1.5 : StyleSheet.hairlineWidth,
+              backgroundColor:
+                isSelected || activeBookmarkId === item.id ? palette.accentSoft : 'transparent',
+              borderColor:
+                isSelected || activeBookmarkId === item.id ? palette.accent : palette.border,
+              borderBottomWidth:
+                isSelected || activeBookmarkId === item.id ? 1.5 : StyleSheet.hairlineWidth,
               opacity: pressed ? 0.78 : 1,
             },
           ]}
@@ -511,17 +520,21 @@ export function createInboxItemRenderer({
                     accessibilityLabel={part.label}
                     style={[
                       styles.metaChip,
-                      Platform.OS === 'web'
-                        ? { backgroundColor: palette.surface, borderColor: palette.border }
-                        : { backgroundColor: palette.mutedSurface },
+                      {
+                        backgroundColor: part.type === 'collection' ? palette.accentSoft : palette.surfaceContainer,
+                      },
                     ]}
                   >
-                    {part.type === 'collection' ? <Ionicons name="folder-outline" size={12} color={palette.textSecondary} /> : null}
+                    {part.type === 'collection' ? (
+                      <Ionicons name="folder-outline" size={12} color={palette.accentText} />
+                    ) : null}
                     <PostHogMaskView style={{ flexShrink: 1 }}>
                       <Text
                         style={[
                           styles.metaChipLabel,
-                          { color: Platform.OS === 'web' ? palette.textSecondary : palette.accentText },
+                          {
+                            color: part.type === 'collection' ? palette.accentText : palette.textSecondary,
+                          },
                         ]}
                         numberOfLines={1}
                       >
@@ -572,6 +585,7 @@ export function createInboxItemRenderer({
     const cardElement = (
       <Card
         testID={`inbox-card-${item.id}`}
+        elevated
         style={[
           styles.card,
           isOpening ? { borderColor: palette.accent } : null,
@@ -581,7 +595,12 @@ export function createInboxItemRenderer({
               borderWidth: 2,
               backgroundColor: palette.accentSoft,
             }
-            : null,
+            : activeBookmarkId === item.id
+              ? {
+                borderColor: palette.accent,
+                borderWidth: 2,
+              }
+              : null,
         ]}
       >
         <Pressable
@@ -591,62 +610,20 @@ export function createInboxItemRenderer({
           onPress={selectionMode ? () => toggleSelect(item.id) : undefined}
           onLongPress={handleItemLongPress}
         >
-          {previewUri || selectionMode ? (
-            <View style={[styles.cardPreviewContainer, !previewUri ? { height: 32 } : null]}>
+          {/* Top Clean Meta Header: Favicon + domain + relative time, plus more actions */}
+          <View style={[styles.cardMetaHeader, selectionMode ? { paddingLeft: 42 } : null]}>
+            <View style={styles.cardMetaHeaderLeft}>
               <Pressable
-                testID="inbox-card-preview"
                 accessible={false}
                 tabIndex={-1}
                 disabled={readOnly}
-                onPress={handleItemPress}
+                onPress={selectionMode ? () => toggleSelect(item.id) : (item.url ? openLink : openDetail)}
                 onLongPress={handleItemLongPress}
-                style={({ pressed }) => [
-                  StyleSheet.absoluteFill,
-                  { opacity: pressed ? 0.82 : 1 },
-                ]}
+                hitSlop={6}
               >
-                {previewUri ? (
-                  <ProtectedImage
-                    testID="inbox-card-preview-image"
-                    uri={previewUri}
-                    style={styles.cardPreview}
-                    onError={() => markPreviewImageFailed(previewUri)}
-                    onLoad={(event: ImageLoadEvent) => {
-                      if (!didPreviewImageLoad(event.nativeEvent)) {
-                        markPreviewImageFailed(previewUri);
-                      } else {
-                        markPreviewImageLoaded(previewUri);
-                      }
-                    }}
-                  />
-                ) : null}
+                <ItemIcon item={item} compact testID={!previewUri ? 'inbox-card-monogram' : undefined} />
               </Pressable>
-              {selectionMode ? (
-                <Pressable
-                  testID={`inbox-select-checkbox-${item.id}`}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: isSelected }}
-                  accessibilityLabel={
-                    isSelected
-                      ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
-                      : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
-                  }
-                  disabled={readOnly}
-                  onPress={() => toggleSelect(item.id)}
-                  hitSlop={8}
-                  style={[
-                    styles.cardSelectionIndicator,
-                    isSelected
-                      ? { backgroundColor: palette.accent, borderColor: palette.accent }
-                      : { backgroundColor: 'rgba(0,0,0,0.4)', borderColor: '#ffffff' },
-                  ]}
-                >
-                  {isSelected ? (
-                    <Ionicons name="checkmark" size={14} color="#ffffff" />
-                  ) : null}
-                </Pressable>
-              ) : null}
-              {previewUri && item.url && siteLabelText ? (
+              {item.url && siteLabelText ? (
                 <Pressable
                   testID={`inbox-card-source-${item.id}`}
                   accessibilityRole={selectionMode ? 'checkbox' : 'link'}
@@ -659,162 +636,144 @@ export function createInboxItemRenderer({
                   disabled={readOnly}
                   onPress={selectionMode ? () => toggleSelect(item.id) : openLink}
                   onLongPress={handleItemLongPress}
-                  style={({ pressed }) => [
-                    styles.cardPreviewBadgeWrap,
-                    { opacity: pressed ? 0.75 : 1 },
-                  ]}
-                >
-                  <View style={styles.cardPreviewBadge}>
-                    <HighlightedText
-                      style={styles.cardPreviewBadgeText}
-                      numberOfLines={1}
-                      text={siteLabelText}
-                      query={highlightQuery}
-                      highlightStyle={highlightStyle}
-                    />
-                  </View>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
-          <View style={styles.cardBody}>
-            {!previewUri ? (
-              <View style={styles.cardCompactHeader}>
-                <Pressable
-                  accessible={false}
-                  tabIndex={-1}
-                  disabled={readOnly}
-                  onPress={selectionMode ? () => toggleSelect(item.id) : (item.url ? openLink : openDetail)}
-                  onLongPress={handleItemLongPress}
+                  style={styles.cardMetaDomainPressable}
                   hitSlop={6}
                 >
-                  <ItemIcon item={item} testID="inbox-card-monogram" />
-                </Pressable>
-                <View style={styles.cardCompactTitleCol}>
-                  <Pressable
-                    style={styles.cardTitlePressable}
-                    accessibilityRole={selectionMode ? 'checkbox' : 'button'}
-                    accessibilityLabel={selectionMode ? (isSelected ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') }) : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })) : (accessibilityTitle(item) ?? t('common.untitled'))}
-                    accessibilityHint={selectionMode ? undefined : t('inbox.openBookmarkHint')}
-                    accessibilityState={selectionMode ? { checked: isSelected } : { busy: isOpening }}
-                    disabled={readOnly}
-                    onPress={handleItemPress}
-                    onLongPress={handleItemLongPress}
-                  >
-                    <HighlightedText
-                      testID="inbox-card-title"
-                      style={[
-                        styles.cardTitle,
-                        {
-                          lineHeight: 22,
-                          color: isTitleDerived(item) ? palette.textSecondary : palette.text,
-                          fontWeight: isTitleDerived(item) ? WEB_MEDIUM_WEIGHT : WEB_SEMIBOLD_WEIGHT,
-                        },
-                      ]}
-                      numberOfLines={2}
-                      text={displayTitle(item) ?? t('common.untitled')}
-                      query={highlightQuery}
-                      highlightStyle={highlightStyle}
-                    />
-                  </Pressable>
-                  {item.url ? (
-                    <Pressable
-                      accessibilityRole={selectionMode ? 'checkbox' : 'link'}
-                      accessibilityLabel={selectionMode
-                        ? t(isSelected ? 'inbox.deselectItemA11y' : 'inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
-                        : t('common.openLink')}
-                      accessibilityState={selectionMode ? { checked: isSelected } : undefined}
-                      disabled={readOnly}
-                      onPress={selectionMode ? () => toggleSelect(item.id) : openLink}
-                      onLongPress={handleItemLongPress}
-                      style={{ minHeight: uiMetrics.touchTarget, justifyContent: 'center' }}
-                      hitSlop={8}
-                    >
-                      <HighlightedText
-                        style={[styles.cardUrl, { color: palette.textSecondary }]}
-                        numberOfLines={1}
-                        text={siteLabelText}
-                        query={highlightQuery}
-                        highlightStyle={highlightStyle}
-                      />
-                    </Pressable>
-                  ) : null}
-                </View>
-                {suggestionCount > 0 ? (
-                  <View
-                    accessibilityLabel={t('inbox.aiSuggestionsA11y', { count: suggestionCount })}
-                    style={[styles.suggestBadge, { backgroundColor: palette.accentSoft, borderColor: palette.accent }]}
-                  >
-                    <Text style={[styles.suggestBadgeLabel, { color: palette.accentText }]}>
-                      ✨ {suggestionCount}
-                    </Text>
-                  </View>
-                ) : null}
-                {!selectionMode ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t('inbox.moreActions')}
-                    hitSlop={8}
-                    style={[styles.moreButton, styles.cardMoreButton]}
-                    disabled={readOnly}
-                    onPress={() => setMenuItem(item)}
-                  >
-                    <Ionicons name="ellipsis-horizontal" size={18} color={palette.textSecondary} />
-                  </Pressable>
-                ) : null}
-              </View>
-            ) : (
-              <View style={styles.cardTitleRow}>
-                <Pressable
-                  style={styles.cardTitlePressable}
-                  accessibilityRole={selectionMode ? 'checkbox' : 'button'}
-                  accessibilityLabel={selectionMode ? (isSelected ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') }) : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })) : (accessibilityTitle(item) ?? t('common.untitled'))}
-                  accessibilityHint={selectionMode ? undefined : t('inbox.openBookmarkHint')}
-                  accessibilityState={selectionMode ? { checked: isSelected } : { busy: isOpening }}
-                  disabled={readOnly}
-                  onPress={handleItemPress}
-                  onLongPress={handleItemLongPress}
-                >
                   <HighlightedText
-                    testID="inbox-card-title"
-                    style={[
-                      styles.cardTitle,
-                      {
-                        lineHeight: 22,
-                        color: isTitleDerived(item) ? palette.textSecondary : palette.text,
-                        fontWeight: isTitleDerived(item) ? WEB_MEDIUM_WEIGHT : WEB_SEMIBOLD_WEIGHT,
-                      },
-                    ]}
-                    numberOfLines={2}
-                    text={displayTitle(item) ?? t('common.untitled')}
+                    style={[styles.cardMetaDomain, { color: palette.textSecondary }]}
+                    numberOfLines={1}
+                    text={siteLabelText}
                     query={highlightQuery}
                     highlightStyle={highlightStyle}
                   />
                 </Pressable>
-                {suggestionCount > 0 ? (
-                  <View
-                    accessibilityLabel={t('inbox.aiSuggestionsA11y', { count: suggestionCount })}
-                    style={[styles.suggestBadge, { backgroundColor: palette.accentSoft, borderColor: palette.accent }]}
-                  >
-                    <Text style={[styles.suggestBadgeLabel, { color: palette.accentText }]}>
-                      ✨ {suggestionCount}
-                    </Text>
-                  </View>
-                ) : null}
-                {!selectionMode ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t('inbox.moreActions')}
-                    hitSlop={8}
-                    style={[styles.moreButton, styles.cardMoreButton]}
-                    disabled={readOnly}
-                    onPress={() => setMenuItem(item)}
-                  >
-                    <Ionicons name="ellipsis-horizontal" size={18} color={palette.textSecondary} />
-                  </Pressable>
-                ) : null}
-              </View>
-            )}
+              ) : null}
+              {relativeTime ? (
+                <Text style={[styles.cardMetaTime, { color: palette.textSecondary }]}>
+                  {item.url && siteLabelText ? ' · ' : ''}{relativeTime}
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.cardMetaHeaderRight}>
+              {suggestionCount > 0 ? (
+                <View
+                  accessibilityLabel={t('inbox.aiSuggestionsA11y', { count: suggestionCount })}
+                  style={[
+                    styles.suggestBadge,
+                    {
+                      backgroundColor: '#f3e8ff',
+                      borderColor: '#e9d5ff',
+                      borderRadius: 999,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.suggestBadgeLabel, { color: '#6b21a8' }]}>
+                    ✨ {suggestionCount}
+                  </Text>
+                </View>
+              ) : null}
+              {!selectionMode ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('inbox.moreActions')}
+                  hitSlop={8}
+                  style={[styles.moreButton, styles.cardMoreButton]}
+                  disabled={readOnly}
+                  onPress={() => setMenuItem(item)}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={18} color={palette.textSecondary} />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+
+          {/* Selection indicator overlay when in selectionMode */}
+          {selectionMode ? (
+            <Pressable
+              testID={`inbox-select-checkbox-${item.id}`}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isSelected }}
+              accessibilityLabel={
+                isSelected
+                  ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
+                  : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })
+              }
+              disabled={readOnly}
+              onPress={() => toggleSelect(item.id)}
+              hitSlop={8}
+              style={[
+                styles.cardSelectionIndicator,
+                isSelected
+                  ? { backgroundColor: palette.accent, borderColor: palette.accent }
+                  : { backgroundColor: 'rgba(0,0,0,0.4)', borderColor: '#ffffff' },
+              ]}
+            >
+              {isSelected ? (
+                <Ionicons name="checkmark" size={14} color="#ffffff" />
+              ) : null}
+            </Pressable>
+          ) : null}
+
+          {/* Preview Thumbnail */}
+          {previewUri ? (
+            <View style={[styles.cardPreviewContainer, { borderColor: palette.border }]}>
+              <Pressable
+                testID="inbox-card-preview"
+                accessible={false}
+                tabIndex={-1}
+                disabled={readOnly}
+                onPress={handleItemPress}
+                onLongPress={handleItemLongPress}
+                style={({ pressed }) => [
+                  styles.cardPreviewPressable,
+                  { opacity: pressed ? 0.82 : 1 },
+                ]}
+              >
+                <ProtectedImage
+                  testID="inbox-card-preview-image"
+                  uri={previewUri}
+                  style={styles.cardPreview}
+                  onError={() => markPreviewImageFailed(previewUri)}
+                  onLoad={(event: ImageLoadEvent) => {
+                    if (!didPreviewImageLoad(event.nativeEvent)) {
+                      markPreviewImageFailed(previewUri);
+                    } else {
+                      markPreviewImageLoaded(previewUri);
+                    }
+                  }}
+                />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {/* Card Body */}
+          <View style={styles.cardBody}>
+            <Pressable
+              style={styles.cardTitlePressable}
+              accessibilityRole={selectionMode ? 'checkbox' : 'button'}
+              accessibilityLabel={selectionMode ? (isSelected ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') }) : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })) : (accessibilityTitle(item) ?? t('common.untitled'))}
+              accessibilityHint={selectionMode ? undefined : t('inbox.openBookmarkHint')}
+              accessibilityState={selectionMode ? { checked: isSelected } : { busy: isOpening }}
+              disabled={readOnly}
+              onPress={handleItemPress}
+              onLongPress={handleItemLongPress}
+            >
+              <HighlightedText
+                testID="inbox-card-title"
+                style={[
+                  styles.cardTitle,
+                  {
+                    lineHeight: 22,
+                    color: isTitleDerived(item) ? palette.textSecondary : palette.text,
+                    fontWeight: isTitleDerived(item) ? WEB_MEDIUM_WEIGHT : WEB_SEMIBOLD_WEIGHT,
+                  },
+                ]}
+                numberOfLines={2}
+                text={displayTitle(item) ?? t('common.untitled')}
+                query={highlightQuery}
+                highlightStyle={highlightStyle}
+              />
+            </Pressable>
             {memoPreview ? (
               <HighlightedText
                 style={[styles.memoPreviewText, { color: palette.textSecondary }]}
@@ -849,17 +808,21 @@ export function createInboxItemRenderer({
                     accessibilityLabel={part.label}
                     style={[
                       styles.metaChip,
-                      Platform.OS === 'web'
-                        ? { backgroundColor: palette.surface, borderColor: palette.border }
-                        : { backgroundColor: palette.mutedSurface },
+                      {
+                        backgroundColor: part.type === 'collection' ? palette.accentSoft : palette.surfaceContainer,
+                      },
                     ]}
                   >
-                    {part.type === 'collection' ? <Ionicons name="folder-outline" size={12} color={palette.textSecondary} /> : null}
+                    {part.type === 'collection' ? (
+                      <Ionicons name="folder-outline" size={12} color={palette.accentText} />
+                    ) : null}
                     <PostHogMaskView style={{ flexShrink: 1 }}>
                       <Text
                         style={[
                           styles.metaChipLabel,
-                          { color: Platform.OS === 'web' ? palette.textSecondary : palette.accentText },
+                          {
+                            color: part.type === 'collection' ? palette.accentText : palette.textSecondary,
+                          },
                         ]}
                         numberOfLines={1}
                       >

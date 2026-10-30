@@ -3,13 +3,22 @@ import { PixelRatio, Platform, Pressable, StyleSheet, Text, type PressableProps,
 import { Ionicons } from '@expo/vector-icons';
 import { PostHogMaskView } from 'posthog-react-native';
 
-import { usePalette, uiMetrics } from '@/theme';
+import { monoFont, usePalette, uiMetrics } from '@/theme';
 
-type ChipVariant = 'default' | 'selected' | 'accent' | 'danger' | 'highlight';
+type ChipVariant =
+  | 'default'
+  | 'filter'
+  | 'assist'
+  | 'suggestion'
+  | 'selected'
+  | 'accent'
+  | 'danger'
+  | 'highlight';
 
 interface ChipProps extends Omit<PressableProps, 'style'> {
   children: ReactNode;
   variant?: ChipVariant;
+  selected?: boolean;
   quiet?: boolean;
   // Optional leading glyph. Used by the Inbox browse shelf to mark what KIND of
   // facet a chip is — a folder for collections (and a tray for the "no
@@ -41,6 +50,7 @@ const LABEL_LINE_RATIO = 1.57;
 export function Chip({
   children,
   variant = 'default',
+  selected,
   quiet,
   icon,
   count,
@@ -50,12 +60,32 @@ export function Chip({
   ...props
 }: ChipProps) {
   const palette = usePalette();
-  const quietDefault = quiet && variant === 'default';
+  const isSelected = selected || variant === 'selected';
+  const isQuiet = quiet && (variant === 'default' || variant === 'filter' || variant === 'suggestion');
   const colors = {
-    default: {
-      backgroundColor: quietDefault ? 'transparent' : palette.surface,
-      borderColor: props.onPress ? palette.controlBorder : palette.border,
-      color: quietDefault ? palette.textSecondary : palette.text,
+    default: isSelected
+      ? { backgroundColor: palette.accentSoft, borderColor: palette.accentSoft, color: palette.accentText }
+      : {
+          backgroundColor: isQuiet ? 'transparent' : palette.surface,
+          borderColor: props.onPress ? palette.controlBorder : palette.border,
+          color: isQuiet ? palette.textSecondary : palette.text,
+        },
+    filter: isSelected
+      ? { backgroundColor: palette.accentSoft, borderColor: palette.accent, color: palette.accentText }
+      : {
+          backgroundColor: isQuiet ? 'transparent' : palette.surfaceContainerLow,
+          borderColor: props.onPress ? palette.controlBorder : palette.border,
+          color: isQuiet ? palette.textSecondary : palette.text,
+        },
+    assist: {
+      backgroundColor: palette.accentSoft,
+      borderColor: palette.accent,
+      color: palette.accentText,
+    },
+    suggestion: {
+      backgroundColor: isQuiet ? 'transparent' : palette.surfaceContainerLow,
+      borderColor: palette.border,
+      color: isQuiet ? palette.textSecondary : palette.text,
     },
     selected: { backgroundColor: palette.accentSoft, borderColor: palette.accentSoft, color: palette.accentText },
     accent: { backgroundColor: palette.accentSoft, borderColor: palette.accentSoft, color: palette.accentText },
@@ -89,6 +119,8 @@ export function Chip({
         : children
       : undefined;
 
+  const effectiveIcon = icon !== undefined ? icon : variant === 'assist' ? 'sparkles-outline' : undefined;
+
   return (
     <Pressable
       disabled={disabled}
@@ -96,27 +128,33 @@ export function Chip({
       style={({ pressed }) => [
         styles.base,
         props.onPress ? { minHeight: uiMetrics.touchTarget, minWidth: uiMetrics.touchTarget } : null,
-        { backgroundColor: colors.backgroundColor, borderColor: colors.borderColor, opacity: disabled ? 0.5 : pressed ? 0.78 : 1 },
+        {
+          backgroundColor: colors.backgroundColor,
+          borderColor: colors.borderColor,
+          borderWidth: 1,
+          opacity: disabled ? 0.5 : pressed ? 0.88 : 1,
+          transform: pressed ? [{ translateY: 1 }, { translateX: 1 }] : undefined,
+        },
         style,
       ]}
       {...props}
     >
-      {icon ? (
-        <Ionicons name={icon} size={13} color={colors.color} style={styles.icon} testID={`chip-icon-${icon}`} />
+      {effectiveIcon ? (
+        <Ionicons name={effectiveIcon} size={13} color={colors.color} style={styles.icon} testID={`chip-icon-${effectiveIcon}`} />
       ) : null}
       {mask ? (
         <PostHogMaskView>
-          <Text style={[styles.label, quietDefault ? styles.labelQuiet : null, { color: colors.color, lineHeight }]}>
+          <Text style={[styles.label, isQuiet ? styles.labelQuiet : null, { color: colors.color, lineHeight }]}>
             {children}
           </Text>
         </PostHogMaskView>
       ) : (
-        <Text style={[styles.label, quietDefault ? styles.labelQuiet : null, { color: colors.color, lineHeight }]}>
+        <Text style={[styles.label, isQuiet ? styles.labelQuiet : null, { color: colors.color, lineHeight }]}>
           {children}
         </Text>
       )}
       {typeof count === 'number' ? (
-        <Text style={[styles.count, quietDefault ? styles.countQuiet : null, { color: palette.textSecondary, lineHeight }]}>
+        <Text style={[styles.count, isQuiet ? styles.countQuiet : null, { color: palette.textSecondary, lineHeight }]}>
           {`· ${count}`}
         </Text>
       ) : null}
@@ -126,7 +164,7 @@ export function Chip({
 
 const styles = StyleSheet.create({
   base: {
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderRadius: 999,
     // The clip only reproduces on real Samsung One UI devices, never on the
     // emulator's Roboto: Samsung's default system font renders bold text with
@@ -159,6 +197,7 @@ const styles = StyleSheet.create({
   count: {
     fontSize: LABEL_FONT_SIZE,
     fontWeight: COUNT_WEIGHT,
+    fontFamily: monoFont,
     marginLeft: 5,
   },
   countQuiet: {

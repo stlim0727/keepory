@@ -28,6 +28,14 @@ for (const [theme, palette] of Object.entries(palettes)) {
       assert.ok(contrast(palette.controlBorder, palette[background]) >= 3);
     });
   }
+  for (const container of ['surfaceContainerLowest', 'surfaceContainerLow', 'surfaceContainer', 'surfaceContainerHigh', 'surfaceContainerHighest'] as const) {
+    test(`${theme} onSurface meets 4.5:1 on ${container}`, () => {
+      assert.ok(contrast(palette.onSurface, palette[container]) >= 4.5);
+    });
+    test(`${theme} onSurfaceVariant meets 4.5:1 on ${container}`, () => {
+      assert.ok(contrast(palette.onSurfaceVariant, palette[container]) >= 4.5);
+    });
+  }
 }
 
 test('new library and reporting copy has Korean translations', () => {

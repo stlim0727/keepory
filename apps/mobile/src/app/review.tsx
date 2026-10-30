@@ -480,9 +480,13 @@ export default function ReviewScreen() {
                   <ProposedSummary
                     summary={item.summary}
                     noteEmpty={noteEmpty}
+                    existingNote={item.notes ?? ''}
                     busy={busy}
                     onUse={() => useSummaryAsNote(item)}
                     onDismiss={() => dismissSummary(item)}
+                    metadata={{
+                      source: 'content_h2',
+                    }}
                     useA11yLabel={t(noteEmpty ? 'review.summaryUseA11y' : 'review.summaryAppendA11y', {
                       title: item.title,
                     })}

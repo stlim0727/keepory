@@ -30,13 +30,14 @@ import {
   syncStatusLabel,
   videoUnavailableLabel,
 } from '@/i18n/status';
-import { usePalette } from '@/theme';
+import { monoFont, usePalette } from '@/theme';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { CollectionPicker } from '@/ui/CollectionPicker';
 import { KeyboardAvoidingScreen } from '@/ui/KeyboardAvoidingScreen';
 import { MemoEditor, type MemoDraft } from '@/ui/MemoEditor';
 import { memoBodyFormat, notesFormat } from '@/domain/text-format';
+import { formatRelativeTime } from '@/domain/item-display';
 import type { TextFormat } from '@/domain/types';
 import { SuggestionSkeleton } from '@/ui/SuggestionSkeleton';
 import { TagField } from '@/ui/TagField';
@@ -84,6 +85,7 @@ interface BookmarkDetailScreenProps {
   onInlineClose?: () => void;
   markAccessOnMount?: boolean;
   hidePreviewHero?: boolean;
+  isSupportingPane?: boolean;
 }
 
 function useOptionalNavigation(): any {
@@ -102,6 +104,7 @@ export default function BookmarkDetailScreen({
   onInlineClose,
   markAccessOnMount = true,
   hidePreviewHero = false,
+  isSupportingPane = false,
 }: BookmarkDetailScreenProps = {}) {
   const palette = usePalette();
   const { t, formatDate } = useI18n();
@@ -1250,19 +1253,62 @@ export default function BookmarkDetailScreen({
   const content = (
     <>
       {inline && onInlineClose ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('common.close')}
-          testID="bookmark-inline-detail-close"
-          hitSlop={8}
-          onPress={onInlineClose}
-          style={({ pressed }) => [
-            styles.inlineClose,
-            { opacity: pressed ? 0.6 : 1 },
-          ]}
-        >
-          <Ionicons name="close" size={18} color={palette.textSecondary} />
-        </Pressable>
+        isSupportingPane ? (
+          <View style={styles.paneActionRow}>
+            {bookmark.url ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('common.openLink')}
+                onPress={() => {
+                  void Linking.openURL(bookmark.url!);
+                }}
+                style={({ pressed }) => paneActionChrome(palette, pressed)}
+              >
+                <Ionicons name="open-outline" size={16} color={palette.textSecondary} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('common.copyLink')}
+              onPress={handleCopyLink}
+              style={({ pressed }) => paneActionChrome(palette, pressed)}
+            >
+              <Ionicons name="copy-outline" size={16} color={palette.textSecondary} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('common.trash')}
+              onPress={handleTrash}
+              style={({ pressed }) => paneActionChrome(palette, pressed)}
+            >
+              <Ionicons name="trash-outline" size={16} color={palette.danger} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close')}
+              testID="bookmark-inline-detail-close"
+              hitSlop={8}
+              onPress={onInlineClose}
+              style={({ pressed }) => paneActionChrome(palette, pressed)}
+            >
+              <Ionicons name="close" size={16} color={palette.textSecondary} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
+            testID="bookmark-inline-detail-close"
+            hitSlop={8}
+            onPress={onInlineClose}
+            style={({ pressed }) => [
+              styles.inlineClose,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <Ionicons name="close" size={18} color={palette.textSecondary} />
+          </Pressable>
+        )
       ) : null}
       {/* Compact byline: favicon · host · status, instead of a header card. */}
       <View style={styles.byline}>
@@ -1581,9 +1627,17 @@ export default function BookmarkDetailScreen({
         <ProposedSummary
           summary={enrichment?.summary ?? ''}
           noteEmpty={notesValue.trim() === ''}
+          existingNote={notesValue}
           busy={busy}
           onUse={handleUseSummary}
           onDismiss={handleDismissSummary}
+          metadata={{
+            degraded: enrichment?.degraded,
+            model: enrichment?.model,
+            source: enrichment?.degraded ? 'domain_heuristic' : 'content_h2',
+          }}
+          tags={pending}
+          onAdoptTag={handleAcceptSuggestion}
         />
       ) : null}
 
@@ -1726,14 +1780,23 @@ export default function BookmarkDetailScreen({
         style={[
           styles.container,
           styles.inlineContainer,
+          isSupportingPane ? { borderWidth: 0, paddingHorizontal: 0, marginTop: 0 } : null,
           {
-            backgroundColor: palette.surfaceElevated,
+            backgroundColor: isSupportingPane ? 'transparent' : palette.surfaceElevated,
             borderColor: palette.border,
             paddingBottom: 16,
           },
         ]}
       >
         {content}
+        {isSupportingPane && bookmark ? (
+          <View style={[styles.supportingPaneSyncBar, { borderColor: palette.border, backgroundColor: palette.surface }]}>
+            <View style={[styles.supportingPaneSyncDot, { backgroundColor: palette.success }]} />
+            <Text style={[styles.supportingPaneSyncText, { color: palette.textSecondary }]}>
+              {`Synced to Local SQLite · ${formatRelativeTime(bookmark.updated_at)}`}
+            </Text>
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -1762,6 +1825,27 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 10,
   },
+  supportingPaneSyncBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignSelf: 'center',
+    marginTop: 16,
+  },
+  supportingPaneSyncDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  supportingPaneSyncText: {
+    fontSize: 11,
+    fontWeight: '600',
+    fontFamily: monoFont,
+  },
   inlineClose: {
     alignSelf: 'flex-end',
     width: 32,
@@ -1770,6 +1854,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: -8,
+  },
+  paneActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginBottom: 8,
+  },
+  paneActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   previewContainer: {
     position: 'relative',
@@ -1849,6 +1948,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '600',
+    fontFamily: monoFont,
   },
   titleBlock: {
     gap: 6,
@@ -1858,6 +1958,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.5,
     lineHeight: 32,
+    ...(Platform.OS === 'web' ? ({ wordBreak: 'keep-all', overflowWrap: 'break-word' } as any) : {}),
   },
   titleToggle: {
     fontSize: 14,
@@ -2079,3 +2180,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+// One chrome for the supporting pane's four square actions: tonal fill, 1px edge,
+// soft shadow, and a 1px press offset so the letterpress edge reads as giving way.
+function paneActionChrome(palette: ReturnType<typeof usePalette>, pressed: boolean) {
+  return [
+    styles.paneActionButton,
+    { backgroundColor: palette.surface, borderColor: palette.border },
+    palette.shadow.soft,
+    { transform: pressed ? [{ translateY: 1 }, { translateX: 1 }] : undefined },
+  ];
+}

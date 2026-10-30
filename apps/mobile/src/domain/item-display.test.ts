@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { displayTitle, isTitleDerived, siteLabel } from './item-display.ts';
+import { displayTitle, formatRelativeTime, isTitleDerived, siteLabel } from './item-display.ts';
 
 test('prefers a user-authored title over everything else', () => {
   assert.equal(
@@ -84,4 +84,19 @@ test('siteLabel returns an empty string when there is no url', () => {
 
 test('siteLabel treats a whitespace-only site_name as missing and falls back to hostname', () => {
   assert.equal(siteLabel({ site_name: '   ', url: 'https://www.example.com/a' }), 'example.com');
+});
+
+test('formatRelativeTime formats elapsed duration cleanly', () => {
+  const base = new Date('2026-10-25T12:00:00.000Z').getTime();
+  assert.equal(formatRelativeTime(null, base), '');
+  assert.equal(formatRelativeTime('', base), '');
+  assert.equal(formatRelativeTime('invalid-date', base), '');
+  assert.equal(formatRelativeTime('2026-10-25T11:59:30.000Z', base), 'just now');
+  assert.equal(formatRelativeTime('2026-10-25T11:45:00.000Z', base), '15m ago');
+  assert.equal(formatRelativeTime('2026-10-25T09:00:00.000Z', base), '3h ago');
+  assert.equal(formatRelativeTime('2026-10-24T12:00:00.000Z', base), 'yesterday');
+  assert.equal(formatRelativeTime('2026-10-22T12:00:00.000Z', base), '3d ago');
+  assert.equal(formatRelativeTime('2026-10-11T12:00:00.000Z', base), '2w ago');
+  assert.equal(formatRelativeTime('2026-08-25T12:00:00.000Z', base), '2mo ago');
+  assert.equal(formatRelativeTime('2024-10-25T12:00:00.000Z', base), '2y ago');
 });
