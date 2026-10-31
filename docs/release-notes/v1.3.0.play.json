@@ -1,0 +1,10 @@
+[
+  {
+    "language": "en-US",
+    "text": "• Refreshed bookmark cards, search, filters, and typography.\n• Clearer AI suggestions and easier bulk actions.\n• Fixed saving images shared from Google Photos.\n• Added a dismissible duplicate-share banner with a shortcut to the existing bookmark.\n• Improved sharing feedback and connection stability."
+  },
+  {
+    "language": "ko-KR",
+    "text": "• 북마크 카드, 검색, 필터와 글꼴을 새롭게 정리했습니다.\n• AI 추천을 검토하기 쉽게 다듬고 일괄 작업을 개선했습니다.\n• Google 포토에서 공유한 이미지가 저장되지 않던 문제를 수정했습니다.\n• 기존 북마크를 바로 열 수 있는 중복 공유 알림을 추가했습니다. 알림은 직접 닫을 수 있습니다.\n• 공유 확인 알림과 연결 안정성을 개선했습니다."
+  }
+]
