@@ -244,6 +244,10 @@ These are "do not break" rules, not just implementation notes.
 - Pending confirmation is drained by `share-confirm-handler.tsx` on cold start
   or background-to-active resume and must never navigate unless the user taps
   "View".
+- Duplicate results from both share paths also persist a dismissible ribbon
+  below the Inbox header (`share/duplicate-notice.ts`). It remains until View
+  or Close is tapped; stale dismissal must not erase a newer share. Only show
+  its View action once the current account's library contains the item.
 - A durable "last share attempt" record (`domain/share-diagnostics.ts` +
   `share/share-diagnostics.ts`, meta-store backed, hydrated at startup) is
   recorded after every share resolves — shape only (`hasUrl`/`hasText`/

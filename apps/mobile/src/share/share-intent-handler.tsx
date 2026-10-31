@@ -21,6 +21,7 @@ import { useT } from '@/i18n';
 import { recordLog } from '@/observability/log-buffer';
 import { trackBreadcrumb } from '@/observability/sentry';
 import { canDismissAfterShare, dismissAfterShare } from '@/share/dismiss';
+import { recordDuplicateShareNotice } from '@/share/duplicate-notice';
 import { recordPendingShareConfirm, takePendingShareConfirm } from '@/share/pending-confirm';
 import { recordShareAttempt, recordSharePersistence } from '@/share/share-diagnostics';
 import { getPreference } from '@/storage/preferences';
@@ -238,8 +239,11 @@ export function ShareIntentHandler() {
             capture_client_id: captureClientId,
           });
     const saved = result.status !== 'invalid';
-    // Only a genuinely new save is worth confirming on the next open; a
-    // duplicate already lived in the library and a no-link share saved nothing.
+    // A duplicate is already saved, even if its best-effort refresh is slow.
+    // Keep the result available beyond the fleeting toast, including on reopen.
+    const duplicateNotice = result.status === 'duplicate' && result.bookmark?.id
+      ? recordDuplicateShareNotice(result.bookmark.id)
+      : Promise.resolve();
     const isNewSave = result.status === 'created';
     // Durable record of this attempt's shape + outcome — survives an app
     // restart, unlike the in-memory log buffer, so a "Report a problem" filed
@@ -396,6 +400,7 @@ export function ShareIntentHandler() {
       // only in memory — keep the user in-app). Capture is sacred.
       const durable = await persisted;
       if (saved && durable !== false) {
+        await duplicateNotice;
         // Persist the "confirm on next open" record BEFORE we hand control back
         // to the other app — the same reason we awaited the durable write
         // above. `dismissAfterShare` calls `exitApp()` synchronously, so a
@@ -498,6 +503,16 @@ export function ShareIntentHandler() {
                continue;
             }
 
+            if (result.status === 'duplicate' && result.bookmark?.id) {
+              // The native receiver cannot dedupe and only confirms receipt.
+              // Surface the actual duplicate result when JS processes the file.
+              show(t('toast.duplicate'), {
+                label: t('common.view'),
+                onPress: () => router.push(`/bookmark/${result.bookmark.id}`),
+              });
+              await recordDuplicateShareNotice(result.bookmark.id);
+            }
+
             if (result.persisted) {
               const durable = await result.persisted.catch(() => false);
               recordSharePersistence(share.id, durable);
@@ -542,7 +557,7 @@ export function ShareIntentHandler() {
       clearInterval(interval);
       subscription.remove();
     };
-  }, [isLoading, addBookmark, analytics]);
+  }, [isLoading, addBookmark, analytics, show, t, router]);
 
   return null;
 }

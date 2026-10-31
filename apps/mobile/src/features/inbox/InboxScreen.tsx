@@ -122,6 +122,7 @@ import { RenameCollectionDialog } from '@/ui/RenameCollectionDialog';
 import { SearchSuggestionShelf } from '@/ui/SearchSuggestionShelf';
 import { splashCoordinator } from '@/ui/splash-coordinator';
 import { TutorialModal } from '@/ui/TutorialModal';
+import { DuplicateShareRibbon } from './DuplicateShareRibbon';
 
 
 const SUPPORTING_PANE_BREAKPOINT = 1024;
@@ -1738,6 +1739,7 @@ export default function InboxScreen() {
               : styles.collapsibleHeaderNative
           }
         >
+          <DuplicateShareRibbon getBookmark={getBookmark} ready={accountCacheReady && !isLoading} maxWidth={contentMaxWidth} />
           {loadError ? (
             <Pressable
               accessibilityRole="button"
