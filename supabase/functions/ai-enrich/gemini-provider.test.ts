@@ -169,7 +169,9 @@ test('tells the model to derive tags from non-title metadata too', async () => {
   assert.match(body, /Description: A practical guide to vector databases/);
   assert.match(body, /User notes: Compare indexing strategies/);
   assert.match(body, /Tagging guidance: derive tags from the combined metadata above, not just the title/);
+  assert.match(body, /When description or user notes are missing, extract concrete concepts from meaningful terms in the title/);
   assert.match(body, /description, user notes, site name, content type, and meaningful URL path terms are as important as the title/);
+  assert.match(body, /rely on the title as the primary signal for topical tags/);
 });
 
 test('tells the model not to reuse generic media buckets as real suggestions', async () => {
@@ -273,10 +275,16 @@ test('asks the model to answer in the user locale when one is given', async () =
   await provider.enrich(input({ locale: 'ko-KR' }));
   // The free-text fields are requested in Korean; the collection name is not
   // (it must match an existing name verbatim).
-  assert.match(calls[0].init?.body ?? '', /suggested_tags and topics in Korean/);
+  const body = calls[0].init?.body ?? '';
+  assert.match(body, /suggested_tags and topics in Korean/);
   // …and the directive is also in the system instruction, authoritatively, so
   // short keyword tags don't come back in the source content's language.
-  assert.match(calls[0].init?.body ?? '', /regardless of the language of the bookmark/);
+  assert.match(body, /regardless of the language of the bookmark/);
+  // It instructs translating when in another language, but allows direct extraction
+  // when already in Korean without the toxic "do not copy words" anti-pattern (STASH-7Z).
+  assert.match(body, /translate the concepts into Korean/);
+  assert.match(body, /extract meaningful concepts and keywords directly from it/);
+  assert.doesNotMatch(body, /do not copy words from the source language/);
 });
 
 test('defaults to English when the locale is missing or unknown', async () => {
