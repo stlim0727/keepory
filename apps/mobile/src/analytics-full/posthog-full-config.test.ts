@@ -100,7 +100,21 @@ test('buildPostHogFullInitOptions asks for conservative masking and starts opted
     maskAllImages: true,
     maskAllSandboxedViews: true,
     captureNetworkTelemetry: false,
+    captureLog: false,
+    sampleRate: 1,
   });
+});
+
+test('replay never records console output and never inherits remote sampling', () => {
+  // Both of these default to SDK-side/remote behavior when left unset:
+  // console logs can carry fetched metadata the event allowlist forbids, and
+  // remote-config sampling would let a dashboard change alter what is sent.
+  const { sessionReplayConfig } = buildPostHogFullInitOptions({
+    apiKey: 'phc_test',
+    host: 'https://eu.i.posthog.com',
+  });
+  assert.equal(sessionReplayConfig.captureLog, false);
+  assert.equal(sessionReplayConfig.sampleRate, 1);
 });
 
 test('autocapture never captures touches or raw SDK screen names', () => {

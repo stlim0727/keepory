@@ -73,6 +73,8 @@ export interface PostHogFullSessionReplayConfig {
   readonly maskAllImages: boolean;
   readonly maskAllSandboxedViews: boolean;
   readonly captureNetworkTelemetry: boolean;
+  readonly captureLog: boolean;
+  readonly sampleRate: number;
 }
 
 export interface PostHogFullInitOptions {
@@ -119,6 +121,17 @@ export function buildPostHogFullInitOptions(config: PostHogFullConfig): PostHogF
       // enough to trust, and Supabase REST URLs carry search/filter query
       // params — disable explicitly rather than risk it.
       captureNetworkTelemetry: false,
+      // Defaults to true: replay would record console output alongside the
+      // wireframe. Console lines here can contain fetched metadata (URLs,
+      // page titles) that the event allowlist never permits, and the
+      // `recordLog` buffer is written from the same code paths. Pinned off.
+      captureLog: false,
+      // Left undefined, sampling comes from PostHog's project-side remote
+      // config, so a dashboard change would silently widen or narrow what
+      // leaves the device. Pinned at full rate for the users who explicitly
+      // opted in: consent is per-user, the masking verification pass needs
+      // deterministic coverage, and lowering this is the intended scale lever.
+      sampleRate: 1,
     },
   };
 }
