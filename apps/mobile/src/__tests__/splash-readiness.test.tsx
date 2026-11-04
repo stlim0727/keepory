@@ -53,6 +53,23 @@ describe('SplashReadinessObserver', () => {
     hideSpy.mockRestore();
   });
 
+  test('dismisses splash on inbox route when startup preview is ready before store resolves', async () => {
+    const hideSpy = jest.spyOn(splashCoordinator, 'hideSplash');
+    const screen = await render(<SplashReadinessObserver />);
+
+    expect(splashCoordinator.isDismissed()).toBe(false);
+
+    // Startup preview snapshot becomes available before store resolves
+    splashCoordinator.signalInboxPreviewReady();
+
+    await waitFor(() => expect(splashCoordinator.isDismissed()).toBe(true));
+    expect(splashCoordinator.getDismissReason()).toBe('inbox_ready');
+    expect(hideSpy).toHaveBeenCalledWith('inbox_ready');
+
+    await screen.unmount();
+    hideSpy.mockRestore();
+  });
+
   test('dismisses immediately for non-inbox deep link once store is ready', async () => {
     mockPathname = '/bookmark/test-bookmark-id';
     const hideSpy = jest.spyOn(splashCoordinator, 'hideSplash');

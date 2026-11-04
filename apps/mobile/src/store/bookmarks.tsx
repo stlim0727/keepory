@@ -110,6 +110,7 @@ import {
   CACHE_OWNER_KEY,
   readCacheOwner,
   writeCacheOwner,
+  type SyncedUserRef,
 } from "@/sync/account-transition";
 import { canAutomaticallyRetry, nextAutomaticSyncRetryAt } from "@/sync/automatic-retry";
 import {
@@ -142,6 +143,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     reconciledCacheUserIdRef.current = userId;
     setReconciledCacheUserIdState(userId);
   }, []);
+  const storedCacheOwnerRef = useRef<SyncedUserRef | null>(null);
   const [accountLibraryFailureUserId, setAccountLibraryFailureUserId] = useState<string | null>(null);
   const [loadedAccountUserId, setLoadedAccountUserId] = useState<string | null>(null);
   const [accountTransfer, setAccountTransfer] = useState<{ userId: string; count: number } | null>(null);
@@ -151,7 +153,9 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     setAccountTransfer(null);
     setLoadedAccountUserId(null);
     setAccountLibraryFailureUserId(null);
-  }, [auth.userId]);
+    setReconciledCacheUserId(null);
+    storedCacheOwnerRef.current = null;
+  }, [auth.userId, setReconciledCacheUserId]);
   const hideAccountCache = auth.status === "loading" || auth.status === "error" ||
     auth.status === "session_expired" ||
     ((auth.status === "authenticated" || auth.status === "anonymous") &&
@@ -172,6 +176,50 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     authRef.current = auth;
   }, [auth]);
+
+  // Fast-path local cache reconciliation: if the database cache owner matches
+  // the authenticated/anonymous session from cold start, unmask local items
+  // immediately without waiting for the background sync coordinator.
+  const onHydratedCacheOwner = useCallback((owner: SyncedUserRef | null) => {
+    storedCacheOwnerRef.current = owner;
+    const currentAuth = authRef.current;
+    if (
+      owner &&
+      currentAuth.userId === owner.id &&
+      (currentAuth.status === "authenticated" || currentAuth.status === "anonymous") &&
+      owner.isAnonymous === (currentAuth.session?.user.is_anonymous !== false)
+    ) {
+      setReconciledCacheUserId(owner.id);
+    }
+  }, [setReconciledCacheUserId]);
+
+  useEffect(() => {
+    if (!auth.userId || reconciledCacheUserId === auth.userId) return;
+    if (auth.status !== "authenticated" && auth.status !== "anonymous") return;
+    const owner = storedCacheOwnerRef.current;
+    if (
+      owner &&
+      owner.id === auth.userId &&
+      owner.isAnonymous === (auth.session?.user.is_anonymous !== false)
+    ) {
+      setReconciledCacheUserId(auth.userId);
+      return;
+    }
+    let active = true;
+    void ensureRepositoryReady().then(async () => {
+      const liveOwner = await readCacheOwner(repository).catch(() => null);
+      if (!active) return;
+      storedCacheOwnerRef.current = liveOwner;
+      if (
+        liveOwner &&
+        liveOwner.id === auth.userId &&
+        liveOwner.isAnonymous === (auth.session?.user.is_anonymous !== false)
+      ) {
+        setReconciledCacheUserId(auth.userId);
+      }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [auth.userId, auth.status, auth.session, reconciledCacheUserId, setReconciledCacheUserId]);
   const broadcastSyncNudgeRef = useRef<(() => void) | null>(null);
   const syncPendingRef = useRef(false);
   const syncPendingForceRef = useRef(false);
@@ -1164,6 +1212,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     setTagData,
     setLastPulledAt,
     setLoadError,
+    onHydratedCacheOwner,
   });
 
   // Cost probe for the React work this provider drives: render → commit →

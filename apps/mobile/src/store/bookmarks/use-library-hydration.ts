@@ -35,6 +35,10 @@ import {
   LAST_PULLED_AT_KEY
 } from "@/sync/pull-bookmarks";
 import {
+  readCacheOwner,
+  type SyncedUserRef
+} from "@/sync/account-transition";
+import {
   reconcileOrphanedQueueEntries
 } from "@/sync/sync-bookmarks";
 import type { Dispatch, RefObject, SetStateAction } from 'react';
@@ -67,6 +71,7 @@ interface Dependencies {
   setTagData: Dispatch<SetStateAction<TagData>>;
   setLastPulledAt: Dispatch<SetStateAction<string | null>>;
   setLoadError: Dispatch<SetStateAction<boolean>>;
+  onHydratedCacheOwner?: (owner: SyncedUserRef | null) => void;
 }
 
 export function useLibraryHydration({
@@ -94,6 +99,7 @@ export function useLibraryHydration({
   setTagData,
   setLastPulledAt,
   setLoadError,
+  onHydratedCacheOwner,
 }: Dependencies) {
 
   useEffect(() => {
@@ -177,12 +183,14 @@ export function useLibraryHydration({
             storedEnrichments,
             storedTagData,
             metaMap,
+            storedCacheOwner,
           ] = await Promise.all([
             repository.listBookmarks(),
             repository.listQueue(),
             repository.listEnrichments(),
             repository.listTagData(),
             readAllMeta(),
+            readCacheOwner(repository).catch(() => null),
           ]);
 
           const storedPulledAt = metaMap[LAST_PULLED_AT_KEY] ?? null;
@@ -351,6 +359,10 @@ export function useLibraryHydration({
             const initialQueue = storedQueue;
             if (repairedCount > 0) {
               recordLog('warn', `sync: self-healed ${repairedCount} stalled collection RLS queue entries`);
+            }
+
+            if (onHydratedCacheOwner) {
+              onHydratedCacheOwner(storedCacheOwner);
             }
 
             // Merge instead of replace: saves made while loading must survive.
