@@ -57,6 +57,23 @@ export async function writeCacheOwner(repository: BookmarkRepository, owner: Syn
   await repository.setMeta(CACHE_OWNER_KEY, JSON.stringify(owner));
 }
 
+/** Supabase omits `is_anonymous` for real users; anything not exactly false is treated as anonymous. */
+export function isSessionAnonymous(sessionUser: { is_anonymous?: boolean } | null | undefined): boolean {
+  return sessionUser?.is_anonymous !== false;
+}
+
+/**
+ * Single source of truth for "the durable cache belongs to this session".
+ * The fast-path unmask in the provider and the coordinator's reconciliation
+ * check must use the identical predicate so they can never diverge.
+ */
+export function cacheOwnerMatchesUser(
+  owner: SyncedUserRef | null,
+  user: SyncedUserRef,
+): boolean {
+  return owner !== null && owner.id === user.id && owner.isAnonymous === user.isAnonymous;
+}
+
 export type AccountTransitionKind = 'first' | 'none' | 'carry-over' | 'switch' | 'logout';
 
 export interface AccountTransitionPlan {

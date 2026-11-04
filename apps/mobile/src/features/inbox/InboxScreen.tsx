@@ -690,12 +690,21 @@ export default function InboxScreen() {
   // Signal to the startup splash coordinator that the Inbox list layout and
   // its restored view preferences have committed, allowing the native splash
   // screen to dismiss smoothly without exposing an unhydrated loading state
-  // or layout jump.
+  // or layout jump. Holds splash until local account cache rows are unmasked
+  // (accountCacheReady) unless auth is terminal/signed-out, so users never
+  // see a brief empty main area on cold start.
   useEffect(() => {
-    if ((viewOptionsReady && !isLoading) || loadError) {
+    const accountReadyOrTerminal =
+      accountCacheReady ||
+      auth.status === 'session_expired' ||
+      auth.status === 'error' ||
+      auth.status === 'signed_out' ||
+      auth.status === 'not_configured';
+
+    if ((viewOptionsReady && !isLoading && accountReadyOrTerminal) || loadError) {
       splashCoordinator.signalInboxReady();
     }
-  }, [viewOptionsReady, isLoading, loadError]);
+  }, [viewOptionsReady, isLoading, accountCacheReady, auth.status, loadError]);
   useEffect(() => {
     if (!sortLoaded.current) {
       return;
