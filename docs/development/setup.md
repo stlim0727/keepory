@@ -113,6 +113,43 @@ pnpm sentry:issue STASH-22 --resolve
 It reads `SENTRY_AUTH_TOKEN` plus optional `SENTRY_ORG` / `SENTRY_PROJECT` from
 the shell, `.env.local`, or the file pointed to by `SENTRY_ENV_FILE`.
 
+## Product analytics — PostHog project identity
+
+Keepory telemetry belongs to the `Keepory org` PostHog organization, project
+`333812` (`api_host: https://eu.i.posthog.com`). The personal `Self Hog`
+organization and its project `230163` serve a different app; never point a
+Keepory build at it.
+
+- **Region is a hard requirement, not a preference.** `approvedOrigin` in
+  `apps/mobile/src/analytics/posthog.ts` and `isApprovedPostHogHost` in
+  `analytics-full/posthog-full-config.ts` accept only the exact EU origin. A
+  US-cloud project compiles, reports itself as configured in Settings, and
+  then drops every event.
+- **Nothing has been provisioned yet** as of 2026-11-04: `EXPO_PUBLIC_POSTHOG_*`
+  are absent from GitHub Actions secrets (so `android-apk.yml` substitutes
+  empty strings), and the EAS `production` environment variables are
+  unverified. Project `333812` has ingested no Keepory event.
+- **`ads-master-enabled` does not exist yet** in any project.
+  `reloadBooleanFlag` can therefore only ever return `false`, so the ad
+  experiment stays control/off until the flag is created here (boolean, off,
+  0% rollout, fallback `false`).
+- **Free-plan limits block the monetization baseline.** The plan allows one
+  project per organization, ~1 month of event retention, and 30 days of
+  recording retention. Roadmap issues #549 and #553 require exact D1/D7/D30
+  cohorts, which are
+  unreadable once the cohort matures — settle the plan (or a scheduled export)
+  before starting that phase.
+- **Dev and production builds share this project** and the payload carries no
+  environment marker (only `platform`, `screen`, `auth_state`). The default
+  person-based test-account filter never matches Keepory events because the
+  transport sends `$process_person_profile: false`; exclude test data by the
+  `ka_` distinct-id prefix instead.
+
+End-to-end check (also completes PostHog's `ingest_first_event` onboarding
+task): put the project's `phc_` key and the EU host in `apps/mobile/.env.local`,
+`pnpm dev`, and turn on the Settings analytics toggle — `app_open` and
+`screen_viewed` should appear in Live activity within seconds.
+
 ## Product analytics — full PostHog SDK (session replay, flags, surveys)
 
 This is a **trial running alongside Sentry, not a replacement for it** —
@@ -146,12 +183,19 @@ both Settings toggles.
 reading the code.** Bookmark titles, URLs, tags, notes, and images are
 exactly the content class session replay could otherwise expose, so
 `buildPostHogFullInitOptions` in `posthog-full-config.ts` pins conservative
-`sessionReplayConfig` masking explicitly rather than trusting SDK defaults.
+`sessionReplayConfig` masking explicitly rather than trusting SDK defaults —
+`maskAllTextInputs`, `maskAllImages`, `maskAllSandboxedViews` on,
+`captureNetworkTelemetry` and `captureLog` off (console-log recording defaults
+to on in the SDK and would carry fetched metadata the event allowlist forbids).
+`sampleRate` is pinned locally too: left undefined it comes from project-side
+remote config, so a dashboard change could silently widen what leaves the
+device.
 Before enabling the build-time gate on any channel real users can reach
 (including internal/beta), do a manual pass: build with the gate and both
 toggles on, seed realistic bookmark content, navigate through Inbox/Library/
 bookmark detail/search, then inspect the resulting recording in the PostHog
-dashboard for any unmasked title/URL/tag/note/image content.
+dashboard for any unmasked title/URL/tag/note/image content. Project `333812`
+must keep `session_replay_opt_in` off until that pass is recorded as done.
 
 Consent durability has the same ceiling as the base analytics client's own
 `writeVerifiedState` (3 retries with a read-back verify, then give up —
