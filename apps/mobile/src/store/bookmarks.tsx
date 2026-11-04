@@ -108,6 +108,8 @@ import {
   planAccountTransition,
   planLogoutCacheClear,
   CACHE_OWNER_KEY,
+  cacheOwnerMatchesUser,
+  isSessionAnonymous,
   readCacheOwner,
   writeCacheOwner,
   type SyncedUserRef,
@@ -144,6 +146,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     setReconciledCacheUserIdState(userId);
   }, []);
   const storedCacheOwnerRef = useRef<SyncedUserRef | null>(null);
+  const cacheOwnerReadRef = useRef<Promise<SyncedUserRef | null> | null>(null);
   const [accountLibraryFailureUserId, setAccountLibraryFailureUserId] = useState<string | null>(null);
   const [loadedAccountUserId, setLoadedAccountUserId] = useState<string | null>(null);
   const [accountTransfer, setAccountTransfer] = useState<{ userId: string; count: number } | null>(null);
@@ -155,6 +158,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     setAccountLibraryFailureUserId(null);
     setReconciledCacheUserId(null);
     storedCacheOwnerRef.current = null;
+    cacheOwnerReadRef.current = null;
   }, [auth.userId, setReconciledCacheUserId]);
   const hideAccountCache = auth.status === "loading" || auth.status === "error" ||
     auth.status === "session_expired" ||
@@ -180,46 +184,71 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
   // Fast-path local cache reconciliation: if the database cache owner matches
   // the authenticated/anonymous session from cold start, unmask local items
   // immediately without waiting for the background sync coordinator.
+  // One shared durable read per mount — hydration and the effect below await
+  // the same promise instead of each issuing their own SQLite meta query.
+  const readStoredCacheOwner = useCallback((): Promise<SyncedUserRef | null> => {
+    if (!cacheOwnerReadRef.current) {
+      cacheOwnerReadRef.current = ensureRepositoryReady()
+        .then(() => readCacheOwner(repository))
+        .then((owner) => {
+          storedCacheOwnerRef.current = owner;
+          return owner;
+        })
+        .catch((error) => {
+          // Fail closed: a corrupt or unavailable ownership marker keeps the
+          // cache masked; the coordinator's reconcile surfaces it properly.
+          // Drop the cached rejection so the next reader retries.
+          cacheOwnerReadRef.current = null;
+          recordLog('warn', `sync: cache ownership read failed: ${String(error)}`);
+          return null;
+        });
+    }
+    return cacheOwnerReadRef.current;
+  }, []);
+
   const onHydratedCacheOwner = useCallback((owner: SyncedUserRef | null) => {
     storedCacheOwnerRef.current = owner;
     const currentAuth = authRef.current;
     if (
-      owner &&
-      currentAuth.userId === owner.id &&
+      currentAuth.userId &&
       (currentAuth.status === "authenticated" || currentAuth.status === "anonymous") &&
-      owner.isAnonymous === (currentAuth.session?.user.is_anonymous !== false)
+      cacheOwnerMatchesUser(owner, {
+        id: currentAuth.userId,
+        isAnonymous: isSessionAnonymous(currentAuth.session?.user),
+      })
     ) {
-      setReconciledCacheUserId(owner.id);
+      setReconciledCacheUserId(currentAuth.userId);
     }
   }, [setReconciledCacheUserId]);
 
   useEffect(() => {
     if (!auth.userId || reconciledCacheUserId === auth.userId) return;
     if (auth.status !== "authenticated" && auth.status !== "anonymous") return;
-    const owner = storedCacheOwnerRef.current;
-    if (
-      owner &&
-      owner.id === auth.userId &&
-      owner.isAnonymous === (auth.session?.user.is_anonymous !== false)
-    ) {
+    if (cacheOwnerMatchesUser(storedCacheOwnerRef.current, {
+      id: auth.userId,
+      isAnonymous: isSessionAnonymous(auth.session?.user),
+    })) {
       setReconciledCacheUserId(auth.userId);
       return;
     }
     let active = true;
-    void ensureRepositoryReady().then(async () => {
-      const liveOwner = await readCacheOwner(repository).catch(() => null);
-      if (!active) return;
-      storedCacheOwnerRef.current = liveOwner;
+    void readStoredCacheOwner().then((owner) => {
+      if (!active || !owner) return;
+      // Read live auth: the session may have changed while the read was in flight.
+      const currentAuth = authRef.current;
       if (
-        liveOwner &&
-        liveOwner.id === auth.userId &&
-        liveOwner.isAnonymous === (auth.session?.user.is_anonymous !== false)
+        currentAuth.userId &&
+        (currentAuth.status === "authenticated" || currentAuth.status === "anonymous") &&
+        cacheOwnerMatchesUser(owner, {
+          id: currentAuth.userId,
+          isAnonymous: isSessionAnonymous(currentAuth.session?.user),
+        })
       ) {
-        setReconciledCacheUserId(auth.userId);
+        setReconciledCacheUserId(currentAuth.userId);
       }
-    }).catch(() => {});
+    });
     return () => { active = false; };
-  }, [auth.userId, auth.status, auth.session, reconciledCacheUserId, setReconciledCacheUserId]);
+  }, [auth.userId, auth.status, auth.session, reconciledCacheUserId, readStoredCacheOwner, setReconciledCacheUserId]);
   const broadcastSyncNudgeRef = useRef<(() => void) | null>(null);
   const syncPendingRef = useRef(false);
   const syncPendingForceRef = useRef(false);
@@ -1212,6 +1241,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     setTagData,
     setLastPulledAt,
     setLoadError,
+    readStoredCacheOwner,
     onHydratedCacheOwner,
   });
 

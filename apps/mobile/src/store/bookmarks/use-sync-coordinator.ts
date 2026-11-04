@@ -53,7 +53,10 @@ import { trackSyncStatus } from "@/supabase/sync-status-tracker";
 import type { SupabaseAuthSession } from "@/supabase/types";
 import {
   applyAccountTransition,
+  cacheOwnerMatchesUser,
+  isSessionAnonymous,
   readCacheOwner,
+  type SyncedUserRef,
 } from "@/sync/account-transition";
 import { canAutomaticallyRetry, isPullReady } from "@/sync/automatic-retry";
 import {
@@ -265,14 +268,18 @@ export function useSyncCoordinator({
         // reconcile itself, which is rare (self-terminates after one run) and
         // does write local state.
         const sessionUser = auth.session.user;
+        const sessionRef: SyncedUserRef = {
+          id: sessionUser.id,
+          isAnonymous: isSessionAnonymous(sessionUser),
+        };
         try {
           await ensureRepositoryReady();
           await awaitAiSuggestionsLocalReady();
           const owner = await readCacheOwner(repository);
-          if (owner?.id !== sessionUser.id || owner.isAnonymous !== (sessionUser.is_anonymous !== false)) {
+          if (!cacheOwnerMatchesUser(owner, sessionRef)) {
             syncInFlight.current = true;
             try {
-              await reconcileAccountTransition({ id: sessionUser.id, isAnonymous: sessionUser.is_anonymous !== false });
+              await reconcileAccountTransition(sessionRef);
             } finally {
               syncInFlight.current = false;
             }
@@ -307,7 +314,7 @@ export function useSyncCoordinator({
         const session = restoredSession ?? auth.session;
         const currentUser = {
           id: session.user.id,
-          isAnonymous: session.user.is_anonymous !== false,
+          isAnonymous: isSessionAnonymous(session.user),
         };
 
         // Account ownership must be reconciled before selecting upload work.

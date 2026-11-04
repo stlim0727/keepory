@@ -1,6 +1,6 @@
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
-import { FlatList, LayoutAnimation, Linking, Platform, Share, StyleSheet } from 'react-native';
+import { FlatList, LayoutAnimation, Linking, Platform, Share, StyleSheet, Text } from 'react-native';
 
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaProvider: ({ children }: { children: ReactNode }) => children,
@@ -114,11 +114,14 @@ jest.mock('expo-router', () => {
 });
 
 import InboxScreen from '@/app/index';
+import { useSupabaseAuth } from '@/supabase/auth-provider';
 import { BookmarksProvider, useBookmarks } from '@/store/bookmarks';
 import { CaptureToastProvider } from '@/ui/capture-toast';
 import { resetPreviewImageFailuresForTest } from '@/domain/preview-image-cache';
 import { notifyDetailMounted } from '@/domain/detail-navigation-signal';
 import { INBOX_VIEW_PREF_KEY } from '@/domain/view-mode';
+import { CACHE_OWNER_KEY } from '@/sync/account-transition';
+import { splashCoordinator } from '@/ui/splash-coordinator';
 import type { Collection, Tag } from '@/domain/types';
 import type { FakeRepositoryModule } from './helpers/fake-repository';
 import { makeEnrichment, makeStoredBookmark } from './helpers/fake-repository';
@@ -2904,4 +2907,84 @@ test('STASH-7D: folder counts follow the selected tag, search, and clearing the 
     expectCount('__folder-c:col-recipes', '1 item');
     expectCount('__folder-c:col-empty', '0 items');
   });
+});
+
+test('holds the splash release while the account cache is masked and fires once auth is terminal', async () => {
+  function ProbeSplashState() {
+    const store = useBookmarks();
+    const authProbe = useSupabaseAuth();
+    return <Text testID="splash-probe">{`${authProbe.status}|${store.isLoading}|${store.accountCacheReady}|${store.loadError}`}</Text>;
+  }
+  const readySpy = jest.spyOn(splashCoordinator, 'signalInboxReady').mockImplementation(() => {});
+  try {
+    fakeRepo.__reset([
+      makeStoredBookmark({
+        id: '7e64cf1e-0000-4000-8000-00000000000d',
+        title: 'Masked capture',
+        url: 'https://example.com/masked',
+        url_hash: 'https://example.com/masked',
+      }),
+    ]);
+    fakeRepo.__setMeta(INBOX_VIEW_PREF_KEY, 'card');
+    // Auth still settling with no session: rows hydrate but account-owned
+    // cache stays masked, so the splash must not be released onto an empty list.
+    mockAuthStatus = 'loading';
+    mockAuthSession = null;
+    const makeTree = () => (
+      <BookmarksProvider>
+        <CaptureToastProvider>
+          <InboxScreen />
+          <ProbeSplashState />
+        </CaptureToastProvider>
+      </BookmarksProvider>
+    );
+    const screen = await render(makeTree());
+
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    // Store settled (isLoading false) with the cache still masked, no load error.
+    expect(screen.getByTestId('splash-probe').props.children).toBe('loading|false|false|false');
+    expect(screen.queryByText('Masked capture')).toBeNull();
+    expect(readySpy).not.toHaveBeenCalled();
+
+    // A terminal auth status releases the splash even while masked so the
+    // user always reaches the in-app recovery state.
+    mockAuthStatus = 'session_expired';
+    await act(async () => { screen.rerender(makeTree()); });
+    await waitFor(() => expect(readySpy).toHaveBeenCalled());
+  } finally {
+    readySpy.mockRestore();
+  }
+});
+
+test('releases the splash once the cold-start fast path unmasks the matching local cache', async () => {
+  const readySpy = jest.spyOn(splashCoordinator, 'signalInboxReady').mockImplementation(() => {});
+  try {
+    fakeRepo.__reset([
+      makeStoredBookmark({
+        id: '7e64cf1e-0000-4000-8000-00000000000e',
+        title: 'Unmasked capture',
+        url: 'https://example.com/unmasked',
+        url_hash: 'https://example.com/unmasked',
+      }),
+    ]);
+    fakeRepo.__setMeta(INBOX_VIEW_PREF_KEY, 'card');
+    fakeRepo.__setMeta(
+      CACHE_OWNER_KEY,
+      JSON.stringify({ id: 'user-test', isAnonymous: true }),
+    );
+    mockAuthSession = mockAuthSessionValue;
+    mockAuthStatus = 'authenticated';
+
+    await render(
+      <BookmarksProvider>
+        <CaptureToastProvider>
+          <InboxScreen />
+        </CaptureToastProvider>
+      </BookmarksProvider>,
+    );
+
+    await waitFor(() => expect(readySpy).toHaveBeenCalled());
+  } finally {
+    readySpy.mockRestore();
+  }
 });
