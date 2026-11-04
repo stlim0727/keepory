@@ -29,7 +29,7 @@
     "expo-splash-screen": "~58.0.7",
     "expo-sqlite": "~58.0.11",
     "expo-status-bar": "~58.0.3",
-    "expo-system-ui": "~58.0.5",
+    "expo-system-ui": "~58.0.7",
     "expo-web-browser": "~58.0.6",
     "html2canvas": "^1.4.1",
     "html2canvas-pro": "^2.5.2",
