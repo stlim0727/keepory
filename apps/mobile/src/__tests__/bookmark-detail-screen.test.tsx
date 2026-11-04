@@ -1865,3 +1865,48 @@ test.each([false, true])('failed metadata offers one refresh action with hidden 
   expect(screen.getAllByLabelText('Refresh preview')).toHaveLength(1);
   expect(Boolean(screen.queryByTestId('detail-drawer-refresh-preview'))).toBe(hidePreviewHero);
 });
+
+test('image bookmark provides open photo button and preview tap opens full-screen viewer', async () => {
+  mockRouteId = 'image-bookmark-open';
+  fakeRepo.__reset([
+    makeStoredBookmark({
+      id: mockRouteId,
+      title: 'Captured photo',
+      url: null,
+      content_type: 'image',
+      local_image_uri: 'file:///captured-photo.jpg',
+      preview_image_url: 'https://example.com/captured-photo.jpg',
+    }),
+  ]);
+
+  const screen = await renderDetail();
+  await waitFor(() => expect(screen.getByText('Captured photo')).toBeTruthy());
+
+  // Has primary "Open photo" button and "Share"
+  const openPhotoButton = screen.getByTestId('detail-open-image');
+  expect(openPhotoButton).toBeTruthy();
+  expect(screen.getAllByText('Open photo').length).toBeGreaterThanOrEqual(2);
+  expect(screen.queryByTestId('detail-open-website')).toBeNull();
+  expect(screen.getByTestId('detail-share')).toBeTruthy();
+  expect(screen.getByTestId('detail-copy-link')).toBeTruthy();
+
+  // Preview image is pressable with Open photo accessibility label and ribbon
+  const previewPressable = screen.getByTestId('bookmark-detail-preview-pressable');
+  expect(previewPressable.props.accessibilityLabel).toBe('Open photo');
+
+  // Full-screen viewer modal is initially not open
+  expect(screen.queryByTestId('bookmark-detail-image-viewer')).toBeNull();
+
+  // Tapping the "Open photo" button opens the full-screen image viewer
+  await fireEvent.press(openPhotoButton);
+  expect(screen.getByTestId('bookmark-detail-image-viewer')).toBeTruthy();
+  expect(screen.getByTestId('bookmark-detail-viewer-image')).toBeTruthy();
+
+  // Closing the viewer
+  await fireEvent.press(screen.getByTestId('bookmark-detail-viewer-close'));
+  expect(screen.queryByTestId('bookmark-detail-image-viewer')).toBeNull();
+
+  // Tapping the preview image directly also opens the full-screen image viewer
+  await fireEvent.press(previewPressable);
+  expect(screen.getByTestId('bookmark-detail-image-viewer')).toBeTruthy();
+});

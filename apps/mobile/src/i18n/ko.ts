@@ -327,6 +327,8 @@ export const ko: Catalog = {
   'add.urlPlaceholder': 'https://',
   'add.details': '세부 정보 추가',
   'detail.openWebsite': '웹사이트 열기',
+  'detail.openImage': '사진 열기',
+  'detail.imageViewerDismiss': '사진 뷰어 닫기',
   'add.modeLink': '링크',
   'add.modeMemo': '메모',
   'add.modeLinkA11y': '링크 북마크 추가',

@@ -2,6 +2,7 @@ import { isPublicPreviewUrl } from '@/domain/preview-network';
 import { ProtectedImage } from '@/ui/ProtectedImage';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -34,6 +35,7 @@ import { monoFont, usePalette } from '@/theme';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { CollectionPicker } from '@/ui/CollectionPicker';
+import { ImageViewerModal } from '@/ui/ImageViewerModal';
 import { KeyboardAvoidingScreen } from '@/ui/KeyboardAvoidingScreen';
 import { MemoEditor, type MemoDraft } from '@/ui/MemoEditor';
 import { memoBodyFormat, notesFormat } from '@/domain/text-format';
@@ -113,42 +115,16 @@ export default function BookmarkDetailScreen({
   const { show: showToast } = useCaptureToast();
   const { id: routeId } = useLocalSearchParams<{ id: string }>();
   const {
-    getBookmark,
-    queue,
-    getTagsForBookmark,
-    getCollection,
-    getEnrichment,
-    getBookmarkProcessing,
-    trashBookmark,
-    restoreBookmark,
-    updateBookmarkFields,
-    markBookmarkAccessed,
-    checkVideoAvailability,
-    deleteBookmark,
-    collections,
-    addTagsToBookmark,
-    removeTagFromBookmark,
-    requestAiEnrichment,
-    refreshBookmarkPreview,
-    isRefreshingPreview,
-    isEnriching,
-    isManuallyEnriching,
-    isAiSuggestionPostponed,
-    isAiSuggestionServerQueued,
-    hadPriorEnrichmentAttempt,
-    acceptSuggestedTags,
-    getReviewedSuggestions,
-    markSuggestionsReviewed,
-    clearReviewedSuggestions,
-    getDismissedFolderSuggestions,
-    dismissFolderSuggestion,
-    clearDismissedFolderSuggestions,
-    getReviewedSummary,
-    markSummaryReviewed,
-    clearReviewedSummary,
-    markSuggestionsSeen,
-    assignCollection,
-    createCollection,
+    getBookmark, queue, getTagsForBookmark, getCollection, getEnrichment,
+    getBookmarkProcessing, trashBookmark, restoreBookmark, updateBookmarkFields,
+    markBookmarkAccessed, checkVideoAvailability, deleteBookmark, collections,
+    addTagsToBookmark, removeTagFromBookmark, requestAiEnrichment,
+    refreshBookmarkPreview, isRefreshingPreview, isEnriching, isManuallyEnriching,
+    isAiSuggestionPostponed, isAiSuggestionServerQueued, hadPriorEnrichmentAttempt,
+    acceptSuggestedTags, getReviewedSuggestions, markSuggestionsReviewed,
+    clearReviewedSuggestions, getDismissedFolderSuggestions, dismissFolderSuggestion,
+    clearDismissedFolderSuggestions, getReviewedSummary, markSummaryReviewed,
+    clearReviewedSummary, markSuggestionsSeen, assignCollection, createCollection,
   } = useBookmarks();
 
   const [organizeError, setOrganizeError] = useState<string | null>(null);
@@ -159,6 +135,8 @@ export default function BookmarkDetailScreen({
   const [draftTitle, setDraftTitle] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState<MemoDraft | null>(null);
   const [draftDescription, setDraftDescription] = useState<MemoDraft | null>(null);
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   // Long titles (e.g. a full Instagram caption pasted as the title) are
@@ -652,59 +630,26 @@ export default function BookmarkDetailScreen({
     } : null,
     { label: t('detail.rowSyncMirror'), value: bookmark.sync_status },
     processing ? { label: t('detail.rowSyncedOnce'), value: yesNo(processing.sync.everSynced) } : null,
-    processing ? {
-      label: t('detail.rowSyncService'),
-      value: `${processing.sync.authStatus} · ${t(processing.sync.paused ? 'detail.syncBlocker.paused' : processing.sync.serviceRunning ? 'detail.serviceRunning' : 'detail.serviceIdle')}`,
-    } : null,
-    processing ? {
-      label: t('detail.rowSyncQueue'),
-      value: processing.sync.queue ? `${processing.sync.queue.operation} / ${processing.sync.queue.status}` : none,
-    } : null,
+    processing ? { label: t('detail.rowSyncService'), value: `${processing.sync.authStatus} · ${t(processing.sync.paused ? 'detail.syncBlocker.paused' : processing.sync.serviceRunning ? 'detail.serviceRunning' : 'detail.serviceIdle')}` } : null,
+    processing ? { label: t('detail.rowSyncQueue'), value: processing.sync.queue ? `${processing.sync.queue.operation} / ${processing.sync.queue.status}` : none } : null,
     processing?.sync.queue ? { label: t('detail.rowUploadFields'), value: processing.sync.queue.uploadFields.join(', ') || none } : null,
-    processing?.sync.queue ? {
-      label: t('detail.rowSyncChanges'),
-      value: processing.sync.queue.changes.map((change) =>
-        `${t(`detail.changeSource.${change.source}`)}${change.fields.length ? ` · ${change.fields.map((field) => fieldLabels[field] ?? field).join(', ')}` : ''} · ${formatDate(change.at)}`,
-      ).join('\n'),
-    } : null,
-    processing ? {
-      label: t('detail.rowTagSync'),
-      value: t('detail.tagSyncState', {
-        pending: processing.organization.tagUploads.filter((op) => !op.confirmed).length,
-        ai: processing.organization.tagUploads.filter((op) => !op.confirmed && op.source === 'ai').length,
-        confirmed: processing.organization.tagUploads.filter((op) => op.confirmed).length,
-      }),
-    } : null,
+    processing?.sync.queue ? { label: t('detail.rowSyncChanges'), value: processing.sync.queue.changes.map((change) => `${t(`detail.changeSource.${change.source}`)}${change.fields.length ? ` · ${change.fields.map((field) => fieldLabels[field] ?? field).join(', ')}` : ''} · ${formatDate(change.at)}`).join('\n') } : null,
+    processing ? { label: t('detail.rowTagSync'), value: t('detail.tagSyncState', { pending: processing.organization.tagUploads.filter((op) => !op.confirmed).length, ai: processing.organization.tagUploads.filter((op) => !op.confirmed && op.source === 'ai').length, confirmed: processing.organization.tagUploads.filter((op) => op.confirmed).length }) } : null,
     processing?.organization.importFolderPending ? { label: t('detail.rowImportFolder'), value: t('detail.syncPhase.queued') } : null,
     processing?.sync.queue ? { label: t('detail.rowRetries'), value: String(processing.sync.queue.retries) } : null,
     processing?.sync.queue?.lastAttemptAt ? { label: t('detail.rowLastAttempt'), value: formatDate(processing.sync.queue.lastAttemptAt) } : null,
     processing?.sync.queue?.retryEligibleAt ? { label: t('detail.rowRetryEligible'), value: formatDate(processing.sync.queue.retryEligibleAt) } : null,
-    syncQueueEntry?.last_error ? {
-      label: t('detail.rowSyncError'), value: `${syncQueueEntry.last_error_kind ?? 'unknown'}: ${syncQueueEntry.last_error}`,
-    } : null,
+    syncQueueEntry?.last_error ? { label: t('detail.rowSyncError'), value: `${syncQueueEntry.last_error_kind ?? 'unknown'}: ${syncQueueEntry.last_error}` } : null,
     processing ? { label: t('detail.rowLastPull'), value: processing.sync.lastPulledAt ? formatDate(processing.sync.lastPulledAt) : none } : null,
     { label: t('detail.rowTitleDerived'), value: yesNo(bookmark.title_is_derived === true) },
     processing ? { label: t('detail.rowAiWork'), value: aiMarkers || none } : null,
     processing ? { label: t('detail.rowAiMode'), value: processing.ai.mode } : null,
     processing?.ai.retry ? { label: t('detail.rowAiRetry'), value: `${processing.ai.retry.attempts} · ${processing.ai.retry.eligibleAt ? formatDate(processing.ai.retry.eligibleAt) : t('detail.serverUnknown')}` } : null,
     processing?.ai.quota ? { label: t('detail.rowAiQuota'), value: `${processing.ai.quota.reason} · ${formatDate(new Date(processing.ai.quota.retryAt).toISOString())}` } : null,
-    processing ? {
-      label: t('detail.rowAiServer'),
-      value: processing.ai.serverQueue ? `${processing.ai.serverQueue.status} · ${formatDate(processing.ai.serverQueue.updated_at)}`
-        : t(processing.ai.serverQueueObserved ? 'detail.serverNoActiveJob' : 'detail.serverUnknown'),
-    } : null,
-    processing ? {
-      label: t('detail.rowAiResult'),
-      value: processing.ai.result ? `${processing.ai.result.status} · ${processing.ai.result.model ?? 'unknown'} · ${t('detail.confidence')}: ${processing.ai.result.confidence ?? 'unknown'}` : none,
-    } : null,
+    processing ? { label: t('detail.rowAiServer'), value: processing.ai.serverQueue ? `${processing.ai.serverQueue.status} · ${formatDate(processing.ai.serverQueue.updated_at)}` : t(processing.ai.serverQueueObserved ? 'detail.serverNoActiveJob' : 'detail.serverUnknown') } : null,
+    processing ? { label: t('detail.rowAiResult'), value: processing.ai.result ? `${processing.ai.result.status} · ${processing.ai.result.model ?? 'unknown'} · ${t('detail.confidence')}: ${processing.ai.result.confidence ?? 'unknown'}` : none } : null,
     { label: t('detail.rowAiChannel'), value: t('detail.aiChannelHelp') },
-    processing?.ai.result ? {
-      label: t('detail.rowAiContent'),
-      value: t('detail.aiContentState', {
-        summary: yesNo(processing.ai.result.hasSummary), tags: processing.ai.result.suggestedTagCount,
-        folder: yesNo(processing.ai.result.hasFolderSuggestion),
-      }),
-    } : null,
+    processing?.ai.result ? { label: t('detail.rowAiContent'), value: t('detail.aiContentState', { summary: yesNo(processing.ai.result.hasSummary), tags: processing.ai.result.suggestedTagCount, folder: yesNo(processing.ai.result.hasFolderSuggestion) }) } : null,
     processing?.ai.result ? { label: t('detail.rowAiUpdated'), value: formatDate(processing.ai.result.updatedAt) } : null,
     processing?.ai.result?.degradedReason ? { label: t('detail.rowAiDegraded'), value: processing.ai.result.degradedReason } : null,
   ].filter((row): row is { label: string; value: string } => row !== null);
@@ -725,21 +670,56 @@ export default function BookmarkDetailScreen({
   const host = hostFromUrl(bookmark.url);
 
   const handleShare = () => {
-    const message = bookmark.url ?? (isTextMemo ? memoValue : null);
-    if (!message) {
+    if (bookmark.url) {
+      void Share.share({
+        message: bookmark.url,
+        url: bookmark.url,
+        title: bookmark.title ?? undefined,
+      }).catch(() => {
+        setOrganizeError(t('detail.errorShare'));
+      });
       return;
     }
-    void Share.share(
-      bookmark.url
-        ? { message, url: bookmark.url, title: bookmark.title ?? undefined }
-        : { message, title: bookmark.title ?? undefined },
-    ).catch(() => {
-      setOrganizeError(t('detail.errorShare'));
-    });
+    if (isTextMemo) {
+      if (!memoValue) return;
+      void Share.share({
+        message: memoValue,
+        title: bookmark.title ?? undefined,
+      }).catch(() => {
+        setOrganizeError(t('detail.errorShare'));
+      });
+      return;
+    }
+    if (bookmark.content_type === 'image') {
+      const shareUri = bookmark.local_image_uri ?? rawPreviewUri;
+      if (!shareUri) return;
+      void (async () => {
+        try {
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(shareUri, {
+              mimeType: 'image/jpeg',
+              dialogTitle: bookmark.title ?? undefined,
+            });
+          } else {
+            await Share.share({
+              url: shareUri,
+              title: bookmark.title ?? undefined,
+              message: bookmark.title ?? undefined,
+            });
+          }
+        } catch {
+          setOrganizeError(t('detail.errorShare'));
+        }
+      })();
+    }
   };
 
   const handleCopyLink = () => {
-    const value = bookmark.url ?? (isTextMemo ? memoValue : null);
+    const value =
+      bookmark.url ??
+      (isTextMemo
+        ? memoValue
+        : (bookmark.preview_image_url ?? bookmark.local_image_uri ?? null));
     if (!value) {
       return;
     }
@@ -1125,6 +1105,52 @@ export default function BookmarkDetailScreen({
     if (!previewUri) {
       return null;
     }
+    if (bookmark.content_type === 'image') {
+      return (
+        <Pressable
+          testID="bookmark-detail-preview-pressable"
+          accessibilityRole="button"
+          accessibilityLabel={t('detail.openImage')}
+          onPress={() => setIsImageViewerOpen(true)}
+          style={({ pressed }) => [
+            styles.previewContainer,
+            styles.imagePreviewContainer,
+            { backgroundColor: palette.mutedSurface },
+            imageAspectRatio ? { aspectRatio: Math.max(0.56, Math.min(2.5, imageAspectRatio)), height: undefined } : null,
+            pressed && styles.previewPressed,
+          ]}
+        >
+          <ProtectedImage
+            testID="bookmark-detail-preview"
+            uri={previewUri}
+            style={styles.preview}
+            resizeMode="contain"
+            onError={() => markPreviewImageFailed(previewUri)}
+            onLoad={(event: ImageLoadEvent) => {
+              if (!didPreviewImageLoad(event.nativeEvent)) {
+                markPreviewImageFailed(previewUri);
+              } else {
+                markPreviewImageLoaded(previewUri);
+                const { width, height } = event.nativeEvent.source ?? {};
+                if (width && height && width > 0 && height > 0) {
+                  setImageAspectRatio(width / height);
+                }
+              }
+            }}
+          />
+          <View
+            testID="bookmark-detail-preview-ribbon"
+            style={styles.previewRibbon}
+            pointerEvents="none"
+          >
+            <Text style={styles.previewRibbonText} numberOfLines={1}>
+              {t('detail.openImage')}
+            </Text>
+            <Ionicons name="expand-outline" size={12} color="#ffffff" />
+          </View>
+        </Pressable>
+      );
+    }
     return bookmark.url ? (
       <Pressable
         testID="bookmark-detail-preview-pressable"
@@ -1420,10 +1446,31 @@ export default function BookmarkDetailScreen({
         />
       )}
 
-      {bookmark.url ? <Button testID="detail-open-website" accessibilityLabel={t('detail.openWebsite')} icon="open-outline" size="lg"
-        disabled={busy || isOpeningLink} onPress={handleOpenLink}>{t('detail.openWebsite')}</Button> : null}
+      {bookmark.url ? (
+        <Button
+          testID="detail-open-website"
+          accessibilityLabel={t('detail.openWebsite')}
+          icon="open-outline"
+          size="lg"
+          disabled={busy || isOpeningLink}
+          onPress={handleOpenLink}
+        >
+          {t('detail.openWebsite')}
+        </Button>
+      ) : bookmark.content_type === 'image' && rawPreviewUri ? (
+        <Button
+          testID="detail-open-image"
+          accessibilityLabel={t('detail.openImage')}
+          icon="expand-outline"
+          size="lg"
+          disabled={busy}
+          onPress={() => setIsImageViewerOpen(true)}
+        >
+          {t('detail.openImage')}
+        </Button>
+      ) : null}
       <View style={styles.actionBar}>
-        {bookmark.url || isTextMemo ? (
+        {bookmark.url || isTextMemo || (bookmark.content_type === 'image' && Boolean(rawPreviewUri)) ? (
           <Button
             testID="detail-share"
             style={styles.actionButton}
@@ -1435,16 +1482,16 @@ export default function BookmarkDetailScreen({
             {t('common.share')}
           </Button>
         ) : null}
-        {bookmark.url || isTextMemo ? (
+        {bookmark.url || isTextMemo || (bookmark.content_type === 'image' && Boolean(bookmark.preview_image_url ?? bookmark.local_image_uri)) ? (
           <Button
             testID="detail-copy-link"
             style={styles.actionButton}
             variant="ghost"
             icon="copy-outline"
-            accessibilityLabel={bookmark.url ? t('common.copyLink') : t('common.copy')}
+            accessibilityLabel={bookmark.url ? t('common.copyLink') : isTextMemo ? t('common.copy') : t('common.copyLink')}
             onPress={handleCopyLink}
           >
-            {bookmark.url ? t('common.copyLink') : t('common.copy')}
+            {bookmark.url ? t('common.copyLink') : isTextMemo ? t('common.copy') : t('common.copyLink')}
           </Button>
         ) : null}
         {bookmark.deleted_at ? (
@@ -1767,6 +1814,13 @@ export default function BookmarkDetailScreen({
       </View>
 
       {organizeError ? <Text style={[styles.error, { color: palette.danger }]}>{organizeError}</Text> : null}
+      <ImageViewerModal
+        visible={isImageViewerOpen}
+        uri={rawPreviewUri}
+        title={bookmark.title}
+        onClose={() => setIsImageViewerOpen(false)}
+        onShare={handleShare}
+      />
       {/* Report flow cleanup for STASH-1H: always clear any lingering error state
           (organize or notes-too-long) when leaving the screen. Prevents stale red
           borders/messages on re-open. */}
@@ -1879,6 +1933,12 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'transparent',
   },
+  imagePreviewContainer: {
+    minHeight: 220,
+    maxHeight: 480,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   previewPressed: {
     opacity: 0.88,
     transform: [{ scale: 0.985 }],
@@ -1937,22 +1997,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  bylineFav: {
-    width: '72%',
-    height: '72%',
-  },
-  bylineTextWrap: {
-    flex: 1,
-  },
-  bylineText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    fontFamily: monoFont,
-  },
-  titleBlock: {
-    gap: 6,
-  },
+  bylineFav: { width: '72%', height: '72%' },
+  bylineTextWrap: { flex: 1 },
+  bylineText: { flex: 1, fontSize: 13, fontWeight: '600', fontFamily: monoFont },
+  titleBlock: { gap: 6 },
   title: {
     fontSize: 26,
     fontWeight: '800',
@@ -1960,132 +2008,41 @@ const styles = StyleSheet.create({
     lineHeight: 32,
     ...(Platform.OS === 'web' ? ({ wordBreak: 'keep-all', overflowWrap: 'break-word' } as any) : {}),
   },
-  titleToggle: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  titleToggle: { fontSize: 14, fontWeight: '600' },
   titleInput: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  detailsSection: {
-    gap: 8,
-  },
-  detailsToggle: {
-    paddingVertical: 4,
-  },
-  header: {
-    gap: 12,
-    padding: 18,
-    borderRadius: 24,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
+  detailsSection: { gap: 8 },
+  detailsToggle: { paddingVertical: 4 },
+  header: { gap: 12, padding: 18, borderRadius: 24 },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  headerText: { flex: 1, gap: 2 },
   faviconTile: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+    width: 40, height: 40, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: '#ffffff', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  favicon: {
-    width: '70%',
-    height: '70%',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-  },
-  headerHost: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  statusChip: {
-    borderRadius: 999,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-  },
-  statusChipLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  actionBar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-    minWidth: 90,
-  },
-  detailRow: {
-    paddingVertical: 10,
-    gap: 2,
-  },
-  detailLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  detailValue: {
-    fontSize: 15,
-  },
-  missing: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  missingText: {
-    fontSize: 15,
-    textAlign: 'center',
-  },
-  field: {
-    borderRadius: 22,
-    padding: 18,
-    gap: 10,
-  },
-  collectionBlock: {
-    gap: 6,
-  },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  folderSuggestionBlock: {
-    gap: 6,
-    marginTop: 2,
-  },
-  folderSuggestionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  folderAccept: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  favicon: { width: '70%', height: '70%' },
+  headerTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
+  headerHost: { fontSize: 14, fontWeight: '500' },
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statusChip: { borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10 },
+  statusChipLabel: { fontSize: 12, fontWeight: '600' },
+  actionBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  actionButton: { flex: 1, minWidth: 90 },
+  detailRow: { paddingVertical: 10, gap: 2 },
+  detailLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  detailValue: { fontSize: 15 },
+  missing: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  missingText: { fontSize: 15, textAlign: 'center' },
+  field: { borderRadius: 22, padding: 18, gap: 10 },
+  collectionBlock: { gap: 6 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  folderSuggestionBlock: { gap: 6, marginTop: 2 },
+  folderSuggestionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  folderAccept: { flexDirection: 'row', alignItems: 'center' },
   // Dashed ghost pill matching the tag suggestion chips (TagField), so the folder
   // recommendation reads in the same visual language across surfaces.
   ghostChip: {

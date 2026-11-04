@@ -444,6 +444,8 @@ export const en = {
   'add.urlPlaceholder': 'https://',
   'add.details': 'Add details',
   'detail.openWebsite': 'Open website',
+  'detail.openImage': 'Open photo',
+  'detail.imageViewerDismiss': 'Close photo viewer',
   'add.modeLink': 'Link',
   'add.modeMemo': 'Note',
   'add.modeLinkA11y': 'Add a link bookmark',
