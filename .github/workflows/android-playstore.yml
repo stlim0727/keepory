@@ -1,10 +1,11 @@
 name: Android Play Store Release
 
-# Builds a Play-ready Android App Bundle via EAS Build (runs on Expo's cloud
-# infra, not this runner) and auto-submits it to Google Play using the
-# `submit.production` profile already defined in apps/mobile/eas.json (which
-# targets the `internal` track — see docs/development/play-store.md for the
-# internal -> closed -> production promotion sequence).
+# Builds a Play-ready Android App Bundle locally on this GitHub Actions runner
+# via EAS CLI (`--local`, bypassing EAS cloud build limits and consuming 0 monthly
+# quota minutes) and submits it to Google Play using the `submit.production`
+# profile already defined in apps/mobile/eas.json (which targets the `internal`
+# track — see docs/development/play-store.md for the internal -> closed ->
+# production promotion sequence).
 #
 # Manual dispatch only. This intentionally does NOT trigger on tag push like
 # .github/workflows/android-apk.yml does: that workflow builds a debug-signed
@@ -13,21 +14,22 @@ name: Android Play Store Release
 #
 # Required repo secrets (Settings -> Secrets and variables -> Actions):
 #   EXPO_TOKEN                 an Expo access token (expo.dev -> Account ->
-#                               Access tokens) for non-interactive `eas` auth.
+#                               Access tokens) for non-interactive `eas` auth and
+#                               production keystore credential retrieval.
 #   PLAY_SERVICE_ACCOUNT_JSON  full contents of the Google Play publisher
 #                               service-account JSON key referenced by
 #                               eas.json's `submit.production.android.serviceAccountKeyPath`.
 #
-# Build-time app config (EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SENTRY_DSN,
-# etc.) is NOT passed through this workflow: the build itself runs on EAS's
-# servers, so those must be configured once as EAS project environment
-# variables for the `production` environment (`eas env:create` or the Expo
-# dashboard), not as GitHub secrets.
+# Optional build-time app config via repo secrets (passed to the local runner):
+#   EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY, EXPO_PUBLIC_SENTRY_DSN,
+#   SENTRY_AUTH_TOKEN, EXPO_PUBLIC_POSTHOG_API_KEY, EXPO_PUBLIC_POSTHOG_HOST,
+#   EXPO_PUBLIC_POSTHOG_FULL_SDK_ENABLED, EXPO_PUBLIC_GOOGLE_SERVICES_BASE64,
+#   EXPO_PUBLIC_EAS_PROJECT_ID
 #
 # Google Play's submit API rejects a listing that has never received a
 # manual upload — per docs/development/play-store.md, the very first AAB for
 # a new Play Console app must be uploaded by hand (Play Console -> internal
-# testing) before this workflow's --auto-submit can succeed. Only re-dispatch
+# testing) before this workflow's submit can succeed. Only re-dispatch
 # this workflow after that one-time bootstrap upload.
 
 on:
@@ -93,6 +95,27 @@ jobs:
       - run: pnpm test
       - run: pnpm test:components
 
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          packages: ''
+
+      # Restore Gradle deps/transforms + local build cache to speed up native compile.
+      - name: Restore Gradle cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
       # Written next to eas.json at the exact relative path its
       # `serviceAccountKeyPath` expects, and removed unconditionally after
       # the submit step so the key never lingers on the runner.
@@ -102,11 +125,62 @@ jobs:
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
 
-      - name: EAS build (production) + submit to Play
+      # Builds the release AAB locally on the runner machine: consumes 0 EAS cloud build quota.
+      - name: EAS local build (production)
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: pnpm dlx eas-cli build --platform android --profile production --non-interactive --auto-submit
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+          EXPO_PUBLIC_SENTRY_ENVIRONMENT: production
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DISABLE_AUTO_UPLOAD: ${{ secrets.SENTRY_AUTH_TOKEN == '' && 'true' || 'false' }}
+          EXPO_PUBLIC_POSTHOG_API_KEY: ${{ secrets.EXPO_PUBLIC_POSTHOG_API_KEY }}
+          EXPO_PUBLIC_POSTHOG_HOST: ${{ secrets.EXPO_PUBLIC_POSTHOG_HOST }}
+          EXPO_PUBLIC_POSTHOG_FULL_SDK_ENABLED: ${{ secrets.EXPO_PUBLIC_POSTHOG_FULL_SDK_ENABLED }}
+          EXPO_PUBLIC_GOOGLE_SERVICES_BASE64: ${{ secrets.EXPO_PUBLIC_GOOGLE_SERVICES_BASE64 }}
+          EXPO_PUBLIC_EAS_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_EAS_PROJECT_ID }}
+          EXPO_PUBLIC_GIT_SHA: ${{ github.sha }}
+          EXPO_PUBLIC_GIT_REF: ${{ github.ref_name }}
+          EXPO_PUBLIC_COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        run: |
+          pnpm dlx eas-cli build \
+            --platform android \
+            --profile production \
+            --local \
+            --non-interactive \
+            --output keepory-production.aab
+
+      # Submit the locally built AAB to Google Play Console.
+      - name: EAS submit to Play
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          pnpm dlx eas-cli submit \
+            --platform android \
+            --profile production \
+            --path keepory-production.aab \
+            --non-interactive
+
+      # Upload the production AAB artifact for release provenance & emergency backup.
+      - name: Upload production AAB artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: keepory-production-aab
+          path: apps/mobile/keepory-production.aab
+          if-no-files-found: ignore
+
+      - name: Save Gradle cache
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ github.sha }}
 
       - name: Remove Play publisher service account key
         if: always()

@@ -90,20 +90,20 @@ for internal testing and sideload distribution only.
 
 ### CI: `.github/workflows/android-playstore.yml`
 
-A manual-dispatch-only GitHub Actions workflow runs the equivalent build +
-submit remotely: `eas build --profile production --platform android
---non-interactive --auto-submit`. It builds on EAS's cloud infra (not the
-runner) and submits to whatever track `eas.json`'s `submit.production`
+A manual-dispatch-only GitHub Actions workflow runs the build + submit:
+`eas build --profile production --platform android --local --non-interactive`
+followed by `eas submit --profile production --platform android --path keepory-production.aab --non-interactive`.
+It compiles the AAB locally on the GitHub Actions runner (consuming 0 EAS cloud
+build quota minutes) and submits to whatever track `eas.json`'s `submit.production`
 profile targets (currently `internal`). It never triggers on tag push or
 push to `main` — dispatch it by hand from *Actions -> Android Play Store
 Release -> Run workflow* only when you intend to publish.
 
-Requires repo secrets `EXPO_TOKEN` (Expo access token) and
-`PLAY_SERVICE_ACCOUNT_JSON` (the Play publisher service-account key content).
-Build-time app config (Supabase URL, Sentry DSN, etc.) must be set as EAS
-project environment variables for the `production` environment beforehand —
-this workflow does not pass them through, since the build runs on Expo's
-servers, not this runner.
+Requires repo secrets `EXPO_TOKEN` (Expo access token for credential retrieval
+and submit auth) and `PLAY_SERVICE_ACCOUNT_JSON` (the Play publisher
+service-account key content). Build-time app config (Supabase URL, Sentry DSN,
+PostHog keys, etc.) is passed directly from GitHub Actions secrets to the local
+runner environment.
 
 Before building:
 
