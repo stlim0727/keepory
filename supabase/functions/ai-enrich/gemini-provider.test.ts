@@ -285,6 +285,10 @@ test('asks the model to answer in the user locale when one is given', async () =
   assert.match(body, /translate the concepts into Korean/);
   assert.match(body, /extract meaningful concepts and keywords directly from it/);
   assert.doesNotMatch(body, /do not copy words from the source language/);
+  // It forbids leaking unfamiliar foreign source words as tags when the target language is Korean (STASH-81).
+  assert.match(body, /translating them into Korean/);
+  assert.match(body, /All newly coined tags must be written in Korean/);
+  assert.match(body, /Every suggested tag and topic must be in Korean/);
 });
 
 test('defaults to English when the locale is missing or unknown', async () => {
