@@ -124,14 +124,14 @@ function languageFor(locale: string | null | undefined): string {
 function buildSystemInstruction(language: string): string {
   return [
     'You organize a user\'s saved bookmarks.',
-    `Write the natural-language fields — topics and suggested_tags — in ${language}, regardless of the language of the bookmark's title, URL, site, or description. If the content is in another language, translate the concepts into ${language}. If the content is already in ${language}, extract meaningful concepts and keywords directly from it without avoiding its words. (suggested_collection is the one exception — see below.)`,
+    `Write the natural-language fields — topics and suggested_tags — in ${language}, regardless of the language of the bookmark's title, URL, site, or description. If the content is in another language, translate the concepts into ${language} (do not output unfamiliar foreign words from the source text as tags). If the content is already in ${language}, extract meaningful concepts and keywords directly from it without avoiding its words. (suggested_collection is the one exception — see below.)`,
     'Given a bookmark\'s metadata, assess its content and return:',
-    '- topics: a few short subject keywords.',
-    '- suggested_tags: up to five short tags, each with a confidence from 0 to 1. If one of the provided existing tags fits the bookmark, reuse its exact name verbatim (do NOT translate it) rather than coining a near-duplicate — this keeps the user\'s tag vocabulary consolidated. Only invent a new tag (in the target language) when no existing tag fits.',
+    `- topics: a few short subject keywords in ${language}.`,
+    `- suggested_tags: up to five short tags, each with a confidence from 0 to 1. If one of the provided existing tags fits the bookmark, reuse its exact name verbatim (do NOT translate it) rather than coining a near-duplicate — this keeps the user\'s tag vocabulary consolidated. Only invent a new tag (in ${language}) when no existing tag fits. All newly coined tags must be written in ${language} (never leave general vocabulary or concepts in a foreign source language; translate them into ${language}, except for globally recognized proper nouns, brand names, or technical acronyms).`,
     '- suggested_collection: a single best-fit collection NAME for filing this bookmark. If the bookmark is already in a collection ("Current collection"), prefer keeping it in that exact collection verbatim unless the current collection is completely irrelevant. Never suggest lateral moves between synonyms, translations, or near-equivalent themes (e.g. do not suggest moving between "Food" and "음식 및 요리", or "Articles" and "글"). If one of the provided existing collections fits, copy its NAME verbatim (do NOT translate it). If none fit, propose a concise, reusable new collection name in Title Case (a broad theme, not a one-off). Use null only when the content is too sparse to categorize at all.',
     '- confidence: your overall confidence from 0 to 1.',
-    'For topics and suggested_tags, use all supplied evidence: description, user notes, site name, content type, and meaningful URL path terms are as important as the title. When substantive non-title metadata is present, do not let a generic or short title dominate. However, when description and notes are absent (such as social media shares or media links) and the title contains concrete subject details, rely on the title as the primary signal for topical tags.',
-    'Do not suggest labels that only describe the storage action or media format, platform host, or error state, such as "watch later", "read later", "video", "article", "link", "social media", "error", "error page", "소셜미디어", "동영상", "비디오", "오류", "오류안내", or "나중에 보기". Never coin tags describing system errors, login barriers, or generic hosting platforms when content is unavailable or private; instead, return empty topics and suggested_tags. If the title carries specific subject matter despite an inaccessible page body, extract tags for that subject rather than returning empty tags. A generic existing tag or collection is not a fit by itself; return null/omit it unless you also have a more specific content-based label.',
+    `For topics and suggested_tags, use all supplied evidence: description, user notes, site name, content type, and meaningful URL path terms are as important as the title. When substantive non-title metadata is present, do not let a generic or short title dominate. However, when description and notes are absent (such as social media shares or media links) and the title contains concrete subject details, rely on the title as the primary signal for topical tags, translating concepts into ${language} if the title is in another language.`,
+    `Do not suggest labels that only describe the storage action or media format, platform host, or error state, such as "watch later", "read later", "video", "article", "link", "social media", "error", "error page", "소셜미디어", "동영상", "비디오", "오류", "오류안내", or "나중에 보기". Never coin tags describing system errors, login barriers, or generic hosting platforms when content is unavailable or private; instead, return empty topics and suggested_tags. If the title carries specific subject matter despite an inaccessible page body, extract tags for that subject in ${language} rather than returning empty tags. A generic existing tag or collection is not a fit by itself; return null/omit it unless you also have a more specific content-based label.`,
     'Base every field only on the supplied metadata. Do not fabricate specifics you were not given.',
   ].join('\n');
 }
@@ -211,8 +211,9 @@ function buildPrompt(input: EnrichmentInput): string {
   add('User notes', input.notes);
   add('Site', input.site_name);
   add('Content type', input.content_type);
+  const targetLanguage = languageFor(input.locale);
   lines.push(
-    'Tagging guidance: derive tags from the combined metadata above, not just the title. When description or user notes are missing, extract concrete concepts from meaningful terms in the title and URL path. Favor concrete concepts from description, notes, site, content type, and URL path when they add signal.',
+    `Tagging guidance: derive tags from the combined metadata above, not just the title. When description or user notes are missing, extract concrete concepts from meaningful terms in the title and URL path, translating them into ${targetLanguage} if the source is in another language. Favor concrete concepts from description, notes, site, content type, and URL path when they add signal. Every suggested tag and topic must be in ${targetLanguage} unless matching an existing tag verbatim or an established proper noun.`,
   );
   if (input.current_collection) {
     add('Current collection', input.current_collection, '" (preserve unless clearly mismatched)', '"');
@@ -225,7 +226,7 @@ function buildPrompt(input: EnrichmentInput): string {
   if (input.existing_tags && input.existing_tags.length > 0) {
     add('Existing tags (reuse when one fits)', names(input.existing_tags));
   }
-  lines.push(`Write the suggested_tags and topics in ${languageFor(input.locale)}.`);
+  lines.push(`Write the suggested_tags and topics in ${targetLanguage}.`);
 
   const header = 'Assess this bookmark and return the structured fields.\n\n';
   const fields = lines.filter((line): line is Field => typeof line !== 'string');
