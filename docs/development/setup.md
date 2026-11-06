@@ -115,9 +115,10 @@ the shell, `.env.local`, or the file pointed to by `SENTRY_ENV_FILE`.
 
 ## Product analytics — PostHog project identity
 
-Keepory telemetry belongs to the `Keepory org` PostHog organization, project
-`333812` (`api_host: https://eu.i.posthog.com`). The personal `Self Hog`
-organization and its project `230163` serve a different app; never point a
+Keepory telemetry belongs to the PostHog organization `Keepory` (slug
+`keepory`), project `Keepory` (`333812`, `api_host:
+https://eu.i.posthog.com`). The personal `Self Hog` organization and its
+project `230163` serve a different app; never point a
 Keepory build at it.
 
 - **Region is a hard requirement, not a preference.** `approvedOrigin` in
