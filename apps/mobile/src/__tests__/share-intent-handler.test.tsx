@@ -238,6 +238,29 @@ describe('ShareIntentHandler', () => {
     }
   });
 
+  it('preserves original native share timestamp as created_at for consumed offline shares (STASH-82)', async () => {
+    const platform = jest.replaceProperty(Platform, 'OS', 'android');
+    const pastTimestamp = Date.now() - 5 * 3600 * 1000;
+    const expectedIso = new Date(pastTimestamp).toISOString();
+    fakeRepo.__reset([]);
+    mockConsumeNativePendingShares.mockResolvedValueOnce([{
+      filename: 'share_past.json',
+      payload: { id: 'native-past-1', timestamp: pastTimestamp, type: 'text', text: 'https://example.com/shared-hours-ago' },
+    }]);
+    let unmount: (() => Promise<void>) | undefined;
+    try {
+      const screen = await renderHandler();
+      unmount = screen.unmount;
+      await waitFor(() => expect(fakeRepo.__bookmarks()).toHaveLength(1));
+      expect(fakeRepo.__bookmarks()[0]?.created_at).toBe(expectedIso);
+      expect(fakeRepo.__queue()[0]?.payload.created_at).toBe(expectedIso);
+      await waitFor(() => expect(mockDeleteNativePendingShare).toHaveBeenCalledWith('share_past.json'));
+    } finally {
+      await unmount?.();
+      platform.restore();
+    }
+  });
+
   it('does not duplicate a URL already stashed when shared on cold start', async () => {
     // The store starts empty in memory and loads this row asynchronously —
     // exactly the cold-start window in which a share used to dedupe against an
