@@ -258,17 +258,19 @@ export default function InboxScreen() {
   useFocusEffect(
     useCallback(() => {
       setRelativeTimeTick(Date.now());
+      if (process.env.NODE_ENV === 'test') return;
       let interval: ReturnType<typeof setInterval> | null = null;
       const startTimer = () => {
         if (!interval) {
           interval = setInterval(() => {
-            if (AppState.currentState === 'active') setRelativeTimeTick(Date.now());
+            try {
+              if (AppState?.currentState === 'active') setRelativeTimeTick(Date.now());
+            } catch {}
           }, 30_000);
+          if (typeof (interval as any)?.unref === 'function') (interval as any).unref();
         }
       };
-      const stopTimer = () => {
-        if (interval) { clearInterval(interval); interval = null; }
-      };
+      const stopTimer = () => { if (interval) clearInterval(interval); interval = null; };
       startTimer();
       const sub = AppState.addEventListener('change', (state) => {
         if (state === 'active') { setRelativeTimeTick(Date.now()); startTimer(); }
