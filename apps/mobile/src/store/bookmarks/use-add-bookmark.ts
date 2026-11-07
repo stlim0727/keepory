@@ -171,18 +171,12 @@ export function useAddBookmark({
       notes_format = "plain",
       shared_text,
       image,
+      created_at: customCreatedAt,
     }: {
-      url?: string;
-      title?: string;
-      title_is_derived?: boolean;
-      notes?: string;
-      replace_existing_notes?: boolean;
-      capture_client_id?: string;
-      capture_attempt_id?: string;
-      description_format?: TextFormat;
-      notes_format?: TextFormat;
-      shared_text?: string;
-      image?: SharedImage;
+      url?: string; title?: string; title_is_derived?: boolean; notes?: string;
+      replace_existing_notes?: boolean; capture_client_id?: string; capture_attempt_id?: string;
+      description_format?: TextFormat; notes_format?: TextFormat; shared_text?: string;
+      image?: SharedImage; created_at?: string;
     }): AddBookmarkResult => {
       if (epoch.current !== resetEpoch.current) {
         captureWrites.current.clear();
@@ -191,6 +185,10 @@ export function useAddBookmark({
       const attemptKey = capture_attempt_id ?? capture_client_id;
       const epochAtStart = resetEpoch.current;
       const ownerAtStart = realOwner.current;
+      const resolvedCreatedAt = (fallback: string) =>
+        typeof customCreatedAt === 'string' && !Number.isNaN(Date.parse(customCreatedAt)) && Date.parse(customCreatedAt) <= Date.now()
+          ? customCreatedAt
+          : fallback;
       const assertOwnership = (job?: CaptureWrite) => {
         if (job) refreshCaptureIdentity(job);
         const row = job?.bookmark;
@@ -357,7 +355,7 @@ export function useAddBookmark({
           collection_id: null,
           is_archived: false,
           deleted_at: null,
-          created_at: now,
+          created_at: resolvedCreatedAt(now),
           updated_at: now,
           last_saved_at: now,
           // No URL/text to derive metadata from — nothing to enrich.
@@ -390,6 +388,7 @@ export function useAddBookmark({
             description_format: imageBookmark.description_format,
             notes_format: imageBookmark.notes_format,
             client_id: imageClientId,
+            created_at: resolvedCreatedAt(now),
           },
           sync_status: "pending",
           retry_count: 0,
@@ -547,7 +546,7 @@ export function useAddBookmark({
           collection_id: null,
           is_archived: false,
           deleted_at: null,
-          created_at: noteNow,
+          created_at: resolvedCreatedAt(noteNow),
           updated_at: noteNow,
           last_saved_at: noteNow,
           metadata_status: "pending",
@@ -567,6 +566,7 @@ export function useAddBookmark({
             notes_format: note.notes_format,
             shared_text: text,
             client_id: noteClientId,
+            created_at: resolvedCreatedAt(noteNow),
           },
           sync_status: "pending",
           retry_count: 0,
@@ -744,7 +744,7 @@ export function useAddBookmark({
         collection_id: null,
         is_archived: false,
         deleted_at: null,
-        created_at: now,
+        created_at: resolvedCreatedAt(now),
         updated_at: now,
         last_saved_at: now,
         metadata_status: "pending",
@@ -764,6 +764,7 @@ export function useAddBookmark({
           description_format: bookmark.description_format,
           notes_format: bookmark.notes_format,
           client_id: clientId,
+          created_at: resolvedCreatedAt(now),
         },
         sync_status: "pending",
         retry_count: 0,

@@ -121,6 +121,8 @@ export interface BookmarksContextValue {
     shared_text?: string;
     /** A shared image to capture as an image bookmark (local-only for now). */
     image?: SharedImage;
+    /** Optional original creation timestamp (e.g. from native share intent). */
+    created_at?: string;
   }) => AddBookmarkResult;
   /** Reconcile a failed manual attempt with durable state before leaving. */
   abandonCapture: (attemptKey: string) => Promise<boolean>;
