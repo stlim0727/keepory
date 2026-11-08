@@ -27,8 +27,7 @@ export async function deliverExport(file: ExportFile): Promise<void> {
   if (target.exists) {
     target.delete();
   }
-  target.create();
-  target.write(file.contents);
+  await target.write(file.contents);
 
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(target.uri, {
