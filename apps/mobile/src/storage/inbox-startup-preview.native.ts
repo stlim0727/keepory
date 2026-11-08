@@ -28,13 +28,12 @@ export async function readInboxStartupPreview(): Promise<string | null> {
 export async function writeInboxStartupPreview(raw: string | null): Promise<void> {
   try {
     const file = cacheFile();
-    // File.write/delete are synchronous: later snapshots cannot finish before
-    // older writes. A torn file is harmless because the reader rejects it.
+    // Later snapshots replace earlier ones cleanly. A torn file is harmless
+    // because the reader rejects it.
     if (raw === null) invalidateInboxStartupPreview();
     else {
       mayExist = true;
-      if (!file.exists) file.create();
-      file.write(raw);
+      await file.write(raw);
     }
   } catch { /* Optional cache: storage failure must not affect the library. */ }
 }
