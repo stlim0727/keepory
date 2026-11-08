@@ -222,6 +222,9 @@ export function ShareIntentHandler() {
     // "nothing to save" toast for a genuinely empty share.
     const saveStartedAt = Date.now();
     const captureClientId = nativeCaptureClientId(share.attemptId);
+    const shareCreatedAt = typeof share.receivedAt === 'string' && !Number.isNaN(Date.parse(share.receivedAt))
+      ? share.receivedAt
+      : undefined;
     const result = share.url
       ? addBookmark({
           url: share.url,
@@ -229,14 +232,16 @@ export function ShareIntentHandler() {
           title_is_derived: true,
           // Find a prior attempt even if its URL was later edited or trashed.
           capture_client_id: captureClientId,
+          created_at: shareCreatedAt,
         })
       : share.image
-        ? addBookmark({ image: share.image, title: share.title, title_is_derived: true, capture_client_id: captureClientId })
+        ? addBookmark({ image: share.image, title: share.title, title_is_derived: true, capture_client_id: captureClientId, created_at: shareCreatedAt })
         : addBookmark({
             shared_text: share.text,
             title: share.title,
             title_is_derived: true,
             capture_client_id: captureClientId,
+            created_at: shareCreatedAt,
           });
     const saved = result.status !== 'invalid';
     // A duplicate is already saved, even if its best-effort refresh is slow.
@@ -470,11 +475,14 @@ export function ShareIntentHandler() {
           }
 
           const saveStartedAt = Date.now();
+          const shareCreatedAt = typeof share.timestamp === 'number' && Number.isFinite(share.timestamp) && share.timestamp > 0
+            ? new Date(share.timestamp).toISOString()
+            : undefined;
           const result = url
-            ? addBookmark({ url, title: share.title, title_is_derived: true })
+            ? addBookmark({ url, title: share.title, title_is_derived: true, created_at: shareCreatedAt })
             : image
-              ? addBookmark({ image, title: share.title, title_is_derived: true })
-              : addBookmark({ shared_text: share.text, title: share.title, title_is_derived: true });
+              ? addBookmark({ image, title: share.title, title_is_derived: true, created_at: shareCreatedAt })
+              : addBookmark({ shared_text: share.text, title: share.title, title_is_derived: true, created_at: shareCreatedAt });
 
           recordShareAttempt({
             attemptId: share.id,

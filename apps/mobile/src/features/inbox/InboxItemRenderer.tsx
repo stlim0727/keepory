@@ -79,6 +79,7 @@ interface Props {
   highlightQuery: string;
   highlightStyle: { backgroundColor: "#c9941c" | "#eecb69"; color: "#151b26"; };
   setMenuItem: Dispatch<SetStateAction<Bookmark | null>>;
+  nowMs?: number;
 }
 
 export function createInboxItemRenderer({
@@ -120,6 +121,7 @@ export function createInboxItemRenderer({
   highlightQuery,
   highlightStyle,
   setMenuItem,
+  nowMs,
 }: Props) {
   return (({ item }: { item: InboxListItem }) => {
     // A grid-padding filler: render an empty flex cell so the real cards
@@ -352,7 +354,7 @@ export function createInboxItemRenderer({
       ...(orderedTags.length > 2 ? [{ key: 'tags-overflow', type: 'overflow' as const, label: `+${orderedTags.length - 2}` }] : []),
     ];
     const siteLabelText = siteLabel(item);
-    const relativeTime = formatRelativeTime(item.created_at);
+    const relativeTime = formatRelativeTime(item.created_at, nowMs);
     const memoPreview =
       item.content_type === 'text' && item.title?.trim() && item.description?.trim()
         ? textForDisplay(item.description, memoBodyFormat(item))

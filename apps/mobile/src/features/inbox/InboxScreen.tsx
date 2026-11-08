@@ -24,6 +24,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   BackHandler,
   FlatList,
   LayoutAnimation,
@@ -252,6 +253,32 @@ export default function InboxScreen() {
     };
   }, []);
 
+  // Periodic ticker so relative timestamps ("just now", "5m ago") stay fresh while open (STASH-82).
+  const [relativeTimeTick, setRelativeTimeTick] = useState(() => Date.now());
+  useFocusEffect(
+    useCallback(() => {
+      setRelativeTimeTick(Date.now());
+      if (process.env.NODE_ENV === 'test') return;
+      let interval: ReturnType<typeof setInterval> | null = null;
+      const startTimer = () => {
+        if (!interval) {
+          interval = setInterval(() => {
+            try {
+              if (AppState?.currentState === 'active') setRelativeTimeTick(Date.now());
+            } catch {}
+          }, 30_000);
+          if (typeof (interval as any)?.unref === 'function') (interval as any).unref();
+        }
+      };
+      const stopTimer = () => { if (interval) clearInterval(interval); interval = null; };
+      startTimer();
+      const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') { setRelativeTimeTick(Date.now()); startTimer(); }
+        else { stopTimer(); }
+      });
+      return () => { stopTimer(); sub.remove(); };
+    }, []),
+  );
 
   // Collapsing header: the top cluster (hero + search + controls + browse
   // shelf) slides up out of view as the list scrolls down and slides back on
@@ -2219,7 +2246,7 @@ export default function InboxScreen() {
             </View>
           )
         }
-        extraData={`${viewMode}|${searching}|${debouncedQuery}|${inlineDetailId}`}
+        extraData={`${viewMode}|${searching}|${debouncedQuery}|${inlineDetailId}|${relativeTimeTick}`}
         renderItem={createInboxItemRenderer({
           readOnly: !!startupPreview,
           isSupportingPane,
@@ -2230,6 +2257,7 @@ export default function InboxScreen() {
           columns,
           folderSelectionMode,
           t,
+          nowMs: relativeTimeTick,
           onNewFolderTilePress,
           palette,
           openFolderTile,

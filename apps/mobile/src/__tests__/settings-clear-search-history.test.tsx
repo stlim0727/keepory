@@ -37,15 +37,16 @@ jest.mock('@/domain/enrichment', () => ({
 // A controllable focus hook: callbacks register on mount and re-run whenever the
 // test calls `refireFocus()` — simulating the Inbox regaining focus after the
 // user backs out of Settings.
-const focusCallbacks: Array<() => void | (() => void)> = [];
-const focusCleanups: Array<(() => void) | void> = [];
+let mockNextFocusId = 0;
+const mockFocusCallbacks = new Map<number, () => void | (() => void)>();
+const mockFocusCleanups = new Map<number, (() => void) | void>();
 function refireFocus() {
-  for (let i = 0; i < focusCallbacks.length; i += 1) {
-    const cleanup = focusCleanups[i];
+  for (const [id, cb] of mockFocusCallbacks.entries()) {
+    const cleanup = mockFocusCleanups.get(id);
     if (typeof cleanup === 'function') {
       cleanup();
     }
-    focusCleanups[i] = focusCallbacks[i]();
+    mockFocusCleanups.set(id, cb());
   }
 }
 jest.mock('expo-router', () => {
@@ -57,16 +58,16 @@ jest.mock('expo-router', () => {
     usePathname: () => '/',
     useFocusEffect: (cb: () => void | (() => void)) =>
       useEffect(() => {
-        const index = focusCallbacks.length;
-        focusCallbacks.push(cb);
-        focusCleanups[index] = cb();
+        const id = ++mockNextFocusId;
+        mockFocusCallbacks.set(id, cb);
+        mockFocusCleanups.set(id, cb());
         return () => {
-          const cleanup = focusCleanups[index];
+          const cleanup = mockFocusCleanups.get(id);
           if (typeof cleanup === 'function') {
             cleanup();
           }
-          focusCallbacks.splice(index, 1);
-          focusCleanups.splice(index, 1);
+          mockFocusCallbacks.delete(id);
+          mockFocusCleanups.delete(id);
         };
       }, []),
   };
@@ -90,9 +91,14 @@ function renderSettings() {
   );
 }
 
-beforeEach(() => {
-  focusCallbacks.length = 0;
-  focusCleanups.length = 0;
+afterEach(() => {
+  for (const cleanup of mockFocusCleanups.values()) {
+    if (typeof cleanup === 'function') {
+      try { cleanup(); } catch {}
+    }
+  }
+  mockFocusCleanups.clear();
+  mockFocusCallbacks.clear();
 });
 
 test('the clear-search-history row is disabled and reads empty when there is no history', async () => {
