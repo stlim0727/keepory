@@ -110,6 +110,26 @@ export interface SharedImage {
   fileName: string | null;
 }
 
+export function resolveSpecificImageMime(
+  mimeType: string | null | undefined,
+  fileName?: string | null,
+  uri?: string | null,
+): string {
+  const normalized = mimeType?.trim().toLowerCase();
+  if (normalized && isImageMime(normalized) && !normalized.includes('*')) {
+    return normalized;
+  }
+  const fromName = extensionFromFileName(fileName);
+  if (fromName && EXT_TO_MIME[fromName]) {
+    return EXT_TO_MIME[fromName];
+  }
+  const fromUri = uri ? extensionFromUri(uri) : '';
+  if (fromUri && EXT_TO_MIME[fromUri]) {
+    return EXT_TO_MIME[fromUri];
+  }
+  return DEFAULT_UPLOAD_MIME;
+}
+
 /**
  * The first image file in a share payload, or null when there is none. We
  * capture a single image (multi-image batches are out of scope), so the first
@@ -123,10 +143,11 @@ export function pickSharedImage(
   }
   for (const file of files) {
     if (file && typeof file.path === 'string' && file.path && isImageMime(file.mimeType)) {
+      const fileName = file.fileName?.trim() ? file.fileName.trim() : null;
       return {
         uri: file.path,
-        mimeType: (file.mimeType as string).trim().toLowerCase(),
-        fileName: file.fileName?.trim() ? file.fileName.trim() : null,
+        mimeType: resolveSpecificImageMime(file.mimeType, fileName, file.path),
+        fileName,
       };
     }
   }
@@ -204,8 +225,12 @@ export function mimeTypeForImageUri(uri: string): string {
  * non-canonical aliases.
  */
 export function canonicalizeImageMimeType(mime: string): string {
-  const ext = MIME_TO_EXT[mime.trim().toLowerCase()];
-  return ext ? (EXT_TO_MIME[ext] ?? mime) : mime;
+  const normalized = mime.trim().toLowerCase();
+  if (normalized.includes('*')) {
+    return DEFAULT_UPLOAD_MIME;
+  }
+  const ext = MIME_TO_EXT[normalized];
+  return ext ? (EXT_TO_MIME[ext] ?? normalized) : normalized;
 }
 
 /**

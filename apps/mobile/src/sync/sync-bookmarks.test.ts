@@ -2618,3 +2618,13 @@ test('unsupported image format is permanently excluded even by forced sync', () 
   assert.equal(isSyncable(stuck), false);
   assert.equal(isSyncable(stuck, { ignoreBackoff: true }), false);
 });
+
+test('wildcard image/* error is not treated as permanently unsyncable', () => {
+  const wildcardError = makeCreateEntry({
+    sync_status: 'failed',
+    last_error: 'image/*: unsupported image format for cloud sync. Image kept on this device; save as PNG or JPEG to sync.',
+    last_attempt_at: '2026-06-12T00:00:00.000Z',
+  });
+  // Past backoff, it is eligible for retry so the repaired MIME resolution can upload it.
+  assert.equal(isSyncable(wildcardError, { now: new Date('2026-06-12T01:00:00.000Z').getTime() }), true);
+});

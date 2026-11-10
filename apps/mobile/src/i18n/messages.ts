@@ -424,7 +424,7 @@ export const en = {
   'add.paste': 'Paste from clipboard',
   'add.pasteImage': 'Paste image from clipboard',
   'add.imagePreview': 'Image preview',
-  'add.imageEmpty': 'Copy an image, then paste it here',
+  'add.imageEmpty': 'Copy an image, then tap here or Paste image above',
   'add.removeImage': 'Remove image',
   'add.saveImage': 'Save image',
   'add.saveFailed': 'Could not save on this device. Your draft is ready to retry.',
