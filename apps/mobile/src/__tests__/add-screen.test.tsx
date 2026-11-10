@@ -587,6 +587,14 @@ describe('smart Add capture', () => {
     expect(screen.getByLabelText('Title (optional)').props.value).toBe('Caption');
     expect(screen.getByLabelText('Note').props.value).toBe('Image notes');
     expect(screen.getByTestId('add-save').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByTestId('add-paste-image-placeholder')).toBeTruthy();
+    mockReadClipboard.mockResolvedValueOnce({
+      text: 'Replaced image notes',
+      image: { uri: 'file:///another.png', mimeType: 'image/png', fileName: 'another.png' },
+    });
+    await fireEvent.press(screen.getByTestId('add-paste-image-placeholder'));
+    await screen.findByText('Save image');
+    expect(screen.getByTestId('add-save').props.accessibilityState.disabled).toBe(false);
   });
 });
 
