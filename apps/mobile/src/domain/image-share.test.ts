@@ -10,6 +10,7 @@ import {
   localImageFileName,
   mimeTypeForImageUri,
   pickSharedImage,
+  resolveSpecificImageMime,
 } from './image-share.ts';
 
 test('isImageMime recognizes image types case-insensitively', () => {
@@ -122,11 +123,42 @@ test('canonicalizeImageMimeType leaves an already-canonical or unmapped type unc
 
 
 test('cloud upload permits raster allowlist and JPEG aliases while preserving unsupported captures', () => {
-  for (const mime of ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif', 'image/bmp', 'image/tiff', 'image/avif']) {
+  for (const mime of ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif', 'image/bmp', 'image/tiff', 'image/avif', 'image/*']) {
     assert.equal(isCloudUploadImageMime(mime), true, mime);
   }
   for (const mime of ['image/svg+xml', 'image/jxl', 'text/plain']) {
     assert.equal(isCloudUploadImageMime(mime), false, mime);
   }
   assert.equal(pickSharedImage([{ path: 'file:///capture.svg', mimeType: 'image/svg+xml', fileName: 'capture.svg' }])?.mimeType, 'image/svg+xml');
+});
+
+test('pickSharedImage and resolveSpecificImageMime resolve wildcard image/* to concrete types', () => {
+  // From filename extension
+  assert.equal(
+    pickSharedImage([{ path: 'file:///cache/123.bin', mimeType: 'image/*', fileName: 'photo.jpg' }])?.mimeType,
+    'image/jpeg',
+  );
+  assert.equal(
+    pickSharedImage([{ path: 'file:///cache/123.bin', mimeType: 'image/*', fileName: 'screen.png' }])?.mimeType,
+    'image/png',
+  );
+  // From path URI extension when filename has none
+  assert.equal(
+    pickSharedImage([{ path: 'file:///cache/123.webp', mimeType: 'image/*', fileName: null }])?.mimeType,
+    'image/webp',
+  );
+  // Default fallback when neither has an extension
+  assert.equal(
+    pickSharedImage([{ path: 'file:///cache/123', mimeType: 'image/*', fileName: null }])?.mimeType,
+    'image/jpeg',
+  );
+  assert.equal(resolveSpecificImageMime('image/*', 'shot.png', 'file:///tmp/shot'), 'image/png');
+  assert.equal(resolveSpecificImageMime('image/*', null, 'file:///tmp/shot.jpg'), 'image/jpeg');
+  assert.equal(resolveSpecificImageMime('image/*', null, null), 'image/jpeg');
+  assert.equal(resolveSpecificImageMime('image/png', 'shot.jpg', null), 'image/png');
+});
+
+test('canonicalizeImageMimeType normalizes wildcard image/* to image/jpeg', () => {
+  assert.equal(canonicalizeImageMimeType('image/*'), 'image/jpeg');
+  assert.equal(canonicalizeImageMimeType('IMAGE/*'), 'image/jpeg');
 });

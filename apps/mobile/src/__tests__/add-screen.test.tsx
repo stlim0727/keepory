@@ -587,6 +587,19 @@ describe('smart Add capture', () => {
     expect(screen.getByLabelText('Title (optional)').props.value).toBe('Caption');
     expect(screen.getByLabelText('Note').props.value).toBe('Image notes');
     expect(screen.getByTestId('add-save').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByTestId('add-paste-image-placeholder')).toBeTruthy();
+  });
+  it('tapping empty image placeholder triggers paste and populates image', async () => {
+    mockReadClipboard.mockResolvedValueOnce({
+      text: 'Image caption',
+      image: { uri: 'file:///pasted.png', mimeType: 'image/png', fileName: 'pasted.png' },
+    });
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-mode-image'));
+    expect(screen.getByTestId('add-paste-image-placeholder')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('add-paste-image-placeholder'));
+    await screen.findByText('Save image');
+    expect(screen.getByTestId('add-save').props.accessibilityState.disabled).toBe(false);
   });
 });
 

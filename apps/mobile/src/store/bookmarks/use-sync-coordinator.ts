@@ -437,12 +437,13 @@ export function useSyncCoordinator({
             );
           }
           // The real MIME type recorded at capture time is authoritative —
-          // prefer it always. Only a row captured before that field existed
-          // falls back to guessing from the local file's extension, which
-          // can mislabel an unmapped format's Content-Type (acceptable only
-          // as a legacy-compat fallback, not the primary path).
+          // prefer it always when it is a specific format. A wildcard MIME like
+          // `image/*` (frequently reported by Android share intents) or missing
+          // type falls back to resolving from the local file's extension.
+          const recordedMime = bookmark.local_image_mime_type?.trim().toLowerCase();
           const reportedContentType =
-            bookmark.local_image_mime_type ?? mimeTypeForImageUri(bookmark.local_image_uri);
+            (recordedMime && !recordedMime.includes('*') ? recordedMime : null) ??
+            mimeTypeForImageUri(bookmark.local_image_uri);
           // canonicalizeImageMimeType normalizes a real-but-nonstandard alias
           // (e.g. some providers report `image/jpg` for a plain JPEG) to the
           // single form the bucket's allowlist actually contains — without

@@ -328,7 +328,21 @@ export default function AddBookmarkScreen() {
           {mode === 'image' ? image ? <>
             <Image source={{ uri: image.uri }} accessibilityLabel={t('add.imagePreview')} style={{ width: '100%', height: 220, resizeMode: 'contain' }} />
             <Button testID="add-remove-image" variant="ghost" disabled={saving} onPress={() => smart.update({ image: undefined })}>{t('add.removeImage')}</Button>
-          </> : <Text style={{ color: palette.textSecondary }}>{t('add.imageEmpty')}</Text> : null}
+          </> : <Pressable
+            testID="add-paste-image-placeholder"
+            accessibilityRole="button"
+            accessibilityLabel={t('add.pasteImage')}
+            disabled={saving || smart.status === 'reading'}
+            onPress={smart.paste}
+            style={({ pressed }) => [
+              styles.imagePlaceholder,
+              { borderColor: palette.controlBorder, backgroundColor: palette.card },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons name="image-outline" size={32} color={palette.textSecondary} />
+            <Text style={[styles.imagePlaceholderText, { color: palette.textSecondary }]}>{t('add.imageEmpty')}</Text>
+          </Pressable> : null}
           {noteField}{titleField}
         </>}
         </View>
@@ -473,5 +487,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     marginTop: 8,
+  },
+  imagePlaceholder: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    minHeight: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 8,
+  },
+  imagePlaceholderText: {
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

@@ -1347,6 +1347,9 @@ export const IMAGE_UNSUPPORTED_FORMAT_ERROR_TEXT = 'unsupported image format for
  *  outright), so this only ever matters for the single-entry syncQueueEntry
  *  path below for that case. */
 export function isRowSpecificPermanentSyncErrorText(message: string): boolean {
+  if (message.startsWith('image/*:')) {
+    return false;
+  }
   return message.includes(URL_TOO_LONG_ERROR_TEXT) || message.includes(IMAGE_TOO_LARGE_ERROR_TEXT) || message.includes(IMAGE_UNSUPPORTED_FORMAT_ERROR_TEXT);
 }
 
