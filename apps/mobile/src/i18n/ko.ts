@@ -311,6 +311,7 @@ export const ko: Catalog = {
   'add.removeImage': '이미지 제거',
   'add.saveImage': '이미지 저장',
   'add.saveFailed': '이 기기에 저장하지 못했어요. 작성한 내용으로 다시 시도해 주세요.',
+  'add.reportSaveFailure': '개발팀에 오류 로그 전송',
   'add.discardPrompt': '다시 시도하지 않고 나갈까요? 이 기기에 저장이 완료되지 않았어요.',
   'add.discardDraft': '다시 시도하지 않고 나가기',
   'add.replacePrompt': '클립보드 내용으로 작성 중인 내용을 바꿀까요?',
@@ -478,6 +479,7 @@ export const ko: Catalog = {
   'settings.trash.value': '{count}개',
   'settings.report.label': '문제 신고',
   'settings.report.value': '버그나 개선 의견 보내기',
+  'settings.report.defectLabel': '동기화 결함 리포트',
   'settings.floatingReport.label': '플로팅 문제 신고 버튼',
   'settings.floatingReport.value': '화면 캡처와 함께 언제든 빠르게 신고',
   'settings.export.label': '내 데이터 내보내기',
@@ -805,6 +807,7 @@ export const ko: Catalog = {
   'detail.aiContentState': '요약: {summary} · 태그: {tags}개 · 폴더: {folder}',
   'detail.stateHelp': '이 기기의 상태입니다. 서버 관측은 최신이 아닐 수 있고, AI 완료여도 추천이 없을 수 있습니다. 재시도 시각은 실행 예약이 아닌 재시도 가능 시각입니다.',
   'detail.reportProblem': '이 북마크 문제 리포트',
+  'detail.reportSyncDefect': '동기화 결함 리포트',
   'detail.syncPhase.local_only': '이 기기에만 저장됨',
   'detail.syncPhase.not_synced': '클라우드 저장 미확인',
   'detail.syncPhase.synced': '클라우드 저장 확인 · 업로드 대기 없음',
@@ -894,6 +897,14 @@ export const ko: Catalog = {
   'report.errorSubmit': '신고를 제출할 수 없습니다.',
   'report.minimizeA11yHint': '길게 눌러서 최소화',
   'report.expandA11y': '신고 버튼 표시',
+  'report.technicalDisclaimer':
+    '이 리포트는 소프트웨어 결함을 수정하기 위해 진단 로그를 개발팀에 전송합니다. 개별 답변은 제공되지 않습니다.',
+  'report.defectA11yHint': '진단 로그를 개발팀에 전송합니다. 개별 답변은 제공되지 않습니다.',
+
+  'crash.title': 'Keepory에 문제가 발생했어요',
+  'crash.body': '예기치 않은 오류가 발생했어요. 다시 시도하거나 진단 로그를 개발팀에 전송할 수 있어요.',
+  'crash.report': '오류 로그 전송',
+  'crash.retry': '다시 시도',
 
   'account.signInApple': 'Apple로 로그인',
   'account.signInGoogle': 'Google로 로그인',

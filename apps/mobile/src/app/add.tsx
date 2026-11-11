@@ -19,6 +19,7 @@ import { insertedText } from '@/domain/inserted-text';
 import { MAX_ADD_MEMO_LENGTH } from '@/domain/add-draft';
 import { useAddDraft, type AddMode } from '@/features/add/use-add-draft';
 import { useImagePaste } from '@/features/add/use-image-paste';
+import { ReportDefectButton } from '@/feedback/ReportDefectButton';
 import { makeClientId } from '@/store/bookmarks/helpers';
 import { parseCaptureParams } from '@/domain/web-capture';
 import { normalizeUrl, canonicalizeUrl, isUrlTooLong } from '@/domain/urls';
@@ -347,6 +348,15 @@ export default function AddBookmarkScreen() {
         </>}
         </View>
         {error ? <Text accessibilityRole="alert" style={[styles.error, { color: palette.danger }]}>{error}</Text> : null}
+        {/* A save rejection is a storage/integrity defect, so offer the
+            diagnostic log send right on the failure state. */}
+        {failedMode ? (
+          <ReportDefectButton
+            testID="add-report-save-failure"
+            labelKey="add.reportSaveFailure"
+            source={{ route: '/add', surface: 'add_save_failure' }}
+          />
+        ) : null}
       </Card>
       <Text style={[styles.hint, { color: palette.textSecondary }]}>{t(mode === 'note' ? 'add.memoHint' : 'add.hint')}</Text>
     </ScrollView>

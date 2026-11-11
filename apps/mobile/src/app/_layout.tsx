@@ -20,6 +20,7 @@ import { useAppConfig } from '@/supabase/use-min-app-version';
 import { AiEnrichmentBurstToast } from '@/ui/AiEnrichmentBurstToast';
 import { CaptureToastProvider } from '@/ui/capture-toast';
 import { FeedbackCaptureProvider } from '@/feedback/open-report';
+import { CrashBoundary } from '@/feedback/CrashBoundary';
 import { FloatingReportButton } from '@/feedback/FloatingReportButton';
 import { UpdateRequired } from '@/ui/UpdateRequired';
 import { AnalyticsProvider } from '@/analytics/provider';
@@ -149,9 +150,11 @@ function RootLayout() {
                       <ShareConfirmHandler />
                       <AiEnrichmentBurstToast />
                       <FeedbackCaptureProvider>
-                        <FloatingReportButton>
-                          <RootStack />
-                        </FloatingReportButton>
+                        <CrashBoundary>
+                          <FloatingReportButton>
+                            <RootStack />
+                          </FloatingReportButton>
+                        </CrashBoundary>
                       </FeedbackCaptureProvider>
                       <StatusBar style="auto" />
                     </CaptureToastProvider>

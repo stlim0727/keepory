@@ -36,7 +36,7 @@ export function SyncDiagnostics({ status, lastPulledAt, remaining, recentPulls, 
             <Text testID="diagnostics-current-status" style={[styles.status, { flex: 1, color: attention ? palette.danger : palette.text }]} accessibilityLiveRegion="polite">{status}</Text>
           </View>
           <Text style={[styles.value, secondary]}>{t('settings.diagnostics.cloudRemaining', { count: remaining })}</Text>
-          {attention ? <Pressable accessibilityRole="button" disabled={reporting} onPress={onReport} style={styles.action}><Text style={{ color: palette.accent }}>{t('settings.report.label')}</Text></Pressable> : null}
+          {attention ? <Pressable accessibilityRole="button" disabled={reporting} onPress={onReport} style={styles.action}><Text style={{ color: palette.accent }}>{t('settings.report.defectLabel')}</Text></Pressable> : null}
         </View>
         <View style={[styles.block, styles.divider, border]}>
           <Text style={[styles.label, secondary]}>{t('settings.diagnostics.lastPulled')}</Text>
@@ -75,7 +75,7 @@ export function SyncDiagnostics({ status, lastPulledAt, remaining, recentPulls, 
                       <Pressable accessibilityRole="button" onPress={() => {
                         void Clipboard.setStringAsync(attempt.errorMessage || t('settings.diagnostics.errorUnavailable')).then(() => setCopied(key)).catch(() => setCopied(null));
                       }} style={styles.action}><Text style={{ color: palette.accent }}>{t(copied === key ? 'settings.diagnostics.copied' : 'settings.diagnostics.copyError')}</Text></Pressable>
-                      <Pressable accessibilityRole="button" disabled={reporting} onPress={onReport} style={styles.action}><Text style={{ color: palette.accent }}>{t('settings.report.label')}</Text></Pressable>
+                      <Pressable accessibilityRole="button" disabled={reporting} onPress={onReport} style={styles.action}><Text style={{ color: palette.accent }}>{t('settings.report.defectLabel')}</Text></Pressable>
                     </View>
                   ) : null}
                 </View>

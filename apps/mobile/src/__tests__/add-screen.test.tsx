@@ -59,6 +59,11 @@ jest.mock('expo-router', () => ({
   },
 }));
 
+const mockOpenReport = jest.fn(async (_source: unknown) => {});
+jest.mock('@/feedback/open-report', () => ({
+  useOpenReport: () => ({ openReport: mockOpenReport, capturing: false }),
+}));
+
 // Drive the responsive sheet rule off a controllable viewport.
 const mockWindowSize = { width: 390, height: 844, scale: 2, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
@@ -88,6 +93,7 @@ async function renderAddScreen() {
 beforeEach(() => {
   mockBack.mockClear();
   mockReplace.mockClear();
+  mockOpenReport.mockClear();
   mockAllowRemoval.mockClear();
   mockRemovalPrevented = false;
   mockPreventedRemoval = undefined;

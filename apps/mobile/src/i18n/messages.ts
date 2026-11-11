@@ -428,6 +428,7 @@ export const en = {
   'add.removeImage': 'Remove image',
   'add.saveImage': 'Save image',
   'add.saveFailed': 'Could not save on this device. Your draft is ready to retry.',
+  'add.reportSaveFailure': 'Send error log',
   'add.discardPrompt': 'Leave without retrying? This draft has not finished saving on this device.',
   'add.discardDraft': 'Leave without retrying',
   'add.replacePrompt': 'Replace your draft with this clipboard content?',
@@ -671,6 +672,7 @@ export const en = {
   'settings.trash.value': '{count} items',
   'settings.report.label': 'Report a problem',
   'settings.report.value': 'Send a bug report or idea',
+  'settings.report.defectLabel': 'Report sync defect',
   'settings.floatingReport.label': 'Floating report button',
   'settings.floatingReport.value': 'Quickly report issues with an on-screen screenshot button',
   'settings.export.label': 'Export my data',
@@ -1034,6 +1036,7 @@ export const en = {
   'detail.aiContentState': 'Summary: {summary} · Tags: {tags} · Folder: {folder}',
   'detail.stateHelp': 'State describes this device. Server observations may be stale. AI completion can have no suggestions. Retry times indicate eligibility, not a scheduled start.',
   'detail.reportProblem': 'Report a problem with this bookmark',
+  'detail.reportSyncDefect': 'Report sync defect',
   'detail.syncPhase.local_only': 'Stored on this device only',
   'detail.syncPhase.not_synced': 'Cloud save not confirmed',
   'detail.syncPhase.synced': 'Cloud save confirmed; no pending upload',
@@ -1146,6 +1149,20 @@ export const en = {
   'report.errorSubmit': 'Could not submit your report.',
   'report.minimizeA11yHint': 'Long press to minimize',
   'report.expandA11y': 'Show report button',
+  // Technical defect reporting: framed as diagnostic telemetry for the dev
+  // team, not a 1:1 support desk, so users with deleted videos / paywalled
+  // previews don't mistake it for content recovery or account help.
+  'report.technicalDisclaimer':
+    'This report sends diagnostic logs to the development team to fix software defects. Individual replies are not provided.',
+  'report.defectA11yHint':
+    'Sends diagnostic logs to the development team. No individual reply is provided.',
+
+  // Crash fallback (unhandled render/runtime error).
+  'crash.title': 'Keepory hit a problem',
+  'crash.body':
+    'The app ran into an unexpected error. You can try again, or send a diagnostic log to the development team.',
+  'crash.report': 'Send crash report',
+  'crash.retry': 'Try again',
 
   // Account / auth controls (sign-in is inline in Settings).
   'account.signInApple': 'Sign in with Apple',

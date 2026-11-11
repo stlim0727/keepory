@@ -77,6 +77,7 @@ import { isYoutubeAvailabilityCandidate } from '@/domain/page-metadata';
 import { hasRemoteIdentity, isLocalOnlyBookmark } from '@/sync/sync-bookmarks';
 import { notifyDetailMounted } from '@/domain/detail-navigation-signal';
 import { useOpenReport } from '@/feedback/open-report';
+import { ReportDefectButton } from '@/feedback/ReportDefectButton';
 
 // Lines of title shown before collapsing behind a "Show more" toggle.
 const TITLE_COLLAPSED_LINES = 4;
@@ -1364,6 +1365,22 @@ export default function BookmarkDetailScreen({
           </PostHogMaskView>
         </View>
       </View>
+
+      {/* Sync failure is a real software/data-integrity defect, so surface the
+          diagnostic report action right where the failure shows instead of
+          making the user scroll to the bottom "Report a problem". */}
+      {bookmark.sync_status === 'failed' ? (
+        <ReportDefectButton
+          testID="detail-report-sync-defect"
+          labelKey="detail.reportSyncDefect"
+          source={{
+            route: '/bookmark/detail',
+            surface: 'bookmark_detail',
+            bookmarkId: bookmark.id,
+            bookmarkProcessing: getBookmarkProcessing(bookmark.id),
+          }}
+        />
+      ) : null}
 
       {/* Title — tap to edit in place, auto-saved on blur. Overlong titles
           (full social captions) collapse to a few lines with a Show more

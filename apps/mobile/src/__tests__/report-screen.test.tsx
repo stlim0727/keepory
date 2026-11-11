@@ -125,6 +125,10 @@ test('renders the form and shows the privacy note', async () => {
 
   await waitFor(() => expect(screen.getByLabelText('Problem description')).toBeTruthy());
   expect(screen.getByText(/not your bookmark list/)).toBeTruthy();
+  // 1:1 CS misconception safeguard: the flow must read as diagnostic telemetry
+  // for software defects, not a support ticket expecting a personal reply.
+  expect(screen.getByTestId('report-technical-disclaimer')).toBeTruthy();
+  expect(screen.getByText(/diagnostic logs to the development team/)).toBeTruthy();
   expect(screen.getByLabelText('Toggle diagnostic context preview')).toBeTruthy();
   expect(screen.queryByLabelText('Diagnostic context preview')).toBeNull();
   expect(screen.getByLabelText('Share report')).toBeTruthy();
