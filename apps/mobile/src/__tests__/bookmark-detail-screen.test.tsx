@@ -170,6 +170,26 @@ test('Details keeps diagnostics opt-in and reports the inline bookmark identity'
   }));
 });
 
+test('a failed sync surfaces the inline defect report action with the bookmark identity', async () => {
+  mockRouteId = 'bookmark-failed';
+  mockOpenReport.mockClear();
+  fakeRepo.__reset([makeStoredBookmark({ id: 'bookmark-failed', sync_status: 'failed' })]);
+  const screen = await renderDetail();
+  await waitFor(() => expect(screen.getByTestId('detail-report-sync-defect')).toBeTruthy());
+  await fireEvent.press(screen.getByTestId('detail-report-sync-defect'));
+  expect(mockOpenReport).toHaveBeenCalledWith(expect.objectContaining({
+    route: '/bookmark/detail', surface: 'bookmark_detail', bookmarkId: 'bookmark-failed',
+  }));
+});
+
+test('a synced bookmark shows no inline defect report action', async () => {
+  mockRouteId = 'bookmark-ok';
+  fakeRepo.__reset([makeStoredBookmark({ id: 'bookmark-ok', sync_status: 'synced' })]);
+  const screen = await renderDetail();
+  await waitFor(() => expect(screen.getByLabelText('Toggle details')).toBeTruthy());
+  expect(screen.queryByTestId('detail-report-sync-defect')).toBeNull();
+});
+
 test('tapping a tag chip navigates to the Inbox filtered by that tag', async () => {
   mockRouteId = 'bookmark-raindrop';
   // Seed a real tag + link for this bookmark (the app no longer ships sample data).

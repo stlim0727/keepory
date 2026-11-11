@@ -377,6 +377,19 @@ export default function ReportScreen({ createApi = createFeedbackApi }: ReportSc
         contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 16 }]}
         keyboardShouldPersistTaps="handled"
       >
+      {/* 1:1 CS misconception safeguard: this flow files diagnostic
+          telemetry for software defects, not a support ticket — state that
+          plainly up front so users don't expect a personal reply. */}
+      <View
+        testID="report-technical-disclaimer"
+        style={[styles.disclaimer, { backgroundColor: palette.mutedSurface, borderColor: palette.border }]}
+      >
+        <Ionicons name="information-circle-outline" size={18} color={palette.textSecondary} />
+        <Text style={[styles.disclaimerText, { color: palette.textSecondary }]}>
+          {t('report.technicalDisclaimer')}
+        </Text>
+      </View>
+
       <View style={[styles.field, { backgroundColor: palette.card }]}>
           <Text style={[styles.fieldLabel, { color: palette.textSecondary }]}>{t('report.categoryLabel')}</Text>
           <View style={styles.chipRow}>
@@ -637,6 +650,19 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     gap: 12,
+  },
+  disclaimer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+  },
+  disclaimerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
   },
   field: {
     borderRadius: 12,

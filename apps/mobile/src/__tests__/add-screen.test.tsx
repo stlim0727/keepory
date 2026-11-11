@@ -59,6 +59,11 @@ jest.mock('expo-router', () => ({
   },
 }));
 
+const mockOpenReport = jest.fn(async (_source: unknown) => {});
+jest.mock('@/feedback/open-report', () => ({
+  useOpenReport: () => ({ openReport: mockOpenReport, capturing: false }),
+}));
+
 // Drive the responsive sheet rule off a controllable viewport.
 const mockWindowSize = { width: 390, height: 844, scale: 2, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
@@ -88,6 +93,7 @@ async function renderAddScreen() {
 beforeEach(() => {
   mockBack.mockClear();
   mockReplace.mockClear();
+  mockOpenReport.mockClear();
   mockAllowRemoval.mockClear();
   mockRemovalPrevented = false;
   mockPreventedRemoval = undefined;
@@ -537,6 +543,20 @@ describe('smart Add capture', () => {
     expect(mockCopyImage).toHaveBeenCalledTimes(2);
     expect(fakeRepo.__bookmarks()).toHaveLength(1);
     expect(fakeRepo.__queue()).toHaveLength(1);
+  });
+  it('offers a diagnostic log send on a save failure, and not before', async () => {
+    mockCopyImage.mockRejectedValueOnce(new Error('Disk full'));
+    mockReadClipboard.mockResolvedValue({text:'',image:{uri:'file:///temp.png',mimeType:'image/png',fileName:null}});
+    const screen = await renderAddScreen();
+    await fireEvent.press(screen.getByTestId('add-paste'));
+    await screen.findByText('Save image');
+    expect(screen.queryByTestId('add-report-save-failure')).toBeNull();
+    await fireEvent.press(screen.getByTestId('add-save'));
+    await screen.findByText(en['add.saveFailed'] as string);
+    await fireEvent.press(screen.getByTestId('add-report-save-failure'));
+    expect(mockOpenReport).toHaveBeenCalledWith(expect.objectContaining({
+      route: '/add', surface: 'add_save_failure',
+    }));
   });
   it('protects navigation while saving, retains a failed draft, and permits durable dismissal', async () => {
     let failCopy!: (reason: Error) => void;

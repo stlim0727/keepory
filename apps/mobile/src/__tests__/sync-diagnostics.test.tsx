@@ -37,7 +37,7 @@ test('an expanded error is complete, selectable, copyable, and links to reportin
   expect(full.props.numberOfLines).toBeUndefined();
   await fireEvent.press(screen.getByText('Copy error'));
   await waitFor(() => expect(Clipboard.setStringAsync).toHaveBeenCalledWith(error));
-  await fireEvent.press(screen.getByText('Report a problem'));
+  await fireEvent.press(screen.getByText('Report sync defect'));
   expect(onReport).toHaveBeenCalledTimes(1);
 });
 
