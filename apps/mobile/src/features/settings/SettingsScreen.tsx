@@ -799,7 +799,7 @@ export default function SettingsScreen() {
             recentPulls={recentPulls}
             reporting={capturing}
             attention={["attention", "sign_in", "permission"].includes(librarySyncFlow?.phase ?? "idle")}
-            onReport={() => void openReport()}
+            onReport={() => void openReport({ route: '/settings', surface: 'settings_sync_diagnostics' })}
           />
           <Group styles={styles} title={t("settings.diagnostics.workTitle")}>
             <Row styles={styles} palette={palette} icon="layers-outline"

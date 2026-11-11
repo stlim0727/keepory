@@ -170,6 +170,33 @@ test('Details keeps diagnostics opt-in and reports the inline bookmark identity'
   }));
 });
 
+test('surfaces sync defect banner and report action when sync fails', async () => {
+  const FAILED_ID = 'bookmark-failed-sync';
+  fakeRepo.__reset([
+    makeStoredBookmark({
+      id: FAILED_ID,
+      title: 'Failed upload item',
+      sync_status: 'failed',
+    }),
+  ]);
+  mockRouteId = FAILED_ID;
+  const screen = await render(
+    <BookmarksProvider>
+      <CaptureToastProvider>
+        <BookmarkDetailScreen inlineId={FAILED_ID} />
+      </CaptureToastProvider>
+    </BookmarksProvider>,
+  );
+  await waitFor(() => expect(screen.getByTestId('detail-sync-defect-banner')).toBeTruthy());
+  const reportBtn = screen.getByTestId('detail-report-sync-defect');
+  expect(reportBtn).toBeTruthy();
+  await fireEvent.press(reportBtn);
+  expect(mockOpenReport).toHaveBeenCalledWith(expect.objectContaining({
+    bookmarkId: FAILED_ID,
+    surface: 'bookmark_detail_sync_error',
+  }));
+});
+
 test('tapping a tag chip navigates to the Inbox filtered by that tag', async () => {
   mockRouteId = 'bookmark-raindrop';
   // Seed a real tag + link for this bookmark (the app no longer ships sample data).

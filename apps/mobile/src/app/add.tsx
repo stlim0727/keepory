@@ -31,6 +31,7 @@ import { KeyboardAvoidingScreen } from '@/ui/KeyboardAvoidingScreen';
 import { MemoEditor } from '@/ui/MemoEditor';
 import { useCaptureToast } from '@/ui/capture-toast';
 import { useBookmarks } from '@/store/bookmarks';
+import { useOpenReport } from '@/feedback/open-report';
 
 // On wide (desktop-web) viewports, Add docks as a right-side sheet over the
 // dimmed Inbox (mirrors Report's right-docked sheet); this caps the panel
@@ -48,6 +49,7 @@ export default function AddBookmarkScreen() {
   const asSheet = width >= 760;
   const { addBookmark, abandonCapture, isLoading } = useBookmarks();
   const { show } = useCaptureToast();
+  const { openReport, capturing: reportCapturing } = useOpenReport('/add');
   const [failedMode, setFailedMode] = useState<AddMode | null>(null);
   const smart = useAddDraft(failedMode);
   const { mode, draft: { url, title, memo, format, image } } = smart;
@@ -346,7 +348,26 @@ export default function AddBookmarkScreen() {
           {noteField}{titleField}
         </>}
         </View>
-        {error ? <Text accessibilityRole="alert" style={[styles.error, { color: palette.danger }]}>{error}</Text> : null}
+        {error ? (
+          <View style={styles.errorContainer}>
+            <Text accessibilityRole="alert" style={[styles.error, { color: palette.danger }]}>{error}</Text>
+            {failedMode !== null || error === t('add.saveFailed') ? (
+              <Button
+                testID="add-report-save-defect"
+                variant="ghost"
+                size="sm"
+                icon="bug-outline"
+                disabled={reportCapturing}
+                onPress={() => void openReport({
+                  route: '/add',
+                  surface: 'add_save_error',
+                })}
+              >
+                {t('add.reportSaveDefect')}
+              </Button>
+            ) : null}
+          </View>
+        ) : null}
       </Card>
       <Text style={[styles.hint, { color: palette.textSecondary }]}>{t(mode === 'note' ? 'add.memoHint' : 'add.hint')}</Text>
     </ScrollView>
@@ -479,6 +500,10 @@ const styles = StyleSheet.create({
     minHeight: 48,
     padding: 14,
     fontSize: 16,
+  },
+  errorContainer: {
+    gap: 8,
+    alignItems: 'flex-start',
   },
   error: {
     fontSize: 13,

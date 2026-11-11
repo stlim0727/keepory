@@ -428,6 +428,7 @@ export const en = {
   'add.removeImage': 'Remove image',
   'add.saveImage': 'Save image',
   'add.saveFailed': 'Could not save on this device. Your draft is ready to retry.',
+  'add.reportSaveDefect': 'Report save defect',
   'add.discardPrompt': 'Leave without retrying? This draft has not finished saving on this device.',
   'add.discardDraft': 'Leave without retrying',
   'add.replacePrompt': 'Replace your draft with this clipboard content?',
@@ -1034,6 +1035,7 @@ export const en = {
   'detail.aiContentState': 'Summary: {summary} · Tags: {tags} · Folder: {folder}',
   'detail.stateHelp': 'State describes this device. Server observations may be stale. AI completion can have no suggestions. Retry times indicate eligibility, not a scheduled start.',
   'detail.reportProblem': 'Report a problem with this bookmark',
+  'detail.reportSyncDefect': 'Report sync defect',
   'detail.syncPhase.local_only': 'Stored on this device only',
   'detail.syncPhase.not_synced': 'Cloud save not confirmed',
   'detail.syncPhase.synced': 'Cloud save confirmed; no pending upload',
@@ -1111,6 +1113,8 @@ export const en = {
   'review.summaryDismissA11y': 'Dismiss the suggested summary for {title}',
 
   // Report a problem.
+  'report.disclaimer':
+    'This report sends diagnostic logs to the development team to fix software defects. Individual replies are not provided.',
   'report.categoryBug': 'Bug',
   'report.categoryIdea': 'Idea',
   'report.categoryOther': 'Other',
@@ -1221,6 +1225,13 @@ export const en = {
   'tutorial.step4.point1': 'Interactive visual map of bookmarks and tags',
   'tutorial.step4.point2': 'Bipartite and Co-occurrence cluster modes',
   'tutorial.step4.point3': 'Pan, zoom, and uncover serendipitous links',
+
+  // Error boundary.
+  'errorBoundary.title': 'Something went wrong',
+  'errorBoundary.message': 'An unexpected error occurred in the application.',
+  'errorBoundary.retry': 'Try again',
+  'errorBoundary.report': 'Send error log',
+  'errorBoundary.copied': 'Error log copied to clipboard',
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;

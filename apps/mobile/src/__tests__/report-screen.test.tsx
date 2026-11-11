@@ -124,6 +124,8 @@ test('renders the form and shows the privacy note', async () => {
   const screen = await renderReport();
 
   await waitFor(() => expect(screen.getByLabelText('Problem description')).toBeTruthy());
+  expect(screen.getByTestId('report-disclaimer')).toBeTruthy();
+  expect(screen.getByText(/sends diagnostic logs to the development team/)).toBeTruthy();
   expect(screen.getByText(/not your bookmark list/)).toBeTruthy();
   expect(screen.getByLabelText('Toggle diagnostic context preview')).toBeTruthy();
   expect(screen.queryByLabelText('Diagnostic context preview')).toBeNull();

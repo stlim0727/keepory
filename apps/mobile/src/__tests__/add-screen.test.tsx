@@ -530,6 +530,7 @@ describe('smart Add capture', () => {
     await screen.findByText('Save image');
     await fireEvent.press(screen.getByTestId('add-save'));
     await screen.findByText(en['add.saveFailed'] as string);
+    expect(screen.getByTestId('add-report-save-defect')).toBeTruthy();
     expect(mockBack).not.toHaveBeenCalled();
     expect(fakeRepo.__bookmarks()).toHaveLength(0);
     await fireEvent.press(screen.getByTestId('add-save'));
@@ -718,6 +719,7 @@ describe('capture persistence recovery after editing', () => {
     jest.spyOn(fakeRepo.repository,'updateBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
     await fireEvent.press(screen.getByTestId('add-save'));
     await screen.findByText(en['add.saveFailed'] as string);
+    expect(screen.getByTestId('add-report-save-defect')).toBeTruthy();
     expect(mockBack).not.toHaveBeenCalled();
     await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'After failure');
     await fireEvent.press(screen.getByTestId('add-save'));
@@ -733,6 +735,7 @@ describe('capture persistence recovery after editing', () => {
     jest.spyOn(fakeRepo.repository,'updateBookmark').mockRejectedValueOnce(new Error('Storage unavailable'));
     await fireEvent.press(screen.getByTestId('add-save'));
     await screen.findByText(en['add.saveFailed'] as string);
+    expect(screen.getByTestId('add-report-save-defect')).toBeTruthy();
     expect(mockBack).not.toHaveBeenCalled();
     await fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'After failure');
     await fireEvent.press(screen.getByTestId('add-save'));

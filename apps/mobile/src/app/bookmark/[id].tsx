@@ -213,6 +213,9 @@ export default function BookmarkDetailScreen({
   const syncQueueEntry = bookmark
     ? queue.find((entry) => entry.local_id === bookmark.id)
     : undefined;
+  const isSyncFailed =
+    (bookmark?.sync_status === 'failed' || syncQueueEntry?.sync_status === 'failed') &&
+    syncQueueEntry?.last_error_kind !== 'auth';
   const repeatedDnsFailure = hasRepeatedDnsFailures(queue);
 
   // The title shown when not editing. Background metadata enrichment can swap
@@ -1365,6 +1368,35 @@ export default function BookmarkDetailScreen({
         </View>
       </View>
 
+      {isSyncFailed && bookmark ? (
+        <View
+          testID="detail-sync-defect-banner"
+          style={[styles.syncDefectBanner, { backgroundColor: palette.card, borderColor: palette.danger }]}
+        >
+          <View style={styles.syncDefectHeader}>
+            <Ionicons name="warning-outline" size={18} color={palette.danger} />
+            <Text style={[styles.syncDefectTitle, { color: palette.danger }]}>
+              {syncQueueEntry?.last_error ? syncQueueEntry.last_error : t('status.failed')}
+            </Text>
+          </View>
+          <Button
+            testID="detail-report-sync-defect"
+            variant="ghost"
+            size="sm"
+            icon="bug-outline"
+            disabled={reportCapturing}
+            onPress={() => void openReport({
+              route: '/bookmark/detail',
+              surface: 'bookmark_detail_sync_error',
+              bookmarkId: bookmark.id,
+              bookmarkProcessing: getBookmarkProcessing(bookmark.id),
+            })}
+          >
+            {t('detail.reportSyncDefect')}
+          </Button>
+        </View>
+      ) : null}
+
       {/* Title — tap to edit in place, auto-saved on blur. Overlong titles
           (full social captions) collapse to a few lines with a Show more
           toggle so they don't crowd out the rest of the screen. */}
@@ -1872,6 +1904,22 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     gap: 14,
+  },
+  syncDefectBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    gap: 8,
+  },
+  syncDefectHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  syncDefectTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
   },
   inlineContainer: {
     borderWidth: StyleSheet.hairlineWidth,

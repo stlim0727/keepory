@@ -166,5 +166,8 @@ function RootLayout() {
   );
 }
 
+// Export root error boundary for unexpected crashes
+export { RootErrorBoundary as ErrorBoundary } from '@/ui/RootErrorBoundary';
+
 // Wrap the root so unhandled errors anywhere in the tree are captured.
 export default wrapWithSentry(RootLayout);

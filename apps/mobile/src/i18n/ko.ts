@@ -311,6 +311,7 @@ export const ko: Catalog = {
   'add.removeImage': '이미지 제거',
   'add.saveImage': '이미지 저장',
   'add.saveFailed': '이 기기에 저장하지 못했어요. 작성한 내용으로 다시 시도해 주세요.',
+  'add.reportSaveDefect': '저장 오류 리포트',
   'add.discardPrompt': '다시 시도하지 않고 나갈까요? 이 기기에 저장이 완료되지 않았어요.',
   'add.discardDraft': '다시 시도하지 않고 나가기',
   'add.replacePrompt': '클립보드 내용으로 작성 중인 내용을 바꿀까요?',
@@ -805,6 +806,7 @@ export const ko: Catalog = {
   'detail.aiContentState': '요약: {summary} · 태그: {tags}개 · 폴더: {folder}',
   'detail.stateHelp': '이 기기의 상태입니다. 서버 관측은 최신이 아닐 수 있고, AI 완료여도 추천이 없을 수 있습니다. 재시도 시각은 실행 예약이 아닌 재시도 가능 시각입니다.',
   'detail.reportProblem': '이 북마크 문제 리포트',
+  'detail.reportSyncDefect': '동기화 결함 리포트',
   'detail.syncPhase.local_only': '이 기기에만 저장됨',
   'detail.syncPhase.not_synced': '클라우드 저장 미확인',
   'detail.syncPhase.synced': '클라우드 저장 확인 · 업로드 대기 없음',
@@ -859,6 +861,8 @@ export const ko: Catalog = {
   'review.summaryAppendA11y': '{title}의 제안된 요약을 메모에 추가',
   'review.summaryDismissA11y': '{title}의 제안된 요약 무시',
 
+  'report.disclaimer':
+    '이 리포트는 소프트웨어 결함 수정을 위해 개발팀에 진단 로그를 전송합니다. 개별 답변은 제공되지 않습니다.',
   'report.categoryBug': '버그',
   'report.categoryIdea': '아이디어',
   'report.categoryOther': '기타',
@@ -963,4 +967,11 @@ export const ko: Catalog = {
   'tutorial.step4.point1': '북마크와 태그의 인터랙티브 시각화 지도',
   'tutorial.step4.point2': '북마크 연결 모드와 태그 클러스터 모드 제공',
   'tutorial.step4.point3': '이동, 확대/축소로 숨겨진 연관성 발견',
+
+  // Error boundary.
+  'errorBoundary.title': '문제가 발생했습니다',
+  'errorBoundary.message': '애플리케이션에서 예기치 않은 오류가 발생했습니다.',
+  'errorBoundary.retry': '다시 시도',
+  'errorBoundary.report': '오류 로그 전송',
+  'errorBoundary.copied': '오류 로그가 클립보드에 복사되었습니다',
 };

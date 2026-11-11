@@ -377,7 +377,22 @@ export default function ReportScreen({ createApi = createFeedbackApi }: ReportSc
         contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 16 }]}
         keyboardShouldPersistTaps="handled"
       >
-      <View style={[styles.field, { backgroundColor: palette.card }]}>
+        <View
+          testID="report-disclaimer"
+          style={[styles.disclaimerBox, { backgroundColor: palette.mutedSurface, borderColor: palette.border }]}
+        >
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color={palette.textSecondary}
+            style={styles.disclaimerIcon}
+          />
+          <Text style={[styles.disclaimerText, { color: palette.textSecondary }]}>
+            {t('report.disclaimer')}
+          </Text>
+        </View>
+
+        <View style={[styles.field, { backgroundColor: palette.card }]}>
           <Text style={[styles.fieldLabel, { color: palette.textSecondary }]}>{t('report.categoryLabel')}</Text>
           <View style={styles.chipRow}>
             {CATEGORIES.map((item) => {
@@ -637,6 +652,22 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     gap: 12,
+  },
+  disclaimerBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  disclaimerIcon: {
+    marginTop: 2,
+  },
+  disclaimerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   field: {
     borderRadius: 12,
