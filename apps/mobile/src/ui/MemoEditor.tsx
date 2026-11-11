@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { PostHogMaskView } from 'posthog-react-native';
 
@@ -26,6 +27,9 @@ interface MemoEditorProps extends MemoDraft {
   alwaysEditing?: boolean;
   autoFocus?: boolean;
   maxLength?: number;
+  onPaste?: () => void;
+  pasteDisabled?: boolean;
+  pasteTestID?: string;
 }
 
 /** Shared source-preserving editor for memo bodies and bookmark notes. */
@@ -41,6 +45,9 @@ export function MemoEditor({
   alwaysEditing = false,
   autoFocus = false,
   maxLength = 10_000,
+  onPaste,
+  pasteDisabled = false,
+  pasteTestID,
 }: MemoEditorProps) {
   const t = useT();
   const palette = usePalette();
@@ -124,6 +131,26 @@ export function MemoEditor({
       <View style={styles.header}>
         <Text style={[styles.label, { color: palette.textSecondary }]}>{label}</Text>
         <View style={styles.actions}>
+          {onPaste ? (
+            <Pressable
+              testID={pasteTestID}
+              accessibilityRole="button"
+              accessibilityLabel={t('add.paste')}
+              disabled={pasteDisabled}
+              onPress={onPaste}
+              style={({ pressed }) => [
+                styles.button,
+                styles.pasteButton,
+                pasteDisabled && { opacity: 0.5 },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Ionicons name="clipboard-outline" size={14} color={palette.accent} />
+              <Text style={[styles.actionText, { color: palette.accent }]}>
+                {t('add.pasteShort')}
+              </Text>
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('memo.formatA11y', { field: label })}
@@ -345,6 +372,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '600' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
   button: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
+  pasteButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   actionText: { fontSize: 13, fontWeight: '600' },
   formatMenu: { alignSelf: 'flex-end', borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 4, minWidth: 160 },
   formatOption: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 4, borderRadius: 8 },
