@@ -24,7 +24,7 @@
 //                   [--archived N] [--data fixture.json]
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { extname, join, normalize, dirname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -109,18 +109,22 @@ async function buildDataset() {
 
 // ---- resolve the pre-installed Chromium ------------------------------------
 function resolveChromium() {
+  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
   const root = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
   let dirs = [];
   try {
     dirs = readdirSync(root);
   } catch {
-    return undefined; // let playwright try its own bundled browser
+    dirs = [];
   }
   // Prefer headless_shell (faster cold start) over full chrome.
   const shell = dirs.find((d) => d.startsWith('chromium_headless_shell'));
   if (shell) return join(root, shell, 'chrome-linux', 'headless_shell');
   const full = dirs.find((d) => d.startsWith('chromium-'));
   if (full) return join(root, full, 'chrome-linux', 'chrome');
+  for (const candidate of ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium-browser', '/usr/bin/chromium']) {
+    if (existsSync(candidate)) return candidate;
+  }
   return undefined;
 }
 

@@ -254,9 +254,22 @@ export default function AddBookmarkScreen() {
   </>;
   const noteField = <MemoEditor label={t('add.memoBodyLabel')} accessibilityLabel={t('add.memoBodyLabel')}
     placeholder={t('add.memoBodyPlaceholder')} alwaysEditing maxLength={MAX_ADD_MEMO_LENGTH}
-    value={memo} format={format} onChange={({ value, format: nextFormat }) => {
+    value={memo} format={format}
+    onPaste={smart.paste}
+    pasteDisabled={saving || smart.status === 'reading'}
+    pasteTestID={mode === 'note' ? 'add-paste' : undefined}
+    onChange={({ value, format: nextFormat }) => {
       if (!savingRef.current) { smart.update({ memo: value, format: nextFormat }); setError(null); }
     }} />;
+  const statusText = smart.status ? (
+    <Text
+      accessibilityRole={smart.status === 'denied' || smart.status === 'empty' || smart.status === 'imageMissing' || smart.status === 'textTooLong' ? 'alert' : 'text'}
+      accessibilityLiveRegion="polite"
+      style={{ color: palette.textSecondary, fontSize: 13 }}
+    >
+      {t(`add.clipboard.${smart.status}`)}
+    </Text>
+  ) : null;
   const content = <>
     {confirmDiscard ? <Card elevated={false} style={styles.captureCard}>
       <Text accessibilityRole="alert" style={{ color: palette.text }}>{t('add.discardPrompt')}</Text>
@@ -265,10 +278,6 @@ export default function AddBookmarkScreen() {
     </Card> : null}
     <ScrollView testID="add-scroll" style={[styles.scroll, { backgroundColor: palette.background }]}
       contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Button testID="add-paste" variant="secondary" disabled={saving || smart.status === 'reading'} onPress={smart.paste}>
-        {t(mode === 'image' ? 'add.pasteImage' : 'add.paste')}
-      </Button>
-      {smart.status ? <Text accessibilityRole={smart.status === 'denied' || smart.status === 'empty' || smart.status === 'imageMissing' || smart.status === 'textTooLong' ? 'alert' : 'text'} accessibilityLiveRegion="polite" style={{ color: palette.textSecondary }}>{t(`add.clipboard.${smart.status}`)}</Text> : null}
       {smart.pending ? <Card elevated={false} style={styles.captureCard}>
         <Text style={{ color: palette.text }}>{t('add.replacePrompt')}</Text>
         {smart.pending.draft.image ? <Image source={{ uri: smart.pending.draft.image.uri }} accessibilityLabel={t('add.imagePreview')} style={{ width: '100%', height: 160, resizeMode: 'contain' }} /> : null}
@@ -292,58 +301,112 @@ export default function AddBookmarkScreen() {
         <View collapsable={false} pointerEvents={saving ? 'none' : 'auto'} style={{ gap: 10 }}>
         {mode === 'link' ? <>
           <Text style={[styles.label, { color: palette.textSecondary }]}>{t('add.urlLabel')}</Text>
-          <TextInput testID="add-url" accessibilityLabel={t('add.urlLabel')}
-            style={[styles.input, { backgroundColor: palette.card, color: palette.text, borderColor: palette.controlBorder }]}
-            placeholder={t('add.urlPlaceholder')} placeholderTextColor={palette.textSecondary}
-            autoCapitalize="none" autoCorrect={false} autoFocus keyboardType="url" returnKeyType="next"
-            onSelectionChange={(event) => { urlSelection.current = event.nativeEvent.selection; }}
-            value={url} editable={!saving} onChangeText={(value) => {
-              const inserted = insertedText(url, value, urlSelection.current);
-              const pasted = inserted.length > 8 || inserted.includes('\n');
-              const parsed = pasted ? parseSmartInput(inserted) : null;
-              // A whole-field replacement can share its URL prefix with the
-              // previous value. Only then may the full value be the candidate.
-              const candidate = parsed?.mode === 'link' ? inserted : pasted && !value.includes(url) ? value : null;
-              const candidateParsed = candidate ? parseSmartInput(candidate) : null;
-              if (candidate && candidateParsed?.mode === 'link' && (candidateParsed.title || candidateParsed.notes || (url && value.includes(url)))) {
-                smart.offer(candidate);
-                setDetailsOpen(true);
-              } else {
-                setUrl(value);
-              }
-              setError(null);
-            }}
-            onSubmitEditing={() => {
-              if (detailsOpen) {
-                titleInputRef.current?.focus();
-              } else {
-                focusTitleAfterExpand.current = true;
-                setDetailsOpen(true);
-              }
-            }} />
+          <View style={[styles.urlRow, fontScale >= 1.5 && styles.urlRowStacked]}>
+            <TextInput testID="add-url" accessibilityLabel={t('add.urlLabel')}
+              style={[styles.input, styles.urlInput, { backgroundColor: palette.card, color: palette.text, borderColor: palette.controlBorder }]}
+              placeholder={t('add.urlPlaceholder')} placeholderTextColor={palette.textSecondary}
+              autoCapitalize="none" autoCorrect={false} autoFocus keyboardType="url" returnKeyType="next"
+              onSelectionChange={(event) => { urlSelection.current = event.nativeEvent.selection; }}
+              value={url} editable={!saving} onChangeText={(value) => {
+                const inserted = insertedText(url, value, urlSelection.current);
+                const pasted = inserted.length > 8 || inserted.includes('\n');
+                const parsed = pasted ? parseSmartInput(inserted) : null;
+                // A whole-field replacement can share its URL prefix with the
+                // previous value. Only then may the full value be the candidate.
+                const candidate = parsed?.mode === 'link' ? inserted : pasted && !value.includes(url) ? value : null;
+                const candidateParsed = candidate ? parseSmartInput(candidate) : null;
+                if (candidate && candidateParsed?.mode === 'link' && (candidateParsed.title || candidateParsed.notes || (url && value.includes(url)))) {
+                  smart.offer(candidate);
+                  setDetailsOpen(true);
+                } else {
+                  setUrl(value);
+                }
+                setError(null);
+              }}
+              onSubmitEditing={() => {
+                if (detailsOpen) {
+                  titleInputRef.current?.focus();
+                } else {
+                  focusTitleAfterExpand.current = true;
+                  setDetailsOpen(true);
+                }
+              }} />
+            <Button
+              testID="add-paste"
+              variant="secondary"
+              size="md"
+              icon="clipboard-outline"
+              disabled={saving || smart.status === 'reading'}
+              onPress={smart.paste}
+              accessibilityLabel={t('add.paste')}
+              style={styles.urlPasteButton}
+            >
+              {t('add.pasteShort')}
+            </Button>
+          </View>
+          {statusText}
           <Button variant="ghost" accessibilityState={{ expanded: detailsOpen }}
             onPress={() => setDetailsOpen((value) => !value)}>{t('add.details')}</Button>
           {detailsOpen ? <>{titleField}{noteField}</> : null}
         </> : <>
-          {mode === 'image' ? image ? <>
-            <Image source={{ uri: image.uri }} accessibilityLabel={t('add.imagePreview')} style={{ width: '100%', height: 220, resizeMode: 'contain' }} />
-            <Button testID="add-remove-image" variant="ghost" disabled={saving} onPress={() => smart.update({ image: undefined })}>{t('add.removeImage')}</Button>
-          </> : <Pressable
-            testID="add-paste-image-placeholder"
-            accessibilityRole="button"
-            accessibilityLabel={t('add.pasteImage')}
-            disabled={saving || smart.status === 'reading'}
-            onPress={smart.paste}
-            style={({ pressed }) => [
-              styles.imagePlaceholder,
-              { borderColor: palette.controlBorder, backgroundColor: palette.card },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Ionicons name="image-outline" size={32} color={palette.textSecondary} />
-            <Text style={[styles.imagePlaceholderText, { color: palette.textSecondary }]}>{t('add.imageEmpty')}</Text>
-          </Pressable> : null}
-          {noteField}{titleField}
+          {mode === 'image' ? (
+            <>
+              {image ? (
+                <>
+                  <Image source={{ uri: image.uri }} accessibilityLabel={t('add.imagePreview')} style={{ width: '100%', height: 220, resizeMode: 'contain' }} />
+                  <View style={styles.imageActionsRow}>
+                    <Button
+                      testID="add-paste"
+                      variant="secondary"
+                      size="sm"
+                      icon="clipboard-outline"
+                      disabled={saving || smart.status === 'reading'}
+                      onPress={smart.paste}
+                    >
+                      {t('add.pasteImage')}
+                    </Button>
+                    <Button testID="add-remove-image" variant="ghost" size="sm" disabled={saving} onPress={() => smart.update({ image: undefined })}>{t('add.removeImage')}</Button>
+                  </View>
+                </>
+              ) : (
+                <View style={[styles.imagePlaceholderContainer, { borderColor: palette.controlBorder, backgroundColor: palette.card }]}>
+                  <Pressable
+                    testID="add-paste-image-placeholder"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('add.pasteImage')}
+                    disabled={saving || smart.status === 'reading'}
+                    onPress={smart.paste}
+                    style={({ pressed }) => [
+                      styles.imagePlaceholderDropZone,
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Ionicons name="image-outline" size={32} color={palette.textSecondary} />
+                    <Text style={[styles.imagePlaceholderText, { color: palette.textSecondary }]}>{t('add.imageEmpty')}</Text>
+                  </Pressable>
+                  <Button
+                    testID="add-paste"
+                    variant="secondary"
+                    size="sm"
+                    icon="clipboard-outline"
+                    disabled={saving || smart.status === 'reading'}
+                    onPress={smart.paste}
+                    style={styles.imagePasteButton}
+                  >
+                    {t('add.pasteImage')}
+                  </Button>
+                </View>
+              )}
+              {statusText}
+              {noteField}{titleField}
+            </>
+          ) : (
+            <>
+              {noteField}
+              {statusText}
+              {titleField}
+            </>
+          )}
         </>}
         </View>
         {error ? <Text accessibilityRole="alert" style={[styles.error, { color: palette.danger }]}>{error}</Text> : null}
@@ -487,6 +550,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     marginTop: 8,
+  },
+  urlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  urlRowStacked: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
+  urlInput: {
+    flex: 1,
+  },
+  urlPasteButton: {
+    flexShrink: 0,
+  },
+  imageActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  imagePlaceholderContainer: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    minHeight: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  imagePlaceholderDropZone: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  imagePasteButton: {
+    alignSelf: 'center',
   },
   imagePlaceholder: {
     borderRadius: 16,
