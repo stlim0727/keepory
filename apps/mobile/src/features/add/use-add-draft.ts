@@ -66,7 +66,9 @@ export function useAddDraft(lockedMode: AddMode | null = null) {
     const draftFormat = detectMemoFormat(candidate.draft.memo);
     candidate.draft.format = draftFormat;
     if (candidate.draft.memo.length > MAX_ADD_MEMO_LENGTH) { setStatus('textTooLong'); return; }
-    apply(candidate);
+    if (lockedMode && candidate.mode !== lockedMode) { setStatus('savePending'); return; }
+    const occupied = (value: AddDraft) => Boolean(value.url || value.title || value.memo || value.image);
+    if (occupied(draft) || occupied(drafts[candidate.mode])) { setPending(candidate); setStatus(null); } else apply(candidate);
   }
   async function paste() {
     const request = ++epoch.current;
