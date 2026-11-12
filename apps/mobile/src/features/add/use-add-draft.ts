@@ -66,6 +66,7 @@ export function useAddDraft(lockedMode: AddMode | null = null) {
     const draftFormat = detectMemoFormat(candidate.draft.memo);
     candidate.draft.format = draftFormat;
     if (candidate.draft.memo.length > MAX_ADD_MEMO_LENGTH) { setStatus('textTooLong'); return; }
+    apply(candidate);
   }
   async function paste() {
     const request = ++epoch.current;
