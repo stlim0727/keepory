@@ -1,0 +1,10 @@
+[
+  {
+    "language": "en-US",
+    "text": "• Paste anywhere: Paste buttons beside the URL field, in the note editor, and on the image picker.\n• Memo paste with automatic Markdown detection.\n• Smart link paste splits copied text into link, title, and notes.\n• Photo sync: wildcard image types now sync reliably.\n• Share timestamps and live relative times are preserved.\n• Report crashes and save failures from the in-app prompt.\n• Stability: safer local file and preview cache writes."
+  },
+  {
+    "language": "ko-KR",
+    "text": "• 어디서나 붙여넣기: URL 입력란 옆, 노트 편집기, 이미지 선택 영역에 붙여넣기 버튼이 있습니다.\n• 메모 붙여넣기와 Markdown 자동 감지.\n• 스마트 링크 붙여넣기: 링크, 제목, 노트로 자동 분리.\n• 사진 동기화: 와일드카드 이미지 타입도 안정적으로 동기화.\n• 공유 시각과 실시간 상대 시간 유지.\n• 앱 안에서 오류와 저장 실패 신고.\n• 로컬 파일과 미리보기 쓰기 안정성 개선."
+  }
+]
