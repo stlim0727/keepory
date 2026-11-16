@@ -1280,7 +1280,7 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
       describe: () => {
         const recentSlow = describeRecentSegments();
         return (
-          `syncing=${syncInFlight.current} queue=${queueRef.current.length} ` +
+          `syncing=${syncInFlight.current} queue=${queueRef.current.length} bookmarks=${bookmarksRef.current?.length ?? 0} aiInFlight=${aiEnriching.current.size} ` +
           `recentSlow=[${recentSlow || "none"}]`
         );
       },

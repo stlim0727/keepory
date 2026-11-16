@@ -31,7 +31,7 @@ export interface PendingTagOp {
   last_error?: string;
   last_error_kind?: SyncErrorKind;
   health_escalated_at?: string;
-  /** Acknowledged removal remains a tombstone until a pull confirms absence. */
+  /** Acknowledged operation stays layered until a pull observes its result. */
   confirmed?: boolean;
 }
 
@@ -218,16 +218,17 @@ export function carryOverTagOps(
   return next;
 }
 
-/** Retire removal tombstones only after an actual remote snapshot confirms absence. */
-export function retireConfirmedTagRemovals(
+/** Retire acknowledged operations only after an actual remote snapshot observes them. */
+export function retireConfirmedTagOps(
   ops: PendingTagOp[], remote: TagData, snapshotReplaced: boolean,
 ): PendingTagOp[] {
   if (!snapshotReplaced) return ops;
   return ops.filter((op) => {
-    if (!op.confirmed || op.op !== 'remove') return true;
+    if (!op.confirmed) return true;
     const matchingIds = new Set(remote.tags.filter((tag) =>
       tagSlug(tag.name) === tagSlug(op.tag_name)).map((tag) => tag.id));
-    return remote.bookmarkTags.some((link) =>
+    const linked = remote.bookmarkTags.some((link) =>
       link.bookmark_id === op.bookmark_id && matchingIds.has(link.tag_id));
+    return op.op === 'add' ? !linked : linked;
   });
 }

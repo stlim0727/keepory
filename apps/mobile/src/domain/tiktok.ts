@@ -4,7 +4,8 @@
  * filters generic platform shells, and provides oEmbed endpoint resolution.
  */
 
-import { fetchPublicPreview } from './preview-network.ts';
+import { Parser } from 'htmlparser2';
+import { fetchPublicPreview, isPublicPreviewUrl } from './preview-network.ts';
 import { previewFetch } from '@/domain/preview-fetch';
 
 const FETCH_TIMEOUT_MS = 8000;
@@ -166,4 +167,40 @@ export async function resolveTikTokShortlink(
   } finally {
     clearTimeout(timer);
   }
+}
+
+
+/** Read only the requested video's server-rendered JSON; never execute scripts. */
+export function parseTikTokVideoMetadata(html: string, url: string): {
+  title?: string; preview_image_url?: string;
+} | null {
+  const videoId = canonicalTikTokVideoUrl(url)?.match(/\/video\/(\d+)$/)?.[1];
+  if (!videoId) return null;
+  let capturing = false;
+  let json = '';
+  let result: { title?: string; preview_image_url?: string } | null = null;
+  const parser = new Parser({
+    onopentag(name, attributes) {
+      capturing = name === 'script' && attributes.id === '__UNIVERSAL_DATA_FOR_REHYDRATION__'
+        && attributes.type === 'application/json';
+    },
+    ontext(text) { if (capturing) json += text; },
+    onclosetag(name) {
+      if (name !== 'script' || !capturing) return;
+      capturing = false;
+      try {
+        const detail = JSON.parse(json)?.__DEFAULT_SCOPE__?.['webapp.video-detail'];
+        const item = detail?.itemInfo?.itemStruct;
+        if (detail?.statusCode !== 0 || item?.id !== videoId) return;
+        const title = typeof item.desc === 'string' ? item.desc.replace(/\s+/g, ' ').trim() : undefined;
+        const cover = [item.video?.cover, item.video?.originCover].find(
+          (value) => typeof value === 'string' && isPublicPreviewUrl(value),
+        );
+        if (title || cover) result = { title: title || undefined, preview_image_url: cover };
+      } catch { /* Truncated or malformed provider JSON is not metadata. */ }
+      finally { json = ''; }
+    },
+  });
+  parser.end(html.slice(0, 512 * 1024));
+  return result;
 }

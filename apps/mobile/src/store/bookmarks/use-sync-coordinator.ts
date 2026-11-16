@@ -17,7 +17,7 @@ import { type LibrarySyncFlow } from "@/domain/library-sync-status";
 import { mockUserId } from "@/domain/mock-data";
 import {
   applyPendingTagOps,
-  retireConfirmedTagRemovals,
+  retireConfirmedTagOps,
   type PendingTagOp
 } from "@/domain/pending-tags";
 import { sameRecordSnapshot } from "@/domain/record-snapshot";
@@ -1978,7 +1978,7 @@ export function useSyncCoordinator({
             }
             // Re-layer any still-unsynced local tag ops over the fresh server
             // snapshot so optimistic tags aren't dropped by the wholesale replace.
-            const remainingTagOps = retireConfirmedTagRemovals(
+            const remainingTagOps = retireConfirmedTagOps(
               pendingTagOpsRef.current, result.tagData, result.tagSnapshotReplaced,
             );
             if (remainingTagOps.length !== pendingTagOpsRef.current.length) {

@@ -4,7 +4,6 @@ import type {
 import { mockUserId } from "@/domain/mock-data";
 import {
   applyPendingTagOps,
-  dequeueTagOp,
   reconcileSyncedAdd,
   type PendingTagOp
 } from "@/domain/pending-tags";
@@ -83,7 +82,8 @@ export function useTagSync({
 }: Dependencies) {
 
   // Push queued tag ops to the server when online: ensure tags exist, reconcile
-  // the optimistic local tag id to the server one, and drop the op on success.
+  // the optimistic local tag id to the server one. Retain acknowledged ops
+  // until a pull observes them, so an older folder snapshot cannot hide tags.
   // Failures stay queued for the next sync. "add" ops for bookmarks that have
   // already synced are grouped by bookmark and pushed through the batch-attach
   // RPC in chunks of BULK_CREATE_SYNC_CHUNK_SIZE (issue #713) instead of one
@@ -232,12 +232,8 @@ export function useTagSync({
                 { persist: false },
               );
               applyTagOps(
-                dequeueTagOp(
-                  pendingTagOpsRef.current,
-                  result.bookmark_id,
-                  matchingOp.tag_name,
-                  matchingOp.id,
-                ),
+                pendingTagOpsRef.current.map((current) => current.id === matchingOp.id
+                  ? { ...current, confirmed: true } : current),
                 { persist: false },
               );
               mutationsPushed = true;

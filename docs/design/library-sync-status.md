@@ -2,7 +2,7 @@
 
 The Inbox status beside the saved count describes the entire **cloud sync**
 flow rather than one upload. Bookmark creates/updates/deletes, the tag journal
-(including removal tombstones waiting for pull acknowledgement), imported
+(including acknowledged additions and removal tombstones waiting for a confirming pull), imported
 folder assignments, imported enrichment restores, and an active account pull
 all participate. Metadata fetching and AI generation remain independent; a
 cloud sync completion does not claim they have finished.

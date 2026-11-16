@@ -11,6 +11,7 @@ import { previewFetch } from '@/domain/preview-fetch';
 import { googleMapsPlaceName, isGenericGoogleMapsTitle, isGoogleMapsUrl } from './google-maps.ts';
 import {
   canonicalTikTokVideoUrl,
+  parseTikTokVideoMetadata,
   isGenericTikTokTitle,
   isTikTokShortlink,
   isTikTokUrl,
@@ -319,6 +320,7 @@ export function isGenericYouTubeTitle(title: string | undefined, url?: string): 
 
 export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadata {
   const { meta, links, title } = parseHtmlHead(html, baseUrl);
+  const tikTokVideo = parseTikTokVideoMetadata(html, baseUrl);
 
   let favicon: string | undefined;
   for (const attributes of links) {
@@ -364,12 +366,12 @@ export function parsePageMetadata(html: string, baseUrl: string): FetchedMetadat
   const previewImage = image ? resolveHref(image, baseUrl) : undefined;
 
   return {
-    title: candidateTitle,
+    title: candidateTitle || tikTokVideo?.title,
     ...(mapsPlaceName ? { title_is_derived: true } : {}),
     site_name: candidateSiteName,
     favicon_url: candidateFavicon,
     // A generic Maps shell's static map can be centered on the viewer's location.
-    preview_image_url: mapsShell || (isGoogleMapsUrl(baseUrl) && !previewImage) ? null : previewImage,
+    preview_image_url: mapsShell || (isGoogleMapsUrl(baseUrl) && !previewImage) ? null : previewImage || tikTokVideo?.preview_image_url,
   };
 }
 
