@@ -1582,7 +1582,6 @@ export function BookmarksProvider({ children }: { children: ReactNode }) {
     applyTagData,
     tagDataRef,
     broadcastSyncNudgeRef,
-    syncInFlight,
     syncNowRef,
   });
   const { commitTagEdit, addTagsToBookmarks, addTagsToBookmark, removeTagFromBookmark } = useTagCommands({

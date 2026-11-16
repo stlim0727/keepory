@@ -52,7 +52,6 @@ interface Dependencies {
   applyTagData: (next: TagData, options?: { persist?: boolean; }) => void;
   tagDataRef: RefObject<TagData>;
   broadcastSyncNudgeRef: RefObject<(() => void) | null>;
-  syncInFlight: RefObject<boolean>;
   syncNowRef: RefObject<((options?: { force?: boolean; }) => Promise<boolean>) | null>;
 }
 
@@ -77,7 +76,6 @@ export function useTagSync({
   applyTagData,
   tagDataRef,
   broadcastSyncNudgeRef,
-  syncInFlight,
   syncNowRef,
 }: Dependencies) {
 
@@ -289,7 +287,9 @@ export function useTagSync({
           logStorageError("tag ops", error);
         }
         broadcastSyncNudgeRef.current?.();
-        if (!syncInFlight.current && pendingTagOpsRef.current.some((op) => op.confirmed)) {
+        // syncNow coalesces a request made during an active pull into its
+        // next pass. That pass must observe acknowledgements newer than the pull.
+        if (pendingTagOpsRef.current.some((op) => op.confirmed)) {
           void syncNowRef.current?.().catch(() => { });
         }
       }

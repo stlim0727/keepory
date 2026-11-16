@@ -31,10 +31,12 @@ The three most recently active unresolved issues were investigated.
 - Upload used to dequeue an add before an in-flight pull published its older
   organization snapshot. The local tag then disappeared until the next pull.
 - Keep acknowledged adds layered like acknowledged removals. Skip re-upload,
-  retire only when a real remote snapshot includes the association. Existing
+  retire only when a real remote snapshot includes the association. Request a
+  coalesced follow-up even during an active pull so confirmation completes without
+  an unrelated user action. Existing
   operation IDs protect later user edits; account rehoming resets confirmation.
 - Verify a delayed pull overlapping a successful AI tag upload, visible tags
-  after publication, durable confirmation, eventual retirement, and no re-upload.
+  after publication, durable confirmation, automatic eventual retirement, and no re-upload.
   Existing removal tests continue to cover stale snapshot tombstones.
 
 ## STASH-K: JS loop stall

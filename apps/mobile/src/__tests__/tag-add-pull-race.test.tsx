@@ -34,7 +34,6 @@ test('an acknowledged tag add survives an older folder snapshot and retires on a
       .toEqual([expect.objectContaining({ op: 'add', confirmed: true })]);
     const uploadCount = apiMock.__spies.bulkAttachTagsAndCollections.mock.calls.length;
     confirmedSnapshot = true;
-    await act(async () => { await store.current!.syncNow(); });
     await waitFor(() => expect(JSON.parse(fakeRepo.__meta('pending_tag_ops') ?? '[]')).toEqual([]));
     expect(apiMock.__spies.bulkAttachTagsAndCollections).toHaveBeenCalledTimes(uploadCount);
     expect(store.current!.getTagsForBookmark(SYNCED_ID).map((item) => item.name)).toContain('design');
