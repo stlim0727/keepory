@@ -39,6 +39,12 @@ The three most recently active unresolved issues were investigated.
   after publication, durable confirmation, automatic eventual retirement, and no re-upload.
   Existing removal tests continue to cover stale snapshot tombstones.
 
+The coalesced callback also checks provider lifetime before starting another pass.
+The overlapping import/pause suites reproduced stale callbacks after unmount on
+the changed implementation and passed on main; a lifetime guard makes all three
+related suites pass together. A focused test verifies no follow-up API creation
+after unmount.
+
 ## STASH-K: JS loop stall
 
 - Evidence bucket: `limited-hypotheses`.
