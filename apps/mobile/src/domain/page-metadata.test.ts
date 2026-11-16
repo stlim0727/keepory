@@ -1723,3 +1723,18 @@ test('fetchPageMetadata recovers Google search query after share.google redirect
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test('TikTok pages without OG tags recover caption and thumbnail from hydration JSON', () => {
+  const url = 'https://www.tiktok.com/@pamdairy/video/7603171442313710856?_r=1';
+  const data = { __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode: 0,
+    itemInfo: { itemStruct: { id: '7603171442313710856', desc: 'Glow Up Dairy #selflove',
+      video: { cover: 'https://p16-common-sign.tiktokcdn.com/cover.jpg' } } },
+  } } };
+  const html = `<title>TikTok</title><script type="application/json" id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify(data)}</script>`;
+  const result = parsePageMetadata(html, url);
+  assert.equal(result.title, 'Glow Up Dairy #selflove');
+  assert.equal(result.preview_image_url, 'https://p16-common-sign.tiktokcdn.com/cover.jpg');
+  assert.equal(result.site_name, 'TikTok');
+  assert.equal(parsePageMetadata('<meta property="og:title" content="OG caption">' + html, url).title, 'OG caption');
+});

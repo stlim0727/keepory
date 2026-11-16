@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   canonicalTikTokVideoUrl,
+  parseTikTokVideoMetadata,
   isTikTokShortlink,
   resolveTikTokShortlink,
   isGenericTikTokTitle,
@@ -90,4 +91,34 @@ test('TikTok resolver tolerates unavailable or unrelated redirect destinations',
   ]) {
     assert.equal(await resolveTikTokShortlink(shortlink, fetcher as typeof fetch), null);
   }
+});
+
+
+const videoUrl = 'https://www.tiktok.com/@pamdairy/video/7603171442313710856';
+function videoHtml(item: unknown, statusCode = 0): string {
+  return `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify({
+    __DEFAULT_SCOPE__: { 'webapp.video-detail': { statusCode, itemInfo: { itemStruct: item } } },
+  })}</script>`;
+}
+const videoItem = { id: '7603171442313710856', desc: 'New year,  getting better together. #selflove',
+  video: { cover: 'https://p16-common-sign.tiktokcdn.com/cover.jpg' } };
+
+test('TikTok hydration recovers the requested caption and cover', () => {
+  assert.deepEqual(parseTikTokVideoMetadata(videoHtml(videoItem), videoUrl + '?_r=1'), {
+    title: 'New year, getting better together. #selflove', preview_image_url: videoItem.video.cover,
+  });
+});
+
+test('TikTok hydration rejects unrelated, unavailable, malformed and truncated video data', () => {
+  for (const html of [videoHtml({ ...videoItem, id: '999' }), videoHtml(videoItem, 10204),
+    videoHtml(videoItem).slice(0, -20), videoHtml(videoItem).replace('itemInfo', 'other'),
+    ' '.repeat(512 * 1024) + videoHtml(videoItem)]) {
+    assert.equal(parseTikTokVideoMetadata(html, videoUrl), null);
+  }
+  assert.equal(parseTikTokVideoMetadata(videoHtml(videoItem), 'https://example.com/video/7603171442313710856'), null);
+  assert.equal(parseTikTokVideoMetadata(videoHtml(videoItem), 'https://vt.tiktok.com/code/'), null);
+  assert.deepEqual(parseTikTokVideoMetadata(videoHtml({ ...videoItem,
+    video: { cover: 'http://127.0.0.1/private' } }), videoUrl), {
+    title: 'New year, getting better together. #selflove', preview_image_url: undefined,
+  });
 });

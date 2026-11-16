@@ -46,6 +46,8 @@ let mockCreateNetworkErrorOnce = false;
 
 jest.mock("@/api/bookmarks", () => {
   let remoteRows: Array<{ id: string; url: string | null }> = [];
+  const remoteTags = new Map<string, { id: string; user_id: string; name: string; slug: string; source: string; created_at: string }>();
+  let remoteTagLinks: Array<{ bookmark_id: string; tag_id: string; source: string; confidence: null }> = [];
   let remoteCollections: Array<{
     id: string;
     user_id: string;
@@ -117,6 +119,13 @@ jest.mock("@/api/bookmarks", () => {
           created_at: new Date().toISOString(),
         }));
 
+        // Successful uploads must be observable in a later confirming pull.
+        for (const tag of tags) {
+          remoteTags.set(tag.id, tag);
+          if (!remoteTagLinks.some((link) => link.bookmark_id === item.bookmark_id && link.tag_id === tag.id)) {
+            remoteTagLinks.push({ bookmark_id: item.bookmark_id, tag_id: tag.id, source: tag.source, confidence: null });
+          }
+        }
         let collection = null as null | (typeof remoteCollections)[number];
         let collectionAttached = false;
         let bookmarkUpdatedAt: string | null = null;
@@ -236,6 +245,8 @@ jest.mock("@/api/bookmarks", () => {
     __setRemoteRows: (rows: Array<{ id: string; url: string | null }>) => {
       remoteRows = [...rows];
       remoteCollections = [];
+      remoteTags.clear();
+      remoteTagLinks = [];
     },
     __setDuplicateMap: (map: Record<string, string>) => {
       mockServerDuplicateUrlMap = map;
@@ -261,14 +272,17 @@ jest.mock("@/api/bookmarks", () => {
       listBookmarksUpdatedSince,
       listBookmarkIds,
       listEnrichmentsUpdatedSince: empty,
-      listTags: empty,
-      listBookmarkTags: empty,
+      listTags: async () => [...remoteTags.values()],
+      listBookmarkTags: async () => [...remoteTagLinks],
       listCollections: async () => [...remoteCollections],
       createBookmark: createBookmarkMock,
       createBookmarks: createBookmarksMock,
       updateBookmark: updateBookmarkMock,
       addTags: addTagsMock,
-      removeTags: jest.fn(async () => undefined),
+      removeTags: jest.fn(async ({ bookmark_id, tags }: { bookmark_id: string; tags: string[] }) => {
+        const ids = new Set([...remoteTags.values()].filter((tag) => tags.includes(tag.name)).map((tag) => tag.id));
+        remoteTagLinks = remoteTagLinks.filter((link) => link.bookmark_id !== bookmark_id || !ids.has(link.tag_id));
+      }),
       createCollection: createCollectionMock,
       bulkAttachTagsAndCollections: bulkAttachMock,
       resetLibrary: resetLibraryMock,
@@ -1581,9 +1595,10 @@ describe("Mass Import, Sync & Reset lifecycle", () => {
       timeout: 10_000,
     });
     expect(apiMock.__bulkAttachMock).toHaveBeenCalledTimes(1);
-    expect(
-      JSON.parse(fakeRepo.__meta("pending_tag_ops") ?? "[]"),
-    ).toHaveLength(1);
+    const ops = JSON.parse(fakeRepo.__meta("pending_tag_ops") ?? "[]") as Array<{ confirmed?: boolean }>;
+    expect(ops).toHaveLength(51);
+    expect(ops.filter((op) => op.confirmed)).toHaveLength(50);
+    expect(ops.filter((op) => !op.confirmed)).toHaveLength(1);
   });
 
   test("reproduces STASH-3Y / STASH-41 counter bouncing: background metadata resolution during bulk create sync does NOT enqueue update operations", async () => {

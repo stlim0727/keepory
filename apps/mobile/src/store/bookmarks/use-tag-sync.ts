@@ -4,7 +4,6 @@ import type {
 import { mockUserId } from "@/domain/mock-data";
 import {
   applyPendingTagOps,
-  dequeueTagOp,
   reconcileSyncedAdd,
   type PendingTagOp
 } from "@/domain/pending-tags";
@@ -53,7 +52,6 @@ interface Dependencies {
   applyTagData: (next: TagData, options?: { persist?: boolean; }) => void;
   tagDataRef: RefObject<TagData>;
   broadcastSyncNudgeRef: RefObject<(() => void) | null>;
-  syncInFlight: RefObject<boolean>;
   syncNowRef: RefObject<((options?: { force?: boolean; }) => Promise<boolean>) | null>;
 }
 
@@ -78,12 +76,12 @@ export function useTagSync({
   applyTagData,
   tagDataRef,
   broadcastSyncNudgeRef,
-  syncInFlight,
   syncNowRef,
 }: Dependencies) {
 
   // Push queued tag ops to the server when online: ensure tags exist, reconcile
-  // the optimistic local tag id to the server one, and drop the op on success.
+  // the optimistic local tag id to the server one. Retain acknowledged ops
+  // until a pull observes them, so an older folder snapshot cannot hide tags.
   // Failures stay queued for the next sync. "add" ops for bookmarks that have
   // already synced are grouped by bookmark and pushed through the batch-attach
   // RPC in chunks of BULK_CREATE_SYNC_CHUNK_SIZE (issue #713) instead of one
@@ -232,12 +230,8 @@ export function useTagSync({
                 { persist: false },
               );
               applyTagOps(
-                dequeueTagOp(
-                  pendingTagOpsRef.current,
-                  result.bookmark_id,
-                  matchingOp.tag_name,
-                  matchingOp.id,
-                ),
+                pendingTagOpsRef.current.map((current) => current.id === matchingOp.id
+                  ? { ...current, confirmed: true } : current),
                 { persist: false },
               );
               mutationsPushed = true;
@@ -293,7 +287,9 @@ export function useTagSync({
           logStorageError("tag ops", error);
         }
         broadcastSyncNudgeRef.current?.();
-        if (!syncInFlight.current && pendingTagOpsRef.current.some((op) => op.confirmed)) {
+        // syncNow coalesces a request made during an active pull into its
+        // next pass. That pass must observe acknowledgements newer than the pull.
+        if (pendingTagOpsRef.current.some((op) => op.confirmed)) {
           void syncNowRef.current?.().catch(() => { });
         }
       }

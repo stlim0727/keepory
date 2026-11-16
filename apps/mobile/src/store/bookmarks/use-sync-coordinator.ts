@@ -17,7 +17,7 @@ import { type LibrarySyncFlow } from "@/domain/library-sync-status";
 import { mockUserId } from "@/domain/mock-data";
 import {
   applyPendingTagOps,
-  retireConfirmedTagRemovals,
+  retireConfirmedTagOps,
   type PendingTagOp
 } from "@/domain/pending-tags";
 import { sameRecordSnapshot } from "@/domain/record-snapshot";
@@ -95,7 +95,7 @@ import {
 import Constants from "expo-constants";
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import {
-  useCallback
+  useCallback, useEffect, useRef
 } from "react";
 import { Platform } from "react-native";
 
@@ -234,12 +234,17 @@ export function useSyncCoordinator({
   setLoadedAccountUserId,
   setAccountLibraryFailureUserId,
 }: Dependencies) {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const syncNow = useCallback(
     async (options?: { force?: boolean }): Promise<boolean> => {
       const force = options?.force === true;
       const epochAtStart = resetEpoch.current;
-      if (libraryResetInFlightRef.current) return false;
+      if (!mounted.current || libraryResetInFlightRef.current) return false;
       if (syncInFlight.current) {
         syncPendingRef.current = true;
         syncPendingForceRef.current ||= force;
@@ -1978,7 +1983,7 @@ export function useSyncCoordinator({
             }
             // Re-layer any still-unsynced local tag ops over the fresh server
             // snapshot so optimistic tags aren't dropped by the wholesale replace.
-            const remainingTagOps = retireConfirmedTagRemovals(
+            const remainingTagOps = retireConfirmedTagOps(
               pendingTagOpsRef.current, result.tagData, result.tagSnapshotReplaced,
             );
             if (remainingTagOps.length !== pendingTagOpsRef.current.length) {
@@ -2069,7 +2074,7 @@ export function useSyncCoordinator({
           const pendingForce = syncPendingForceRef.current;
           syncPendingForceRef.current = false;
           setTimeout(() => {
-            void syncNowRef.current?.({ force: pendingForce }).catch(() => { });
+            if (mounted.current) void syncNowRef.current?.({ force: pendingForce }).catch(() => { });
           }, 50);
         }
       }

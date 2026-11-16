@@ -9,7 +9,7 @@ import {
   dropPendingTagOpsForBookmarks,
   enqueueTagOp,
   reconcileSyncedAdd,
-  retireConfirmedTagRemovals,
+  retireConfirmedTagOps,
   rekeyPendingTagOps,
   type PendingTagOp,
 } from './pending-tags.ts';
@@ -185,12 +185,12 @@ test('account carry-over queues already-synced links and rekeys pending removals
 test('confirmed removal survives stale pulls and cache-preserving pulls until remote absence', () => {
   const remove = op({ op: 'remove', confirmed: true });
   const stale = applyTagOp(EMPTY, op({}), 'user');
-  assert.deepEqual(retireConfirmedTagRemovals([remove], stale, true), [remove]);
+  assert.deepEqual(retireConfirmedTagOps([remove], stale, true), [remove]);
   assert.deepEqual(applyPendingTagOps(stale, [remove], 'user').bookmarkTags, []);
-  assert.deepEqual(retireConfirmedTagRemovals([remove], EMPTY, false), [remove]);
-  assert.deepEqual(retireConfirmedTagRemovals([remove], EMPTY, true), []);
+  assert.deepEqual(retireConfirmedTagOps([remove], EMPTY, false), [remove]);
+  assert.deepEqual(retireConfirmedTagOps([remove], EMPTY, true), []);
   const unconfirmed = op({ op: 'remove' });
-  assert.deepEqual(retireConfirmedTagRemovals([unconfirmed], EMPTY, true), [unconfirmed]);
+  assert.deepEqual(retireConfirmedTagOps([unconfirmed], EMPTY, true), [unconfirmed]);
 });
 
 
@@ -198,4 +198,21 @@ test('duplicate adoption collapses pending operations that now share a target', 
   const source = op({ id: 'source', bookmark_id: 'old-id' });
   const destination = op({ id: 'destination', bookmark_id: 'canonical-id', op: 'remove' });
   assert.deepEqual(rekeyPendingTagOps([source, destination], new Map([['old-id', 'canonical-id']])), [destination]);
+});
+
+
+test('confirmed add survives an older pull until a snapshot contains its link', () => {
+  const add = op({ confirmed: true });
+  const stale = { ...EMPTY, collections: [{ id: 'folder' } as TagData['collections'][number]] };
+  const pending = retireConfirmedTagOps([add], stale, true);
+  assert.deepEqual(pending, [add]);
+  const visible = applyPendingTagOps(stale, pending, 'user');
+  assert.equal(visible.bookmarkTags.length, 1);
+  assert.equal(visible.collections[0]?.id, 'folder');
+  assert.deepEqual(retireConfirmedTagOps(pending, visible, false), pending);
+  assert.deepEqual(retireConfirmedTagOps(pending, visible, true), []);
+  assert.deepEqual(retireConfirmedTagOps([op({})], visible, true), [op({})]);
+  const removed = enqueueTagOp(pending, op({ id: 'new-remove', op: 'remove' }));
+  assert.equal(removed[0]?.confirmed, undefined);
+  assert.deepEqual(applyPendingTagOps(visible, removed, 'user').bookmarkTags, []);
 });
