@@ -1595,9 +1595,10 @@ describe("Mass Import, Sync & Reset lifecycle", () => {
       timeout: 10_000,
     });
     expect(apiMock.__bulkAttachMock).toHaveBeenCalledTimes(1);
-    expect(
-      JSON.parse(fakeRepo.__meta("pending_tag_ops") ?? "[]"),
-    ).toHaveLength(1);
+    const ops = JSON.parse(fakeRepo.__meta("pending_tag_ops") ?? "[]") as Array<{ confirmed?: boolean }>;
+    expect(ops).toHaveLength(51);
+    expect(ops.filter((op) => op.confirmed)).toHaveLength(50);
+    expect(ops.filter((op) => !op.confirmed)).toHaveLength(1);
   });
 
   test("reproduces STASH-3Y / STASH-41 counter bouncing: background metadata resolution during bulk create sync does NOT enqueue update operations", async () => {
