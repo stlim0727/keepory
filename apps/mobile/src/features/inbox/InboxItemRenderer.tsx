@@ -53,6 +53,7 @@ interface Props {
   onNewFolderTilePress: () => void;
   palette: ReturnType<typeof usePalette>;
   openFolderTile: (target: InboxFilter) => void;
+  onSelectFilter: (target: InboxFilter) => void;
   selectedFolderIds: Set<string>;
   collections: Collection[];
   toggleFolderSelect: (id: string) => void;
@@ -95,6 +96,7 @@ export function createInboxItemRenderer({
   onNewFolderTilePress,
   palette,
   openFolderTile,
+  onSelectFilter,
   selectedFolderIds,
   collections,
   toggleFolderSelect,
@@ -349,8 +351,8 @@ export function createInboxItemRenderer({
     const visibleMetaParts = [
       ...(item.content_type === 'text' ? [{ key: 'content-type-text', type: 'type' as const, label: t('inbox.memoType') }] : []),
       ...(item.content_type === 'image' ? [{ key: 'content-type-image', type: 'type' as const, label: t('inbox.photoType') }] : []),
-      ...(collectionName ? [{ key: `collection-${item.collection_id ?? collectionName}`, type: 'collection' as const, label: collectionName }] : []),
-      ...orderedTags.slice(0, 2).map((tag) => ({ key: `tag-${tag.id}`, type: 'tag' as const, label: `#${tag.name}` })),
+      ...(collectionName && item.collection_id ? [{ key: `collection-${item.collection_id}`, type: 'collection' as const, label: collectionName, id: item.collection_id }] : []),
+      ...orderedTags.slice(0, 2).map((tag) => ({ key: `tag-${tag.id}`, type: 'tag' as const, label: `#${tag.name}`, id: tag.id })),
       ...(orderedTags.length > 2 ? [{ key: 'tags-overflow', type: 'overflow' as const, label: `+${orderedTags.length - 2}` }] : []),
     ];
     const siteLabelText = siteLabel(item);
@@ -378,14 +380,57 @@ export function createInboxItemRenderer({
     const handleItemPress = selectionMode ? () => toggleSelect(item.id) : openDetail;
     const handleItemLongPress = selectionMode ? () => toggleSelect(item.id) : () => enterSelectionMode(item.id);
 
+    const metaChips = visibleMetaParts.length > 0 ? (
+      <View style={styles.metaChipRow}>
+        {visibleMetaParts.map((part) => {
+          const isCollection = part.type === 'collection';
+          const color = isCollection ? palette.accentText : palette.textSecondary;
+          const style = [
+            styles.metaChip,
+            { backgroundColor: isCollection ? palette.accentSoft : palette.surfaceContainer },
+          ];
+          const label = (
+            <>
+              {isCollection ? <Ionicons name="folder-outline" size={12} color={color} /> : null}
+              <PostHogMaskView style={{ flexShrink: 1 }}>
+                <Text style={[styles.metaChipLabel, { color }]} numberOfLines={1}>
+                  {part.label}
+                </Text>
+              </PostHogMaskView>
+            </>
+          );
+          if (!readOnly && !selectionMode && (part.type === 'collection' || part.type === 'tag')) {
+            const target: InboxFilter = { kind: part.type, id: part.id };
+            return (
+              <Pressable
+                key={part.key}
+                accessibilityRole="button"
+                accessibilityLabel={isCollection
+                  ? t('search.collectionChipA11y', { name: part.label })
+                  : t('search.tagChipA11y', { name: part.label.slice(1) })}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  onSelectFilter(target);
+                }}
+                style={style}
+              >
+                {label}
+              </Pressable>
+            );
+          }
+          return (
+            <View key={part.key} accessible accessibilityLabel={part.label} style={style}>
+              {label}
+            </View>
+          );
+        })}
+      </View>
+    ) : null;
+
     // List density view mode: compact row layout featuring thumbnail image
     // with a quick-open thumbnail, title/source/organization, and overflow.
     if (viewMode === 'list') {
       const thumbUri = selectPreviewImageUri(item.local_image_uri, item.preview_image_url);
-      const compactMeta = [
-        ...(collectionName ? [collectionName] : []),
-        ...orderedTags.map((tag) => `#${tag.name}`),
-      ].join('  ·  ');
       return (
         <Pressable
           testID={`inbox-list-row-${item.id}`}
@@ -461,93 +506,62 @@ export function createInboxItemRenderer({
               <ItemIcon item={item} testID="inbox-list-monogram" />
             )}
           </Pressable>
-          <Pressable
-            style={styles.listText}
-            accessibilityRole={selectionMode ? 'checkbox' : 'button'}
-            accessibilityLabel={selectionMode ? (isSelected ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') }) : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })) : (accessibilityTitle(item) ?? t('common.untitled'))}
-            accessibilityHint={selectionMode ? undefined : t('inbox.openBookmarkHint')}
-            accessibilityState={selectionMode ? { checked: isSelected } : { busy: isOpening }}
-            disabled={readOnly}
-            onPress={handleItemPress}
-            onLongPress={handleItemLongPress}
-          >
-            <HighlightedText
-              testID="inbox-list-title"
-              style={[
-                styles.listTitle,
-                {
-                  lineHeight: 22,
-                  color: isTitleDerived(item) ? palette.textSecondary : palette.text,
-                  fontWeight: isTitleDerived(item) ? WEB_MEDIUM_WEIGHT : WEB_SEMIBOLD_WEIGHT,
-                },
-              ]}
-              numberOfLines={2}
-              text={displayTitle(item) ?? t('common.untitled')}
-              query={highlightQuery}
-              highlightStyle={highlightStyle}
-            />
-            {memoPreview ? (
+          <View style={styles.listText}>
+            <Pressable
+              style={{ gap: 2 }}
+              accessibilityRole={selectionMode ? 'checkbox' : 'button'}
+              accessibilityLabel={selectionMode ? (isSelected ? t('inbox.deselectItemA11y', { title: displayTitle(item) ?? t('common.untitled') }) : t('inbox.selectItemA11y', { title: displayTitle(item) ?? t('common.untitled') })) : (accessibilityTitle(item) ?? t('common.untitled'))}
+              accessibilityHint={selectionMode ? undefined : t('inbox.openBookmarkHint')}
+              accessibilityState={selectionMode ? { checked: isSelected } : { busy: isOpening }}
+              disabled={readOnly}
+              onPress={handleItemPress}
+              onLongPress={handleItemLongPress}
+            >
               <HighlightedText
-                style={[styles.listUrl, { color: palette.textSecondary, lineHeight: 20 }]}
-                numberOfLines={1}
-                text={memoPreview}
+                testID="inbox-list-title"
+                style={[
+                  styles.listTitle,
+                  {
+                    lineHeight: 22,
+                    color: isTitleDerived(item) ? palette.textSecondary : palette.text,
+                    fontWeight: isTitleDerived(item) ? WEB_MEDIUM_WEIGHT : WEB_SEMIBOLD_WEIGHT,
+                  },
+                ]}
+                numberOfLines={2}
+                text={displayTitle(item) ?? t('common.untitled')}
                 query={highlightQuery}
                 highlightStyle={highlightStyle}
               />
-            ) : null}
-            {item.url ? (
-              <HighlightedText
-                style={[styles.listUrl, { color: palette.textSecondary, lineHeight: 20 }]}
-                numberOfLines={1}
-                text={siteLabelText}
-                query={highlightQuery}
-                highlightStyle={highlightStyle}
-              />
-            ) : null}
-            {showUrlMatchLine && item.url ? (
-              <HighlightedText
-                style={[styles.listUrl, { color: palette.textSecondary, lineHeight: 20 }]}
-                numberOfLines={1}
-                text={item.url}
-                query={highlightQuery}
-                highlightStyle={highlightStyle}
-              />
-            ) : null}
-            {visibleMetaParts.length > 0 ? (
-              <View style={styles.metaChipRow}>
-                {visibleMetaParts.map((part) => (
-                  <View
-                    key={part.key}
-                    accessible
-                    accessibilityLabel={part.label}
-                    style={[
-                      styles.metaChip,
-                      {
-                        backgroundColor: part.type === 'collection' ? palette.accentSoft : palette.surfaceContainer,
-                      },
-                    ]}
-                  >
-                    {part.type === 'collection' ? (
-                      <Ionicons name="folder-outline" size={12} color={palette.accentText} />
-                    ) : null}
-                    <PostHogMaskView style={{ flexShrink: 1 }}>
-                      <Text
-                        style={[
-                          styles.metaChipLabel,
-                          {
-                            color: part.type === 'collection' ? palette.accentText : palette.textSecondary,
-                          },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {part.label}
-                      </Text>
-                    </PostHogMaskView>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-          </Pressable>
+              {memoPreview ? (
+                <HighlightedText
+                  style={[styles.listUrl, { color: palette.textSecondary, lineHeight: 20 }]}
+                  numberOfLines={1}
+                  text={memoPreview}
+                  query={highlightQuery}
+                  highlightStyle={highlightStyle}
+                />
+              ) : null}
+              {item.url ? (
+                <HighlightedText
+                  style={[styles.listUrl, { color: palette.textSecondary, lineHeight: 20 }]}
+                  numberOfLines={1}
+                  text={siteLabelText}
+                  query={highlightQuery}
+                  highlightStyle={highlightStyle}
+                />
+              ) : null}
+              {showUrlMatchLine && item.url ? (
+                <HighlightedText
+                  style={[styles.listUrl, { color: palette.textSecondary, lineHeight: 20 }]}
+                  numberOfLines={1}
+                  text={item.url}
+                  query={highlightQuery}
+                  highlightStyle={highlightStyle}
+                />
+              ) : null}
+            </Pressable>
+            {metaChips}
+          </View>
           {suggestionCount > 0 ? (
             <View
               accessibilityLabel={t('inbox.aiSuggestionsA11y', { count: suggestionCount })}
@@ -716,8 +730,8 @@ export function createInboxItemRenderer({
             </Pressable>
           ) : null}
 
-          {/* Preview Thumbnail */}
-          {previewUri ? (
+          {/* Keep the same preview area for links with and without an image. */}
+          {previewUri || item.url ? (
             <View style={[styles.cardPreviewContainer, { borderColor: palette.border }]}>
               <Pressable
                 testID="inbox-card-preview"
@@ -731,19 +745,33 @@ export function createInboxItemRenderer({
                   { opacity: pressed ? 0.82 : 1 },
                 ]}
               >
-                <ProtectedImage
-                  testID="inbox-card-preview-image"
-                  uri={previewUri}
-                  style={styles.cardPreview}
-                  onError={() => markPreviewImageFailed(previewUri)}
-                  onLoad={(event: ImageLoadEvent) => {
-                    if (!didPreviewImageLoad(event.nativeEvent)) {
-                      markPreviewImageFailed(previewUri);
-                    } else {
-                      markPreviewImageLoaded(previewUri);
-                    }
-                  }}
-                />
+                {previewUri ? (
+                  <ProtectedImage
+                    testID="inbox-card-preview-image"
+                    uri={previewUri}
+                    style={styles.cardPreview}
+                    onError={() => markPreviewImageFailed(previewUri)}
+                    onLoad={(event: ImageLoadEvent) => {
+                      if (!didPreviewImageLoad(event.nativeEvent)) {
+                        markPreviewImageFailed(previewUri);
+                      } else {
+                        markPreviewImageLoaded(previewUri);
+                      }
+                    }}
+                  />
+                ) : (
+                  <View
+                    testID="inbox-card-preview-fallback"
+                    style={{
+                      flex: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: palette.mutedSurface,
+                    }}
+                  >
+                    <ItemIcon item={item} />
+                  </View>
+                )}
               </Pressable>
             </View>
           ) : null}
@@ -801,40 +829,7 @@ export function createInboxItemRenderer({
                 />
               </View>
             ) : null}
-            {visibleMetaParts.length > 0 ? (
-              <View style={styles.metaChipRow}>
-                {visibleMetaParts.map((part) => (
-                  <View
-                    key={part.key}
-                    accessible
-                    accessibilityLabel={part.label}
-                    style={[
-                      styles.metaChip,
-                      {
-                        backgroundColor: part.type === 'collection' ? palette.accentSoft : palette.surfaceContainer,
-                      },
-                    ]}
-                  >
-                    {part.type === 'collection' ? (
-                      <Ionicons name="folder-outline" size={12} color={palette.accentText} />
-                    ) : null}
-                    <PostHogMaskView style={{ flexShrink: 1 }}>
-                      <Text
-                        style={[
-                          styles.metaChipLabel,
-                          {
-                            color: part.type === 'collection' ? palette.accentText : palette.textSecondary,
-                          },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {part.label}
-                      </Text>
-                    </PostHogMaskView>
-                  </View>
-                ))}
-              </View>
-            ) : null}
+            {metaChips}
             {status ? (
               <Text style={[styles.cardStatus, { color: palette.accent }]}>{status}</Text>
             ) : null}

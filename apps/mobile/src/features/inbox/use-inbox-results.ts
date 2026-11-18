@@ -18,7 +18,6 @@ import {
 import type { Bookmark, Collection, Tag } from '@/domain/types';
 import { type FacetChip, type FolderTileItem, type GridPlaceholder } from '@/features/inbox/types';
 import type { TFunction } from '@/i18n/translate';
-import type { ImperativeRouter } from 'expo-router';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   useCallback,
@@ -31,7 +30,7 @@ interface Dependencies {
   inbox: Bookmark[];
   getCollection: (id: string | null) => Collection | undefined;
   filter: InboxFilter;
-  router: ImperativeRouter;
+  clearFacetParams: () => void;
   isLoading: boolean;
   setFilter: Dispatch<SetStateAction<InboxFilter>>;
   debouncedQuery: string;
@@ -46,7 +45,7 @@ export function useInboxResults({
   inbox,
   getCollection,
   filter,
-  router,
+  clearFacetParams,
   isLoading,
   setFilter,
   debouncedQuery,
@@ -110,16 +109,6 @@ export function useInboxResults({
     [inbox, filter, tagIdsFor],
   );
 
-  // Drop the URL-backed facet deep-link params. On web the tag/folder facet
-  // arrives as ?tag=…/?collection=… from /browse/tags and is consumed once by
-  // the focus effect above; any path that then moves the in-memory filter away
-  // from it must also strip the param, or a reload (F5) re-applies the
-  // supposedly-cleared facet from the stale query string. No-op on native (no
-  // URL to carry them).
-  const clearFacetParams = useCallback(() => {
-    router.setParams({ tag: undefined, collection: undefined, t: undefined });
-  }, [router]);
-
   // If the active facet disappears (last member removed/unfiled), fall back to
   // All rather than stranding the user on an empty filtered view.
   useEffect(() => {
@@ -139,7 +128,7 @@ export function useInboxResults({
       setFilter(ALL_FILTER);
       clearFacetParams();
     }
-  }, [filter, chips, hasUncollected, isLoading, clearFacetParams]);
+  }, [filter, chips, hasUncollected, isLoading, setFilter, clearFacetParams]);
 
   const filtered = useMemo(
     () =>
@@ -240,5 +229,5 @@ export function useInboxResults({
     }
     return [...folderTiles, { id: '__folder-ph', __placeholder: true }];
   }, [folderTiles]);
-  return { tagIdsFor, chips, hasUncollected, collectionCounts, facetFiltered, clearFacetParams, filtered, visible, folderCollectionCounts, folderUncollectedCount, folderTiles, folderGridData };
+  return { tagIdsFor, chips, hasUncollected, collectionCounts, facetFiltered, filtered, visible, folderCollectionCounts, folderUncollectedCount, folderTiles, folderGridData };
 }

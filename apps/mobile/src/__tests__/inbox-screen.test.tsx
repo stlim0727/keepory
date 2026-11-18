@@ -1246,8 +1246,7 @@ test('every image-less card shows a site wordmark', async () => {
   const screen = await renderInbox();
   await waitFor(() => expect(screen.getByText('No favicon')).toBeTruthy());
 
-  expect(screen.getAllByTestId('inbox-card-monogram')).toHaveLength(2);
-  expect(screen.queryByTestId('inbox-card-preview')).toBeNull();
+  expect(screen.getAllByTestId('inbox-card-preview-fallback')).toHaveLength(2);
 });
 
 test('the toolbar switches between saved Card and List layouts', async () => {
@@ -1946,44 +1945,39 @@ test('the Home Tags menu action carries the active folder facet as the route sco
   expect(mockPush).toHaveBeenCalledWith('/browse/tags?scope=collection:col-work');
 });
 
-test('the active-filter bar clears the facet back to all bookmarks', async () => {
-  const cooked = '7e64cf1e-0000-4000-8000-0000000000d1';
-  const reading = '7e64cf1e-0000-4000-8000-0000000000d2';
+test.each(['card', 'list'] as const)('%s bookmark chips apply the Inbox facet without navigating', async (view) => {
+  const cooked = '7e64cf1e-0000-4000-8000-0000000000f1';
+  const reading = '7e64cf1e-0000-4000-8000-0000000000f2';
   fakeRepo.__reset(
     [
-      makeStoredBookmark({ id: cooked, title: 'Kimchi jjigae' }),
+      makeStoredBookmark({ id: cooked, title: 'Kimchi jjigae', collection_id: 'col-food' }),
       makeStoredBookmark({ id: reading, title: 'Local-first software' }),
     ],
     {
-      tags: [makeTag('t-cooking', 'cooking'), makeTag('t-reading', 'reading')],
+      tags: [makeTag('t-cooking', 'cooking')],
       bookmarkTags: [
         { bookmark_id: cooked, tag_id: 't-cooking', source: 'user', confidence: null, created_at: '2026-06-12T00:00:00.000Z' },
-        { bookmark_id: reading, tag_id: 't-reading', source: 'user', confidence: null, created_at: '2026-06-12T00:00:00.000Z' },
       ],
-      collections: [],
+      collections: [makeCollection('col-food', 'Recipes')],
     },
   );
 
   const screen = await renderInbox();
-  await waitFor(() => expect(screen.getByText('Kimchi jjigae')).toBeTruthy());
-
-  // Pick the #cooking facet chip: the list narrows and the cooking-less
-  // bookmark drops out.
-  await selectScope(screen, '#cooking');
-  await waitFor(() => expect(screen.queryByText('Local-first software')).toBeNull());
-
-  // The sticky filter bar appears; pressing its clear action restores All.
-  expect(screen.getByTestId('inbox-filter-bar')).toBeTruthy();
-  await fireEvent.press(screen.getByTestId('inbox-filter-clear'));
   await waitFor(() => expect(screen.getByText('Local-first software')).toBeTruthy());
+  if (view === 'list') {
+    await openViewOptions(screen);
+    await fireEvent.press(screen.getByTestId('inbox-view-list'));
+  }
 
-  // STASH-T: clearing must also strip the URL-backed facet params, or a web
-  // reload (F5) re-applies the "cleared" facet from the stale query string.
-  expect(mockSetParams).toHaveBeenCalledWith({
-    tag: undefined,
-    collection: undefined,
-    t: undefined,
-  });
+  for (const name of ['Filter by collection Recipes', 'Filter by tag cooking']) {
+    const item = screen.getByTestId(view === 'list' ? `inbox-list-row-${cooked}` : `inbox-card-${cooked}`);
+    await fireEvent.press(within(item).getByRole('button', { name }), { stopPropagation: jest.fn() });
+    await waitFor(() => expect(screen.queryByText('Local-first software')).toBeNull());
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockSetParams).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByTestId('inbox-filter-clear'));
+    await waitFor(() => expect(screen.getByText('Local-first software')).toBeTruthy());
+  }
 });
 
 test('selecting the All chip also strips the URL facet params (STASH-T, all reset paths)', async () => {
@@ -2007,6 +2001,7 @@ test('selecting the All chip also strips the URL facet params (STASH-T, all rese
     },
   );
   // Arrive deep-linked to the #cooking facet via the URL (as /browse/tags does).
+  Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'web' });
   mockParams = { tag: 't-cooking', t: '1' };
 
   const screen = await renderInbox();
@@ -2363,7 +2358,7 @@ test('a card without a preview image renders a fallback preview banner with the 
   const screen = await renderInbox();
   await waitFor(() => expect(screen.getByText('No preview image')).toBeTruthy());
 
-  expect(screen.queryByTestId('inbox-card-preview')).toBeNull();
+  expect(screen.getByTestId('inbox-card-preview-fallback')).toBeTruthy();
   expect(screen.getByTestId('inbox-card-monogram')).toBeTruthy();
   expect(screen.getByText('Hacker News')).toBeTruthy();
 });
@@ -2646,7 +2641,7 @@ test('falls back to CardPreviewFallback when preview image fails to load in card
   // Now CardPreviewFallback is rendered
   await waitFor(() => {
     expect(screen.getByTestId('inbox-card-monogram')).toBeTruthy();
-    expect(screen.queryByTestId('inbox-card-preview')).toBeNull();
+    expect(screen.getByTestId('inbox-card-preview-fallback')).toBeTruthy();
   });
   expect(screen.queryByTestId('inbox-card-preview-image')).toBeNull();
 });

@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { PostHogMaskView } from 'posthog-react-native';
 
 import { displayTitle } from '@/domain/item-display';
@@ -15,6 +15,18 @@ export default function TrashScreen() {
   const { trash, restoreBookmark, emptyTrash } = useBookmarks();
 
   const handleEmptyTrash = () => {
+    const remove = () => {
+      emptyTrash();
+      if (router.canGoBack()) {
+        router.back();
+      }
+    };
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(t('trash.emptyBody'))) {
+        remove();
+      }
+      return;
+    }
     Alert.alert(
       t('trash.emptyTitle'),
       t('trash.emptyBody'),
@@ -23,10 +35,7 @@ export default function TrashScreen() {
         {
           text: t('trash.emptyConfirm'),
           style: 'destructive',
-          onPress: () => {
-            emptyTrash();
-            router.back();
-          },
+          onPress: remove,
         },
       ],
     );
