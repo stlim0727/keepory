@@ -1,0 +1,10 @@
+[
+  {
+    "language": "en-US",
+    "text": "• TikTok previews: recovered title, caption, and cover images when standard metadata is unavailable.\n• Tag sync stability: preserved newly added tags and folders across overlapping cloud syncs.\n• Sync lifecycle: prevented background sync callbacks from running after screen unmount."
+  },
+  {
+    "language": "ko-KR",
+    "text": "• 틱톡 미리보기 복구: 메타데이터가 제한된 틱톡 링크에서도 제목, 캡션 및 커버 이미지를 정상적으로 복구합니다.\n• 태그 동기화 안정성: 동기화 도중 새로 추가된 태그와 폴더가 일시적으로 사라지는 현상을 방지했습니다.\n• 동기화 수명 주기 개선: 화면 언마운트 후 불필요한 백그라운드 동기화 콜백이 실행되지 않도록 개선했습니다."
+  }
+]
