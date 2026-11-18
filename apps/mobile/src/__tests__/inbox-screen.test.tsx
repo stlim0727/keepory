@@ -1969,7 +1969,7 @@ test.each(['card', 'list'] as const)('%s bookmark chips apply the Inbox facet wi
     await fireEvent.press(screen.getByTestId('inbox-view-list'));
   }
 
-  for (const name of ['Filter by collection Recipes', 'Filter by tag cooking']) {
+  for (const name of ['Show bookmarks in Recipes', 'Show bookmarks tagged cooking']) {
     const item = screen.getByTestId(view === 'list' ? `inbox-list-row-${cooked}` : `inbox-card-${cooked}`);
     await fireEvent.press(within(item).getByRole('button', { name }), { stopPropagation: jest.fn() });
     await waitFor(() => expect(screen.queryByText('Local-first software')).toBeNull());

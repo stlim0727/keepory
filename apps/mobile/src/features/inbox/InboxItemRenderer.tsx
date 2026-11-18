@@ -406,8 +406,8 @@ export function createInboxItemRenderer({
                 key={part.key}
                 accessibilityRole="button"
                 accessibilityLabel={isCollection
-                  ? t('search.collectionChipA11y', { name: part.label })
-                  : t('search.tagChipA11y', { name: part.label.slice(1) })}
+                  ? t('inbox.itemCollectionFilterA11y', { name: part.label })
+                  : t('inbox.itemTagFilterA11y', { name: part.label.slice(1) })}
                 onPress={(event) => {
                   event.stopPropagation();
                   onSelectFilter(target);
