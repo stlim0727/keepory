@@ -119,6 +119,8 @@ export const ko: Catalog = {
   'inbox.browseTagsA11y': '태그로 둘러보기',
   'inbox.shelfMoreA11y': '필터 더 보기',
   'inbox.shelfPrevA11y': '이전 필터 보기',
+  'inbox.itemCollectionFilterA11y': '{name} 폴더의 북마크 보기',
+  'inbox.itemTagFilterA11y': '{name} 태그가 붙은 북마크 보기',
   'inbox.openBookmarkHint': '북마크 상세 열기',
   'inbox.filterAll': '전체',
   'inbox.filterNoCollection': '미분류',

@@ -793,14 +793,8 @@ export default function InboxScreen() {
     }, []),
   );
 
-  // Browse facet handed in by another screen (e.g. tapping a tag in Bookmark
-  // Detail, or picking one on the /browse/tags route). Those callers navigate
-  // back to THIS root Inbox with the facet as a param plus a monotonic `t` nonce,
-  // so re-selecting the SAME tag re-applies it. A plain effect keyed on the param
-  // value wouldn't re-fire when the value is unchanged, so we re-read params on
-  // focus and consume them once per (param, nonce) pair: the focus callback runs
-  // on every return to this screen, and the consumed-ref dedupe stops a single
-  // arrival from re-applying on unrelated re-focuses (e.g. a sheet dismissal).
+  // Consume each routed facet once per nonce so it can be selected again
+  // without overriding later local choices on an unrelated refocus.
   const params = useLocalSearchParams<{
     tag?: string | string[];
     collection?: string | string[];
@@ -832,13 +826,19 @@ export default function InboxScreen() {
       );
     }, [paramTag, paramCollection, paramNonce]),
   );
+  // Strip a stale deep link so a web reload keeps the locally chosen scope.
+  const clearFacetParams = useCallback(() => {
+    if (Platform.OS === 'web' && (paramTag || paramCollection || paramNonce)) {
+      router.setParams({ tag: undefined, collection: undefined, t: undefined });
+    }
+  }, [router, paramTag, paramCollection, paramNonce]);
+
   const {
     tagIdsFor,
     chips,
     hasUncollected,
     collectionCounts,
     facetFiltered,
-    clearFacetParams,
     filtered,
     visible: loadedVisible,
     folderCollectionCounts,
@@ -850,7 +850,7 @@ export default function InboxScreen() {
     inbox,
     getCollection,
     filter,
-    router,
+    clearFacetParams,
     isLoading,
     setFilter,
     debouncedQuery,
@@ -2261,6 +2261,7 @@ export default function InboxScreen() {
           onNewFolderTilePress,
           palette,
           openFolderTile,
+          onSelectFilter,
           selectedFolderIds,
           collections,
           toggleFolderSelect,

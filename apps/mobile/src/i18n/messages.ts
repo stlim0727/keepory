@@ -156,6 +156,8 @@ export const en = {
   // that appear at the clipped edges to reveal filter chips scrolled off-screen.
   'inbox.shelfMoreA11y': 'Show more filters',
   'inbox.shelfPrevA11y': 'Show previous filters',
+  'inbox.itemCollectionFilterA11y': 'Show bookmarks in {name}',
+  'inbox.itemTagFilterA11y': 'Show bookmarks tagged {name}',
   'inbox.openBookmarkHint': 'Opens bookmark details',
   'inbox.filterAll': 'All',
   'inbox.filterNoCollection': 'Inbox',
