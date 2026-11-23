@@ -32,6 +32,7 @@ prose. Load subsystem references only for the behavior you are changing.
 - Follow the PR/review/merge rules linked from `AGENTS.md`, including the bot
   review window and migration deploy-order gate. Skills remain mirrored under
   `.claude/skills` and `.codex/skills`.
+- After opening or updating a PR, apply the global `~/.agents/PR_FOLLOWTHROUGH.md` loop in the same task; this repository uses `~/.agents/bin/pr-status [PR]` for the single batched status call, then the documented PR workflow for fixes, conflict handling, CI diagnosis, and merge gates.
 - Identify manual GitHub comments as the actual coding agent and AI assistant.
   A `STASH-N` title alone does not resolve Sentry; follow the documented flow.
 - Native SQLite/share intake requires standalone device testing; Expo Go and
