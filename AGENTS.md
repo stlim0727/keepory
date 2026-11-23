@@ -155,6 +155,14 @@ and `docs/design/sync-change-review.md` for sync-related changes. Use a fresh
 feature branch, rebase before publishing, run pre-push static gates, open a regular PR,
 rely on CI for full test runs (avoiding redundant local suite runs),
 address reviews/CI/conflicts, and allow the documented bot-review window.
+
+After opening or updating a PR, follow the global `~/.agents/PR_FOLLOWTHROUGH.md`
+loop in the same task. This repository has no one-shot PR script: run
+`~/.agents/bin/pr-status [PR]` once for state, CI, review decision, threads and
+comments, then fix actionable feedback, rebase conflicts while preserving other
+agents' work, diagnose CI from a failed-run log, push, recheck once, resolve only
+fixed threads, and merge only after one `gh pr checks --watch` call confirms green
+gates. Honor the documented bot-review window.
 Do not auto-merge migration/function, auth/sync-deletion, deployment, or release
 workflow changes. Identify manually posted comments with the actual AI agent.
 For Sentry incidents, query MCP first and fall back to the authenticated API;
