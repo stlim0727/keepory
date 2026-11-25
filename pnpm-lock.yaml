@@ -70,8 +70,8 @@ importers:
         specifier: ~58.0.16
         version: 58.0.16(expo@58.0.7)(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(typescript@7.0.2)
       expo-crypto:
-        specifier: ~58.0.5
-        version: 58.0.5(expo@58.0.7)
+        specifier: ~58.0.8
+        version: 58.0.8(expo@58.0.7)
       expo-device:
         specifier: ~58.0.5
         version: 58.0.5(expo@58.0.7)
@@ -2795,8 +2795,8 @@ packages:
       expo: '*'
       react-native: '*'
 
-  expo-crypto@58.0.5:
-    resolution: {integrity: sha512-F4DW21bvFyepQLRh5bBcZ46UvV9qK6To4EXk2Si6cze6oJzeKeP3m1xWFaJY0/BJ795Zizxzx15erhV5nHhw4g==}
+  expo-crypto@58.0.8:
+    resolution: {integrity: sha512-yMSiMlallOweQ28oQ3BqJf6I/4ZoBggFNRg+PfjG1NbQWBWzGKmkPPUrd3yT0oPW4P+AYppg+Mw6xoAYddLUKA==}
     peerDependencies:
       expo: '*'
 
@@ -7913,7 +7913,7 @@ snapshots:
       - supports-color
       - typescript
 
-  expo-crypto@58.0.5(expo@58.0.7):
+  expo-crypto@58.0.8(expo@58.0.7):
     dependencies:
       expo: 58.0.7(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.13)(expo-router@58.0.16)(react-dom@19.3.1(react@19.3.1))(react-native-web@0.21.4(patch_hash=42c0ecfde3a564935bf83cf98d54297551d21cfb59db72d9424478a6ee1b4ecf)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-native-worklets@0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.7))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1)(typescript@7.0.2)
 
