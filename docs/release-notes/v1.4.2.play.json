@@ -1,0 +1,10 @@
+[
+  {
+    "language": "en-US",
+    "text": "• Inbox cards keep their preview area when an image is missing or fails to load.\n• Folder and tag pills on Inbox rows now apply the matching filter in card and list views.\n• Clearing Trash on web uses a browser confirmation; native keeps the destructive alert.\n• Fixed an Android Inbox crash when changing scope.\n• Updated Expo, Sentry, PostHog, and other dependencies."
+  },
+  {
+    "language": "ko-KR",
+    "text": "• 인박스 카드는 이미지가 없거나 불러오지 못해도 미리보기 영역을 유지합니다.\n• 인박스 행의 폴더/태그 칩을 누르면 카드 및 목록 보기에서 해당 필터가 적용됩니다.\n• 웹 휴지통은 브라우저 확인 창으로 비우며, 네이티브는 기존 경고 창을 유지합니다.\n• 범위 변경 시 발생하던 안드로이드 인박스 충돌을 수정했습니다.\n• Expo, Sentry, PostHog 등 의존성을 업데이트했습니다."
+  }
+]
