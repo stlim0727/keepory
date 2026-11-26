@@ -136,8 +136,8 @@ importers:
         specifier: ^18.1.1
         version: 18.1.1
       posthog-react-native:
-        specifier: ^4.85.3
-        version: 4.85.3(expo-application@58.0.4(expo@58.0.7))(expo-device@58.0.5(expo@58.0.7))(expo-file-system@58.0.7(expo@58.0.7)(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1)))(expo-localization@58.0.3(expo@58.0.7)(react@19.3.1))(posthog-react-native-session-replay@1.6.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native-safe-area-context@5.10.1(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native-svg@15.16.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))
+        specifier: ^4.87.1
+        version: 4.87.1(expo-application@58.0.4(expo@58.0.7))(expo-device@58.0.5(expo@58.0.7))(expo-file-system@58.0.7(expo@58.0.7)(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1)))(expo-localization@58.0.3(expo@58.0.7)(react@19.3.1))(posthog-react-native-session-replay@1.6.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native-safe-area-context@5.10.1(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native-svg@15.16.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))
       posthog-react-native-session-replay:
         specifier: ^1.6.0
         version: 1.6.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1)
@@ -1301,11 +1301,11 @@ packages:
     resolution: {integrity: sha512-SEeaJLb3qBNF/OaXnaR1NmmBbFYk1zC0ZH/52fATcRPLFg/p791YrcyFFy44Bo9sLaGuSuLp5Q6axbb/O+v/RA==}
     engines: {node: ^14.18.0 || >=16.0.0}
 
-  '@posthog/core@1.64.1':
-    resolution: {integrity: sha512-2ziryOLWTxftHrTLhGYQzLHDpPughaRRi/+L1vhg4cQFHJfgTevMzAz21R1zR7MKFDkyJ9lCJD/K2jxIkGbnfg==}
+  '@posthog/core@1.69.2':
+    resolution: {integrity: sha512-toMfPKklwLW+a4ZY3/EzM3GNMVXmk2ylGb8NPJXRH4igXMoI8wgNL2jqXOiglWAXqFBLZGYFN1oQx6LVmUTxTg==}
 
-  '@posthog/types@1.421.1':
-    resolution: {integrity: sha512-475eg+usYiQ2m7GfxgylnBTVa3aPsEfaE6gQoDvg5nEkWAjcNiGm1u3WsESOErfrFFUajpYcxc71JCzfdoJ8gg==}
+  '@posthog/types@1.427.0':
+    resolution: {integrity: sha512-2RPVfuGIx0iys78mTOcfdzN7/w7AM1Ak3yu9++4/FonPf08mwGqDkJjThz2dA/34666ToNw5Q4fZoFdgvfNUHw==}
 
   '@radix-ui/primitive@1.1.4':
     resolution: {integrity: sha512-7AdCK9PQyiljKoBDbN8OuctCbd/esdwZPQ8RtOE3SsyQtUpiPb+ND75q0jEhC1m1ecBI0MFNeLJvwIh9iKHRcQ==}
@@ -4130,8 +4130,8 @@ packages:
       react: '*'
       react-native: '*'
 
-  posthog-react-native@4.85.3:
-    resolution: {integrity: sha512-VB72KZY/bB54dSk5nZa3iSpJ+f9JiH5JolPRsxKPjBkrzemb09S56bp9r1PWBC2Qymw4fOEJ3jCQ50b8a8fPBg==}
+  posthog-react-native@4.87.1:
+    resolution: {integrity: sha512-oRh+m+DMvmIyUEIQeIRiOf+pm8X442J+WzAvefuO8vRsMn+MkmeWtLYShx6f3ozBJxfXvuFtuACgwMH2au/rlQ==}
     hasBin: true
     peerDependencies:
       '@posthog/react-native-plugin': '>= 2.12.7'
@@ -6592,11 +6592,11 @@ snapshots:
 
   '@pkgr/core@0.3.6': {}
 
-  '@posthog/core@1.64.1':
+  '@posthog/core@1.69.2':
     dependencies:
-      '@posthog/types': 1.421.1
+      '@posthog/types': 1.427.0
 
-  '@posthog/types@1.421.1': {}
+  '@posthog/types@1.427.0': {}
 
   '@radix-ui/primitive@1.1.4': {}
 
@@ -9673,10 +9673,10 @@ snapshots:
       react: 19.3.1
       react-native: 0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1)
 
-  posthog-react-native@4.85.3(expo-application@58.0.4(expo@58.0.7))(expo-device@58.0.5(expo@58.0.7))(expo-file-system@58.0.7(expo@58.0.7)(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1)))(expo-localization@58.0.3(expo@58.0.7)(react@19.3.1))(posthog-react-native-session-replay@1.6.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native-safe-area-context@5.10.1(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native-svg@15.16.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1)):
+  posthog-react-native@4.87.1(expo-application@58.0.4(expo@58.0.7))(expo-device@58.0.5(expo@58.0.7))(expo-file-system@58.0.7(expo@58.0.7)(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1)))(expo-localization@58.0.3(expo@58.0.7)(react@19.3.1))(posthog-react-native-session-replay@1.6.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native-safe-area-context@5.10.1(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1))(react-native-svg@15.16.0(react-native@0.88.0-rc.3(@babel/core@7.29.13)(@react-native/metro-config@0.88.0-rc.4(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.1))(react@19.3.1)):
     dependencies:
-      '@posthog/core': 1.64.1
-      '@posthog/types': 1.421.1
+      '@posthog/core': 1.69.2
+      '@posthog/types': 1.427.0
     optionalDependencies:
       expo-application: 58.0.4(expo@58.0.7)
       expo-device: 58.0.5(expo@58.0.7)
